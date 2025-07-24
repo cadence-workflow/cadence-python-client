@@ -4,6 +4,13 @@
 
 `cadence-python-client` is the Python framework for authoring workflows and activities.
 
+## Disclaimer
+**This SDK is currently an early work-in-progress (WIP) and is NOT ready for production use.**
+
+- This project is still in active development
+- It has not been published to any package repository (PyPI, etc.)
+- APIs and interfaces are subject to change without notice
+
 ## Installation
 
 ```bash

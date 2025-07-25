@@ -149,20 +149,14 @@ help:
 # Show what will be generated
 .PHONY: show
 show:
-	@echo "Proto files to process:"
-	@echo "API:"
-	@for file in $(API_PROTO_FILES); do echo "  $$file"; done
-	@echo "Admin:"
-	@for file in $(ADMIN_PROTO_FILES); do echo "  $$file"; done
-	@echo ""
-	@echo "Python files to generate:"
-	@echo "API:"
-	@for file in $(API_PYTHON_FILES); do echo "  $$file"; done
-	@echo "Admin:"
-	@for file in $(ADMIN_PYTHON_FILES); do echo "  $$file"; done
-	@echo ""
-	@echo "Python interface files to generate:"
-	@echo "API:"
-	@for file in $(API_PYI_FILES); do echo "  $$file"; done
-	@echo "Admin:"
-	@for file in $(ADMIN_PYI_FILES); do echo "  $$file"; done 
+	$(info Proto files to process:)
+	$(info API_PROTO_FILES: $(API_PROTO_FILES))
+	$(info ADMIN_PROTO_FILES: $(ADMIN_PROTO_FILES))
+	$(info )
+	$(info Python files to generate:)
+	$(info API_PYTHON_FILES: $(API_PYTHON_FILES))
+	$(info ADMIN_PYTHON_FILES: $(ADMIN_PYTHON_FILES))
+	$(info )
+	$(info Python interface files to generate:)
+	$(info API_PYI_FILES: $(API_PYI_FILES))
+	$(info ADMIN_PYI_FILES: $(ADMIN_PYI_FILES)) 

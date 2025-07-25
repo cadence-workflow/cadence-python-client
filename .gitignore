@@ -1,0 +1,14 @@
+*.out
+*.test
+*.xml
+*.swp
+.idea/
+*.iml
+*.cov
+*.html
+.gobincache/
+.tmp/
+.vscode/
+.build/
+.bin/
+.cursor/ 

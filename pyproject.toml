@@ -18,15 +18,11 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Distributed Computing",
 ]
-requires-python = ">=3.8,<3.12"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "grpcio>=1.50.0",
     "grpcio-tools>=1.50.0",
@@ -74,7 +70,7 @@ packages = ["cadence", "cadence.shared"]
 
 [tool.black]
 line-length = 88
-target-version = ["py38"]
+target-version = ["py311"]
 include = "\\.pyi?$"
 
 [tool.isort]
@@ -102,7 +98,7 @@ exclude = [
 ]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

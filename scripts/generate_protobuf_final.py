@@ -124,9 +124,12 @@ def find_protoc() -> str:
 
 
 def find_proto_files(proto_dir: Path) -> list[Path]:
-    """Find all .proto files in the given directory."""
+    """Find all .proto files in the given directory, excluding admin files."""
     proto_files = []
     for proto_file in proto_dir.rglob("*.proto"):
+        # Skip admin proto files
+        if "admin" in str(proto_file):
+            continue
         proto_files.append(proto_file)
     return sorted(proto_files)
 
@@ -139,6 +142,51 @@ def create_init_files(output_dir: Path) -> None:
             if not init_file.exists():
                 init_file.touch()
                 print(f"  ✓ Created {init_file}")
+
+
+def generate_init_file(output_dir: Path) -> None:
+    """Generate the __init__.py file for cadence/api/v1 with clean imports."""
+    v1_dir = output_dir / "api" / "v1"
+    init_file = v1_dir / "__init__.py"
+    
+    # Find all _pb2.py files in the v1 directory
+    pb2_files = []
+    for file in v1_dir.glob("*_pb2.py"):
+        module_name = file.stem  # e.g., "common_pb2" -> "common_pb2"
+        clean_name = module_name.replace("_pb2", "")  # e.g., "common_pb2" -> "common"
+        pb2_files.append((module_name, clean_name))
+    
+    # Sort for consistent ordering
+    pb2_files.sort()
+    
+    # Generate the __init__.py content
+    content = "# Auto-generated __init__.py file\n"
+    content += "# Import all generated protobuf modules\n"
+    
+    # Add imports
+    for module_name, clean_name in pb2_files:
+        content += f"from . import {module_name}\n"
+    
+    content += "\n# Create cleaner aliases for easier imports\n"
+    
+    # Add aliases
+    for module_name, clean_name in pb2_files:
+        content += f"{clean_name} = {module_name}\n"
+    
+    content += "\n# Only expose clean module names (no _pb2)\n"
+    content += "__all__ = [\n"
+    
+    # Add __all__ list
+    for module_name, clean_name in pb2_files:
+        content += f"    '{clean_name}',\n"
+    
+    content += "]\n"
+    
+    # Write the file
+    with open(init_file, 'w') as f:
+        f.write(content)
+    
+    print(f"  ✓ Generated {init_file} with {len(pb2_files)} modules")
 
 
 def find_brew_protobuf_include(project_root: Path) -> str:
@@ -198,23 +246,64 @@ def find_brew_protobuf_include(project_root: Path) -> str:
     return None
 
 
-def generate_protobuf_files(proto_dir: Path, output_dir: Path, project_root: Path) -> None:
-    """Generate Python protobuf files from .proto files."""
+def setup_temp_proto_structure(proto_dir: Path, temp_dir: Path) -> None:
+    """Create a temporary directory with proto files in the proper structure for cadence.api.v1 imports."""
+    print("Setting up temporary proto structure...")
+    
+    # Find all proto files (excluding admin)
     proto_files = find_proto_files(proto_dir)
     
     if not proto_files:
         print("No .proto files found!")
         return
     
-    print(f"Found {len(proto_files)} .proto files:")
+    print(f"Found {len(proto_files)} .proto files (excluding admin):")
     for proto_file in proto_files:
         print(f"  - {proto_file}")
     
-    # Create temporary directory for initial generation
-    temp_dir = output_dir.parent / ".temp_gen"
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
-    temp_dir.mkdir(exist_ok=True)
+    # Copy proto files to temp directory with proper structure
+    for proto_file in proto_files:
+        # Get relative path from proto directory
+        rel_path = proto_file.relative_to(proto_dir)
+        
+        # Create target path in temp directory
+        # We want to transform: uber/cadence/api/v1/file.proto -> cadence/api/v1/file.proto
+        parts = list(rel_path.parts)
+        
+        # Remove 'uber' from the path to get cadence.api.v1 structure
+        if parts[0] == 'uber':
+            parts = parts[1:]  # Remove 'uber'
+        
+        target_path = temp_dir / Path(*parts)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Copy the proto file and update import statements
+        with open(proto_file, 'r') as src_file:
+            content = src_file.read()
+        
+        # Update import statements to remove 'uber/' prefix
+        # Replace "uber/cadence/api/v1/" with "cadence/api/v1/"
+        updated_content = content.replace('import "uber/cadence/api/v1/', 'import "cadence/api/v1/')
+        
+        # Write the updated content to the target file
+        with open(target_path, 'w') as dst_file:
+            dst_file.write(updated_content)
+        
+        print(f"  ✓ Copied and updated {rel_path} -> {target_path}")
+
+
+def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root: Path) -> None:
+    """Generate Python protobuf files from .proto files in temp directory."""
+    proto_files = list(temp_proto_dir.rglob("*.proto"))
+    
+    if not proto_files:
+        print("No .proto files found in temp directory!")
+        return
+    
+    print(f"Generating Python files from {len(proto_files)} .proto files...")
+    
+    # Create output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # Find protoc binary
     protoc_path = find_protoc()
@@ -222,19 +311,17 @@ def generate_protobuf_files(proto_dir: Path, output_dir: Path, project_root: Pat
     # Find brew protobuf include directory
     brew_include = find_brew_protobuf_include(project_root)
     
-    # Generate Python files for each proto file in temp directory
-    print("Generating Python files in temporary directory...")
-    
+    # Generate Python files for each proto file
     for proto_file in proto_files:
-        # Get relative path from proto directory
-        rel_path = proto_file.relative_to(proto_dir)
+        # Get relative path from temp proto directory
+        rel_path = proto_file.relative_to(temp_proto_dir)
         
         # Build command with appropriate include paths
         cmd = [
             protoc_path,
-            f"--python_out={temp_dir}",
-            f"--pyi_out={temp_dir}",
-            f"--proto_path={proto_dir}",
+            f"--python_out={output_dir}",
+            f"--pyi_out={output_dir}",
+            f"--proto_path={temp_proto_dir}",
         ]
         
         # Add brew protobuf include path if available
@@ -253,56 +340,39 @@ def generate_protobuf_files(proto_dir: Path, output_dir: Path, project_root: Pat
             print(f"  ✗ Failed to generate files for {rel_path}: {e}")
             print(f"  stderr: {e.stderr}")
     
-    # Move files from temp directory to correct locations
-    print("Moving files to correct locations...")
-    for proto_file in proto_files:
-        rel_path = proto_file.relative_to(proto_dir)
-        parts = rel_path.parts
-
-        # Keep the full path including 'uber' and 'cadence' parts
-        # uber/cadence/admin/v1/queue.proto -> uber/cadence/admin/v1/queue.proto
-        target_parts = parts
-
-        # Get the filename without extension
-        filename = target_parts[-1].replace('.proto', '_pb2.py')
-        pyi_filename = target_parts[-1].replace('.proto', '_pb2.pyi')
-
-        # Source files in temp directory (with original structure)
-        source_rel_path = Path(*parts)
-        source_file = temp_dir / source_rel_path.parent / filename
-        source_pyi_file = temp_dir / source_rel_path.parent / pyi_filename
-
-        # Target directory and files - keep the full uber.cadence structure
-        target_dir = output_dir
-        for part in target_parts[:-1]:  # All parts except the filename
-            target_dir = target_dir / part
-
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_file = target_dir / filename
-        target_pyi_file = target_dir / pyi_filename
-
-        # Move .py file
-        if source_file.exists():
-            shutil.move(str(source_file), str(target_file))
-            print(f"  ✓ Moved {filename} to {target_file}")
-        else:
-            print(f"  ✗ Source file not found: {source_file}")
-        
-        # Move .pyi file
-        if source_pyi_file.exists():
-            shutil.move(str(source_pyi_file), str(target_pyi_file))
-            print(f"  ✓ Moved {pyi_filename} to {target_pyi_file}")
-        else:
-            print(f"  ✗ Source pyi file not found: {source_pyi_file}")
-
-    # Clean up temp directory
-    shutil.rmtree(temp_dir)
-
-    # Create __init__.py files for all generated directories
-    create_init_files(output_dir)
-
-
-
+    # Move files from nested structure to correct structure
+    print("Moving files to correct structure...")
+    nested_cadence_dir = output_dir / "cadence"
+    if nested_cadence_dir.exists():
+        # Move all contents from cadence/cadence/api/v1/ to cadence/api/v1/
+        nested_api_dir = nested_cadence_dir / "api"
+        if nested_api_dir.exists():
+            target_api_dir = output_dir / "api"
+            target_api_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Move api/v1 directory
+            nested_v1_dir = nested_api_dir / "v1"
+            target_v1_dir = target_api_dir / "v1"
+            
+            if nested_v1_dir.exists():
+                # Remove target if it exists
+                if target_v1_dir.exists():
+                    shutil.rmtree(target_v1_dir)
+                
+                # Move the v1 directory
+                shutil.move(str(nested_v1_dir), str(target_v1_dir))
+                print(f"  ✓ Moved api/v1 directory to correct location")
+            
+            # Move api/__init__.py if it exists
+            nested_init = nested_api_dir / "__init__.py"
+            target_init = target_api_dir / "__init__.py"
+            if nested_init.exists():
+                shutil.move(str(nested_init), str(target_init))
+                print(f"  ✓ Moved api/__init__.py to correct location")
+            
+            # Remove the nested cadence directory
+            shutil.rmtree(nested_cadence_dir)
+            print(f"  ✓ Cleaned up nested cadence directory")
 
 
 def main():
@@ -313,21 +383,42 @@ def main():
     
     # Define paths
     proto_dir = project_root / "idls" / "proto"
-    output_dir = project_root / "shared"
+    output_dir = project_root / "cadence"  # This will be the cadence folder directly
+    temp_dir = project_root / ".temp_proto"
     
     print(f"Proto directory: {proto_dir}")
     print(f"Output directory: {output_dir}")
+    print(f"Temp directory: {temp_dir}")
     
     # Check if proto directory exists
     if not proto_dir.exists():
         print(f"Error: Proto directory not found: {proto_dir}")
         sys.exit(1)
     
-    # Generate protobuf files
-    generate_protobuf_files(proto_dir, output_dir, project_root)
+    # Clean up temp directory if it exists
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
     
-    print(f"\nProtobuf generation complete. Files generated in {output_dir}")
-    print("Note: Files are generated in correct structure with original serialized data.")
+    try:
+        # Step 1: Create temp directory and copy proto files in proper structure
+        temp_dir.mkdir(exist_ok=True)
+        setup_temp_proto_structure(proto_dir, temp_dir)
+        
+        # Step 2: Generate Python files in the cadence directory
+        generate_protobuf_files(temp_dir, output_dir, project_root)
+        
+        # Step 3: Create __init__.py files for all generated directories
+        create_init_files(output_dir)
+        generate_init_file(output_dir)
+        
+        print(f"\nProtobuf generation complete. Files generated in {output_dir}")
+        print("Files can now be imported as cadence.api.v1, cadence.api.v1.workflow, etc.")
+        
+    finally:
+        # Step 4: Clean up temp directory
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+            print(f"Cleaned up temp directory: {temp_dir}")
 
 
 if __name__ == "__main__":

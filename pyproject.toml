@@ -63,10 +63,10 @@ Repository = "https://github.com/cadence-workflow/cadence-python-client"
 cadence-cli = "cadence.cli:main"
 
 [tool.setuptools]
-packages = ["cadence", "cadence.shared"]
+packages = ["cadence"]
 
 [tool.setuptools.package-data]
-"*" = ["*.proto", "*.thrift"]
+"*" = ["*.proto"]
 
 [tool.black]
 line-length = 88

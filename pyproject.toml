@@ -1,0 +1,159 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cadence-python-client"
+version = "0.1.0"
+description = "Python framework for authoring Cadence workflows and activities"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Cadence"}
+]
+keywords = ["workflow", "orchestration", "distributed", "async", "cadence"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
+]
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "grpcio>=1.50.0",
+    "grpcio-tools>=1.50.0",
+    "protobuf==5.29.1",
+    "thriftpy2>=0.4.0",
+    "six>=1.16.0",
+    "typing-extensions>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+docs = [
+    "sphinx>=6.0.0",
+    "sphinx-rtd-theme>=1.2.0",
+    "myst-parser>=1.0.0",
+]
+examples = [
+    "requests>=2.28.0",
+    "aiohttp>=3.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/cadence-workflow/cadence-python-client"
+Documentation = "https://cadence-python-client.readthedocs.io/"
+Repository = "https://github.com/cadence-workflow/cadence-python-client"
+"Bug Tracker" = "https://github.com/cadence-workflow/cadence-python-client/issues"
+
+[project.scripts]
+cadence-cli = "cadence.cli:main"
+
+[tool.setuptools]
+packages = ["cadence"]
+
+[tool.setuptools.package-data]
+"*" = ["*.proto"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+include = "\\.pyi?$"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["cadence"]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+    "venv",
+    ".venv",
+    ".mypy_cache",
+    ".pytest_cache",
+    "*.pb.py",
+    "*.pb.pyi",
+    "*.pyi",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "grpcio.*",
+    "grpcio_tools.*",
+    "thriftpy2.*",
+    "google.protobuf.*",
+    "uber.cadence.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["cadence"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc.)?abstractmethod",
+] 

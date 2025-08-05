@@ -22,7 +22,16 @@ cd cadence-python-client
 
 ### Setup
 
-1. **Install uv (recommended):**
+1. **Install protobuf (required):**
+   ```bash
+   # macOS
+   brew install protobuf@29
+   
+   # Linux/Other
+   # Install protobuf 29.x via your package manager
+   ```
+
+2. **Install uv (recommended):**
    ```bash
    # macOS
    brew install uv
@@ -32,7 +41,7 @@ cd cadence-python-client
    source $HOME/.local/bin/env  # Add to your shell profile for persistence
    ```
 
-2. **Create virtual environment and install dependencies:**
+3. **Create virtual environment and install dependencies:**
    ```bash
    uv venv
    uv pip install -e ".[dev]"
@@ -49,7 +58,7 @@ cd cadence-python-client
 
 Run the generation script:
 ```bash
-python scripts/generate_protobuf_final.py
+python scripts/generate_proto.py
 ```
 
 This will:

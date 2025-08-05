@@ -54,36 +54,71 @@ cd cadence-python-client
    pip install -e ".[dev]"
    ```
 
-### Generate Protobuf Files
+### Generate Protobuf and gRPC Files
 
 Run the generation script:
 ```bash
+# Using uv (recommended)
+uv run python scripts/generate_proto.py
+
+# Or using traditional Python
 python scripts/generate_proto.py
 ```
 
 This will:
 - Download protoc 29.1 binary
-- Generate Python files in `cadence/api/v1/`
-- Create proper package structure
+- Install grpcio-tools if needed
+- Generate Python protobuf files in `cadence/api/v1/`
+- Generate gRPC service files in `cadence/api/v1/`
+- Create proper package structure with both protobuf and gRPC imports
 
 ### Test
 
 Verify the generated files work:
 ```bash
+# Using uv (recommended)
+uv run python cadence/sample/simple_usage_example.py
+uv run python test_grpc_with_examples.py
+
+# Or using traditional Python
 python cadence/sample/simple_usage_example.py
+python test_grpc_with_examples.py
 ```
 
-### Usage
+### Development Script
 
-```python
-from cadence.api.v1 import workflow, common, domain
+The project includes a development script that provides convenient commands for common tasks:
 
-# Create objects
-wf_exec = common.WorkflowExecution()
-wf_exec.workflow_id = "my-workflow"
+```bash
+# Generate protobuf files
+uv run python scripts/dev.py protobuf
 
-# Use enums
-status = workflow.WORKFLOW_EXECUTION_CLOSE_STATUS_COMPLETED
+# Run tests
+uv run python scripts/dev.py test
+
+# Run tests with coverage
+uv run python scripts/dev.py test-cov
+
+# Run linting
+uv run python scripts/dev.py lint
+
+# Format code
+uv run python scripts/dev.py format
+
+# Install in development mode
+uv run python scripts/dev.py install
+
+# Install with dev dependencies
+uv run python scripts/dev.py install-dev
+
+# Build package
+uv run python scripts/dev.py build
+
+# Clean build artifacts
+uv run python scripts/dev.py clean
+
+# Run all checks (lint + test)
+uv run python scripts/dev.py check
 ```
 
 ## License

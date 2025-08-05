@@ -22,22 +22,43 @@ cd cadence-python-client
 
 ### Setup
 
-1. **Create virtual environment:**
+1. **Install protobuf (required):**
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
+   # macOS
+   brew install protobuf@29
+   
+   # Linux/Other
+   # Install protobuf 29.x via your package manager
    ```
 
-2. **Install dependencies:**
+2. **Install uv (recommended):**
    ```bash
-   pip install -r requirements.txt
+   # macOS
+   brew install uv
+   
+   # Linux/Other
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   source $HOME/.local/bin/env  # Add to your shell profile for persistence
+   ```
+
+3. **Create virtual environment and install dependencies:**
+   ```bash
+   uv venv
+   uv pip install -e ".[dev]"
+   ```
+
+   Or if you prefer traditional pip:
+   ```bash
+   python3.11 -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   pip install -e ".[dev]"
    ```
 
 ### Generate Protobuf Files
 
 Run the generation script:
 ```bash
-python scripts/generate_protobuf_final.py
+python scripts/generate_proto.py
 ```
 
 This will:

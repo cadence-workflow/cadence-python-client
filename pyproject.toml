@@ -19,16 +19,16 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Distributed Computing",
 ]
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "grpcio>=1.50.0",
     "grpcio-tools>=1.50.0",
     "protobuf==5.29.1",
-    "thriftpy2>=0.4.0",
-    "six>=1.16.0",
     "typing-extensions>=4.0.0",
 ]
 

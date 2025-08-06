@@ -78,7 +78,7 @@ Verify the generated files work:
 ```bash
 # Using uv (recommended)
 uv run python cadence/sample/simple_usage_example.py
-uv run python test_grpc_with_examples.py
+uv run python cadence/sample/grpc_usage_example.py
 
 # Or using traditional Python
 python cadence/sample/simple_usage_example.py

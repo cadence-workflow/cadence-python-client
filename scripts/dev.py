@@ -24,31 +24,31 @@ def run_command(cmd, description):
 
 def install():
     """Install the package in development mode."""
-    return run_command("pip install -e .", "Installing package in development mode")
+    return run_command("uv pip install -e .", "Installing package in development mode")
 
 
 def install_dev():
     """Install the package with development dependencies."""
-    return run_command("pip install -e '.[dev]'", "Installing package with dev dependencies")
+    return run_command("uv pip install -e '.[dev]'", "Installing package with dev dependencies")
 
 
 def test():
     """Run tests."""
-    return run_command("pytest", "Running tests")
+    return run_command("uv run pytest", "Running tests")
 
 
 def test_cov():
     """Run tests with coverage."""
-    return run_command("pytest --cov=cadence --cov-report=html --cov-report=term-missing", "Running tests with coverage")
+    return run_command("uv run pytest --cov=cadence --cov-report=html --cov-report=term-missing", "Running tests with coverage")
 
 
 def lint():
     """Run linting tools."""
     commands = [
-        ("black --check --diff .", "Checking code formatting with black"),
-        ("isort --check-only --diff .", "Checking import sorting with isort"),
-        ("flake8 .", "Running flake8 linting"),
-        ("mypy .", "Running mypy type checking"),
+        ("uv run black --check --diff .", "Checking code formatting with black"),
+        ("uv run isort --check-only --diff .", "Checking import sorting with isort"),
+        ("uv run flake8 .", "Running flake8 linting"),
+        ("uv run mypy .", "Running mypy type checking"),
     ]
     
     success = True
@@ -62,8 +62,8 @@ def lint():
 def format():
     """Format code."""
     commands = [
-        ("black .", "Formatting code with black"),
-        ("isort .", "Sorting imports with isort"),
+        ("uv run black .", "Formatting code with black"),
+        ("uv run isort .", "Sorting imports with isort"),
     ]
     
     success = True
@@ -106,18 +106,18 @@ def clean():
 
 def build():
     """Build the package."""
-    return run_command("python -m build", "Building package")
+    return run_command("uv run python -m build", "Building package")
 
 
 def protobuf():
     """Generate protobuf files."""
-    script_path = Path(__file__).parent / "generate_protobuf_final.py"
-    return run_command(f"python3 {script_path}", "Generating protobuf files")
+    script_path = Path(__file__).parent / "generate_proto.py"
+    return run_command(f"uv run python {script_path}", "Generating protobuf files")
 
 
 def docs():
     """Build documentation."""
-    return run_command("sphinx-build -b html docs/source docs/build/html", "Building documentation")
+    return run_command("uv run sphinx-build -b html docs/source docs/build/html", "Building documentation")
 
 
 def check():

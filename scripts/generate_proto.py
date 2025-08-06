@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Final protobuf generation script that generates files in correct structure without modifying serialized data.
+Now includes gRPC code generation.
 """
 
 import subprocess
@@ -11,6 +12,48 @@ import shutil
 import platform
 import urllib.request
 import zipfile
+
+
+def check_grpc_tools():
+    """Check if grpc_tools is installed, install if not."""
+    try:
+        import grpc_tools
+        print("✓ grpc_tools is already installed")
+        return True
+    except ImportError:
+        print("Installing grpc_tools...")
+        try:
+            subprocess.run(["uv", "pip", "install", "grpcio-tools"], 
+                         check=True, capture_output=True, text=True)
+            print("✓ grpc_tools installed successfully")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"✗ Failed to install grpc_tools: {e}")
+            return False
+
+
+def find_grpc_python_plugin():
+    """Find the grpc_python_plugin binary."""
+    try:
+        # Try to find it in the current Python environment using uv
+        result = subprocess.run(["uv", "run", "python", "-m", "grpc_tools.protoc", "--help"], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            # The plugin is available through grpc_tools.protoc
+            return "grpc_tools.protoc"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    
+    # Try to find it as a standalone binary
+    try:
+        result = subprocess.run(["grpc_python_plugin", "--help"], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return "grpc_python_plugin"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    
+    return None
 
 
 def download_protoc_29_1(project_root: Path) -> str:
@@ -293,7 +336,7 @@ def setup_temp_proto_structure(proto_dir: Path, temp_dir: Path) -> None:
 
 
 def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root: Path) -> None:
-    """Generate Python protobuf files from .proto files in temp directory."""
+    """Generate Python protobuf files and gRPC code from .proto files in temp directory."""
     proto_files = list(temp_proto_dir.rglob("*.proto"))
     
     if not proto_files:
@@ -305,8 +348,20 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
     # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Find protoc binary
+    # Find protoc binary - always use the downloaded protoc 29.1
     protoc_path = find_protoc()
+    print(f"Using protoc: {protoc_path}")
+    
+    # Check for gRPC tools
+    if not check_grpc_tools():
+        print("Warning: grpc_tools not available, skipping gRPC code generation")
+        grpc_plugin = None
+    else:
+        grpc_plugin = find_grpc_python_plugin()
+        if grpc_plugin:
+            print(f"✓ Found gRPC plugin: {grpc_plugin}")
+        else:
+            print("Warning: grpc_python_plugin not found, skipping gRPC code generation")
     
     # Find brew protobuf include directory
     brew_include = find_brew_protobuf_include(project_root)
@@ -335,10 +390,60 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
         
         try:
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(f"  ✓ Generated files for {rel_path}")
+            print(f"  ✓ Generated .py and .pyi files for {rel_path}")
         except subprocess.CalledProcessError as e:
-            print(f"  ✗ Failed to generate files for {rel_path}: {e}")
+            print(f"  ✗ Failed to generate .py and .pyi files for {rel_path}: {e}")
             print(f"  stderr: {e.stderr}")
+            continue
+        
+        # Add gRPC generation if plugin is available
+        if grpc_plugin and grpc_plugin == "grpc_tools.protoc":
+            # For grpc_tools.protoc, only generate gRPC files (not _pb2.py)
+            grpc_cmd = [
+                "uv", "run", "python", "-m", "grpc_tools.protoc",
+                f"--grpc_python_out={output_dir}",
+                f"--proto_path={temp_proto_dir}",
+            ]
+            
+            # Add brew protobuf include path if available
+            if brew_include:
+                grpc_cmd.append(f"--proto_path={brew_include}")
+            else:
+                # Fallback to local include directory
+                grpc_cmd.append(f"--proto_path={project_root}/include")
+            
+            grpc_cmd.append(str(proto_file))
+            
+            try:
+                result = subprocess.run(grpc_cmd, check=True, capture_output=True, text=True)
+                print(f"  ✓ Generated gRPC files for {rel_path}")
+            except subprocess.CalledProcessError as e:
+                print(f"  ✗ Failed to generate gRPC files for {rel_path}: {e}")
+                print(f"  stderr: {e.stderr}")
+        
+        elif grpc_plugin and grpc_plugin != "grpc_tools.protoc":
+            # Use standalone protoc with grpc_python_plugin
+            grpc_cmd = [
+                protoc_path,
+                f"--grpc_python_out={output_dir}",
+                f"--proto_path={temp_proto_dir}",
+            ]
+            
+            # Add brew protobuf include path if available
+            if brew_include:
+                grpc_cmd.append(f"--proto_path={brew_include}")
+            else:
+                # Fallback to local include directory
+                grpc_cmd.append(f"--proto_path={project_root}/include")
+            
+            grpc_cmd.append(str(proto_file))
+            
+            try:
+                result = subprocess.run(grpc_cmd, check=True, capture_output=True, text=True)
+                print(f"  ✓ Generated gRPC files for {rel_path}")
+            except subprocess.CalledProcessError as e:
+                print(f"  ✗ Failed to generate gRPC files for {rel_path}: {e}")
+                print(f"  stderr: {e.stderr}")
     
     # Move files from nested structure to correct structure
     print("Moving files to correct structure...")
@@ -375,6 +480,69 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
             print(f"  ✓ Cleaned up nested cadence directory")
 
 
+def generate_grpc_init_file(output_dir: Path) -> None:
+    """Generate the __init__.py file for cadence/api/v1 with gRPC imports."""
+    v1_dir = output_dir / "api" / "v1"
+    init_file = v1_dir / "__init__.py"
+    
+    # Find all _pb2.py and _pb2_grpc.py files in the v1 directory
+    pb2_files = []
+    grpc_files = []
+    
+    for file in v1_dir.glob("*_pb2.py"):
+        module_name = file.stem  # e.g., "common_pb2" -> "common_pb2"
+        clean_name = module_name.replace("_pb2", "")  # e.g., "common_pb2" -> "common"
+        pb2_files.append((module_name, clean_name))
+    
+    for file in v1_dir.glob("*_pb2_grpc.py"):
+        module_name = file.stem  # e.g., "service_workflow_pb2_grpc" -> "service_workflow_pb2_grpc"
+        clean_name = module_name.replace("_pb2_grpc", "_grpc")  # e.g., "service_workflow_pb2_grpc" -> "service_workflow_grpc"
+        grpc_files.append((module_name, clean_name))
+    
+    # Sort for consistent ordering
+    pb2_files.sort()
+    grpc_files.sort()
+    
+    # Generate the __init__.py content
+    content = "# Auto-generated __init__.py file\n"
+    content += "# Import all generated protobuf and gRPC modules\n"
+    
+    # Add protobuf imports
+    for module_name, clean_name in pb2_files:
+        content += f"from . import {module_name}\n"
+    
+    # Add gRPC imports
+    for module_name, clean_name in grpc_files:
+        content += f"from . import {module_name}\n"
+    
+    content += "\n# Create cleaner aliases for easier imports\n"
+    
+    # Add protobuf aliases
+    for module_name, clean_name in pb2_files:
+        content += f"{clean_name} = {module_name}\n"
+    
+    # Add gRPC aliases
+    for module_name, clean_name in grpc_files:
+        content += f"{clean_name} = {module_name}\n"
+    
+    content += "\n# Only expose clean module names\n"
+    content += "__all__ = [\n"
+    
+    # Add __all__ list
+    for module_name, clean_name in pb2_files:
+        content += f"    '{clean_name}',\n"
+    for module_name, clean_name in grpc_files:
+        content += f"    '{clean_name}',\n"
+    
+    content += "]\n"
+    
+    # Write the file
+    with open(init_file, 'w') as f:
+        f.write(content)
+    
+    print(f"  ✓ Generated {init_file} with {len(pb2_files)} protobuf and {len(grpc_files)} gRPC modules")
+
+
 def main():
     """Main function."""
     # Get the script directory
@@ -409,10 +577,12 @@ def main():
         
         # Step 3: Create __init__.py files for all generated directories
         create_init_files(output_dir)
-        generate_init_file(output_dir)
+        generate_grpc_init_file(output_dir)
         
-        print(f"\nProtobuf generation complete. Files generated in {output_dir}")
-        print("Files can now be imported as cadence.api.v1, cadence.api.v1.workflow, etc.")
+        print(f"\nProtobuf and gRPC generation complete. Files generated in {output_dir}")
+        print("Files can now be imported as:")
+        print("  - cadence.api.v1.workflow (protobuf messages)")
+        print("  - cadence.api.v1.service_workflow_grpc (gRPC services)")
         
     finally:
         # Step 4: Clean up temp directory

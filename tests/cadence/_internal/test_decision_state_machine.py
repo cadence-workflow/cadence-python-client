@@ -11,7 +11,7 @@ from cadence._internal.decision_state_machine import (
     TimerDecisionMachine,
     ChildWorkflowDecisionMachine,
     DecisionManager,
-    MachineStatus,
+    DecisionState,
 )
 
 
@@ -34,7 +34,9 @@ def test_timer_state_machine_cancel_after_initiated():
     m.handle_initiated_event(
         history.HistoryEvent(
             event_id=1,
-            timer_started_event_attributes=history.TimerStartedEventAttributes(timer_id="t-cai"),
+            timer_started_event_attributes=history.TimerStartedEventAttributes(
+                timer_id="t-cai"
+            ),
         )
     )
     m.request_cancel()
@@ -50,7 +52,9 @@ def test_timer_state_machine_completed_after_cancel():
     m.handle_initiated_event(
         history.HistoryEvent(
             event_id=2,
-            timer_started_event_attributes=history.TimerStartedEventAttributes(timer_id="t-cac"),
+            timer_started_event_attributes=history.TimerStartedEventAttributes(
+                timer_id="t-cac"
+            ),
         )
     )
     m.request_cancel()
@@ -58,10 +62,12 @@ def test_timer_state_machine_completed_after_cancel():
     m.handle_completion_event(
         history.HistoryEvent(
             event_id=3,
-            timer_fired_event_attributes=history.TimerFiredEventAttributes(timer_id="t-cac", started_event_id=2),
+            timer_fired_event_attributes=history.TimerFiredEventAttributes(
+                timer_id="t-cac", started_event_id=2
+            ),
         )
     )
-    assert m.status is MachineStatus.COMPLETED
+    assert m.status is DecisionState.COMPLETED
 
 
 @pytest.mark.unit
@@ -72,20 +78,26 @@ def test_timer_state_machine_complete_without_cancel():
     m.handle_initiated_event(
         history.HistoryEvent(
             event_id=4,
-            timer_started_event_attributes=history.TimerStartedEventAttributes(timer_id="t-cwc"),
+            timer_started_event_attributes=history.TimerStartedEventAttributes(
+                timer_id="t-cwc"
+            ),
         )
     )
     m.handle_completion_event(
         history.HistoryEvent(
             event_id=5,
-            timer_fired_event_attributes=history.TimerFiredEventAttributes(timer_id="t-cwc", started_event_id=4),
+            timer_fired_event_attributes=history.TimerFiredEventAttributes(
+                timer_id="t-cwc", started_event_id=4
+            ),
         )
     )
-    assert m.status is MachineStatus.COMPLETED
+    assert m.status is DecisionState.COMPLETED
 
 
 @pytest.mark.unit
-@pytest.mark.skip("Invalid state transition panics are not applicable in this Python implementation")
+@pytest.mark.skip(
+    "Invalid state transition panics are not applicable in this Python implementation"
+)
 def test_timer_state_machine_panic_invalid_state_transition():
     pass
 
@@ -98,7 +110,9 @@ def test_timer_cancel_event_ordering():
     m.handle_initiated_event(
         history.HistoryEvent(
             event_id=10,
-            timer_started_event_attributes=history.TimerStartedEventAttributes(timer_id="t-ord"),
+            timer_started_event_attributes=history.TimerStartedEventAttributes(
+                timer_id="t-ord"
+            ),
         )
     )
     m.request_cancel()
@@ -108,7 +122,9 @@ def test_timer_cancel_event_ordering():
     m.handle_cancel_failed_event(
         history.HistoryEvent(
             event_id=11,
-            cancel_timer_failed_event_attributes=history.CancelTimerFailedEventAttributes(timer_id="t-ord"),
+            cancel_timer_failed_event_attributes=history.CancelTimerFailedEventAttributes(
+                timer_id="t-ord"
+            ),
         )
     )
     d2 = m.collect_pending_decisions()
@@ -124,13 +140,17 @@ def test_activity_state_machine_complete_without_cancel():
     m.handle_initiated_event(
         history.HistoryEvent(
             event_id=20,
-            activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(activity_id="act-1"),
+            activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(
+                activity_id="act-1"
+            ),
         )
     )
     m.handle_started_event(
         history.HistoryEvent(
             event_id=21,
-            activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(scheduled_event_id=20),
+            activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(
+                scheduled_event_id=20
+            ),
         )
     )
     m.handle_completion_event(
@@ -141,7 +161,7 @@ def test_activity_state_machine_complete_without_cancel():
             ),
         )
     )
-    assert m.status is MachineStatus.COMPLETED
+    assert m.status is DecisionState.COMPLETED
 
 
 @pytest.mark.unit
@@ -163,7 +183,9 @@ def test_activity_state_machine_cancel_after_sent():
     _ = m.collect_pending_decisions()
     m.request_cancel()
     d = m.collect_pending_decisions()
-    assert len(d) == 1 and d[0].HasField("request_cancel_activity_task_decision_attributes")
+    assert len(d) == 1 and d[0].HasField(
+        "request_cancel_activity_task_decision_attributes"
+    )
 
 
 @pytest.mark.unit
@@ -174,13 +196,17 @@ def test_activity_state_machine_completed_after_cancel():
     m.handle_initiated_event(
         history.HistoryEvent(
             event_id=30,
-            activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(activity_id="act-cac"),
+            activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(
+                activity_id="act-cac"
+            ),
         )
     )
     m.handle_started_event(
         history.HistoryEvent(
             event_id=31,
-            activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(scheduled_event_id=30),
+            activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(
+                scheduled_event_id=30
+            ),
         )
     )
     m.request_cancel()
@@ -193,11 +219,13 @@ def test_activity_state_machine_completed_after_cancel():
             ),
         )
     )
-    assert m.status is MachineStatus.COMPLETED
+    assert m.status is DecisionState.COMPLETED
 
 
 @pytest.mark.unit
-@pytest.mark.skip("Invalid state transition panics are not applicable in this Python implementation")
+@pytest.mark.skip(
+    "Invalid state transition panics are not applicable in this Python implementation"
+)
 def test_activity_state_machine_panic_invalid_state_transition():
     pass
 
@@ -209,7 +237,9 @@ def test_child_workflow_state_machine_basic():
     )
     m = ChildWorkflowDecisionMachine(client_id="cw-1", start_attributes=attrs)
     d = m.collect_pending_decisions()
-    assert len(d) == 1 and d[0].HasField("start_child_workflow_execution_decision_attributes")
+    assert len(d) == 1 and d[0].HasField(
+        "start_child_workflow_execution_decision_attributes"
+    )
     m.handle_initiated_event(
         history.HistoryEvent(
             event_id=40,
@@ -234,7 +264,7 @@ def test_child_workflow_state_machine_basic():
             ),
         )
     )
-    assert m.status is MachineStatus.COMPLETED
+    assert m.status is DecisionState.COMPLETED
 
 
 @pytest.mark.unit
@@ -254,7 +284,9 @@ def test_child_workflow_state_machine_cancel_succeed():
     )
     m.request_cancel()
     d = m.collect_pending_decisions()
-    assert len(d) == 1 and d[0].HasField("request_cancel_external_workflow_execution_decision_attributes")
+    assert len(d) == 1 and d[0].HasField(
+        "request_cancel_external_workflow_execution_decision_attributes"
+    )
     m.handle_canceled_event(
         history.HistoryEvent(
             event_id=51,
@@ -263,7 +295,7 @@ def test_child_workflow_state_machine_cancel_succeed():
             ),
         )
     )
-    assert m.status is MachineStatus.CANCELED
+    assert m.status is DecisionState.CANCELED
 
 
 @pytest.mark.unit
@@ -285,19 +317,25 @@ def test_marker_state_machine():
 
 
 @pytest.mark.unit
-@pytest.mark.skip("Upsert search attributes decision state machine is not implemented in this module")
+@pytest.mark.skip(
+    "Upsert search attributes decision state machine is not implemented in this module"
+)
 def test_upsert_search_attributes_decision_state_machine():
     pass
 
 
 @pytest.mark.unit
-@pytest.mark.skip("Cancel external workflow decision state machine is not implemented in this module")
+@pytest.mark.skip(
+    "Cancel external workflow decision state machine is not implemented in this module"
+)
 def test_cancel_external_workflow_state_machine_succeed():
     pass
 
 
 @pytest.mark.unit
-@pytest.mark.skip("Cancel external workflow decision state machine is not implemented in this module")
+@pytest.mark.skip(
+    "Cancel external workflow decision state machine is not implemented in this module"
+)
 def test_cancel_external_workflow_state_machine_failed():
     pass
 
@@ -307,7 +345,9 @@ def test_manager_aggregates_and_routes():
     dm = DecisionManager()
 
     # Create three machines via public API
-    a = dm.schedule_activity("a1", decision.ScheduleActivityTaskDecisionAttributes(activity_id="a1"))
+    a = dm.schedule_activity(
+        "a1", decision.ScheduleActivityTaskDecisionAttributes(activity_id="a1")
+    )
     t = dm.start_timer("t1", decision.StartTimerDecisionAttributes(timer_id="t1"))
     c = dm.start_child_workflow(
         "c1",
@@ -327,13 +367,17 @@ def test_manager_aggregates_and_routes():
     dm.handle_history_event(
         history.HistoryEvent(
             event_id=100,
-            activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(activity_id="a1"),
+            activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(
+                activity_id="a1"
+            ),
         )
     )
     dm.handle_history_event(
         history.HistoryEvent(
             event_id=101,
-            timer_started_event_attributes=history.TimerStartedEventAttributes(timer_id="t1"),
+            timer_started_event_attributes=history.TimerStartedEventAttributes(
+                timer_id="t1"
+            ),
         )
     )
     dm.handle_history_event(
@@ -345,15 +389,17 @@ def test_manager_aggregates_and_routes():
         )
     )
 
-    assert a.status is MachineStatus.SCHEDULED
-    assert t.status is MachineStatus.SCHEDULED
-    assert c.status is MachineStatus.SCHEDULED
+    assert a.status is DecisionState.INITIATED
+    assert t.status is DecisionState.INITIATED
+    assert c.status is DecisionState.INITIATED
 
     # Route started and completion events
     dm.handle_history_event(
         history.HistoryEvent(
             event_id=103,
-            activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(scheduled_event_id=100),
+            activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(
+                scheduled_event_id=100
+            ),
         )
     )
     dm.handle_history_event(
@@ -375,7 +421,9 @@ def test_manager_aggregates_and_routes():
     dm.handle_history_event(
         history.HistoryEvent(
             event_id=106,
-            timer_fired_event_attributes=history.TimerFiredEventAttributes(timer_id="t1", started_event_id=101),
+            timer_fired_event_attributes=history.TimerFiredEventAttributes(
+                timer_id="t1", started_event_id=101
+            ),
         )
     )
     dm.handle_history_event(
@@ -387,8 +435,6 @@ def test_manager_aggregates_and_routes():
         )
     )
 
-    assert a.status is MachineStatus.COMPLETED
-    assert t.status is MachineStatus.COMPLETED
-    assert c.status is MachineStatus.COMPLETED
-
-
+    assert a.status is DecisionState.COMPLETED
+    assert t.status is DecisionState.COMPLETED
+    assert c.status is DecisionState.COMPLETED

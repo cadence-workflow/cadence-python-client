@@ -1,10 +1,10 @@
 
 
-from asyncio import AbstractEventLoop
+from asyncio import AbstractEventLoop, BaseEventLoop, EventLoop
 from asyncio import Future
 import asyncio
 
-class EventLoop(AbstractEventLoop):
+class EventLoop(BaseEventLoop):
     __running = False
 
     def __init__(self):
@@ -32,6 +32,11 @@ async def delay_print(message, delay):
     await asyncio.sleep(delay)
     print(message)
 
+
+class DeterministicRunner():
+    runner = None
+
+    def run_util_block
 
 if __name__ == "__main__":
     print("Starting workflow")

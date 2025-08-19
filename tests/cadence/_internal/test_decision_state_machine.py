@@ -31,13 +31,14 @@ def test_timer_state_machine_cancel_after_initiated():
     attrs = decision.StartTimerDecisionAttributes(timer_id="t-cai")
     m = TimerDecisionMachine(timer_id="t-cai", start_attributes=attrs)
     _ = m.collect_pending_decisions()
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=1,
             timer_started_event_attributes=history.TimerStartedEventAttributes(
                 timer_id="t-cai"
             ),
-        )
+        ),
+        "initiated"
     )
     m.request_cancel()
     d = m.collect_pending_decisions()
@@ -49,23 +50,25 @@ def test_timer_state_machine_completed_after_cancel():
     attrs = decision.StartTimerDecisionAttributes(timer_id="t-cac")
     m = TimerDecisionMachine(timer_id="t-cac", start_attributes=attrs)
     _ = m.collect_pending_decisions()
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=2,
             timer_started_event_attributes=history.TimerStartedEventAttributes(
                 timer_id="t-cac"
             ),
-        )
+        ),
+        "initiated"
     )
     m.request_cancel()
     _ = m.collect_pending_decisions()
-    m.handle_completion_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=3,
             timer_fired_event_attributes=history.TimerFiredEventAttributes(
                 timer_id="t-cac", started_event_id=2
             ),
-        )
+        ),
+        "completion"
     )
     assert m.status is DecisionState.COMPLETED
 
@@ -75,31 +78,28 @@ def test_timer_state_machine_complete_without_cancel():
     attrs = decision.StartTimerDecisionAttributes(timer_id="t-cwc")
     m = TimerDecisionMachine(timer_id="t-cwc", start_attributes=attrs)
     _ = m.collect_pending_decisions()
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=4,
             timer_started_event_attributes=history.TimerStartedEventAttributes(
                 timer_id="t-cwc"
             ),
-        )
+        ),
+        "initiated"
     )
-    m.handle_completion_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=5,
             timer_fired_event_attributes=history.TimerFiredEventAttributes(
                 timer_id="t-cwc", started_event_id=4
             ),
-        )
+        ),
+        "completion"
     )
     assert m.status is DecisionState.COMPLETED
 
 
-@pytest.mark.unit
-@pytest.mark.skip(
-    "Invalid state transition panics are not applicable in this Python implementation"
-)
-def test_timer_state_machine_panic_invalid_state_transition():
-    pass
+
 
 
 @pytest.mark.unit
@@ -107,25 +107,27 @@ def test_timer_cancel_event_ordering():
     attrs = decision.StartTimerDecisionAttributes(timer_id="t-ord")
     m = TimerDecisionMachine(timer_id="t-ord", start_attributes=attrs)
     _ = m.collect_pending_decisions()
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=10,
             timer_started_event_attributes=history.TimerStartedEventAttributes(
                 timer_id="t-ord"
             ),
-        )
+        ),
+        "initiated"
     )
     m.request_cancel()
     d1 = m.collect_pending_decisions()
     assert len(d1) == 1 and d1[0].HasField("cancel_timer_decision_attributes")
     # Simulate cancel failed -> should retry emit
-    m.handle_cancel_failed_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=11,
             cancel_timer_failed_event_attributes=history.CancelTimerFailedEventAttributes(
                 timer_id="t-ord"
             ),
-        )
+        ),
+        "cancel_failed"
     )
     d2 = m.collect_pending_decisions()
     assert len(d2) == 1 and d2[0].HasField("cancel_timer_decision_attributes")
@@ -137,29 +139,32 @@ def test_activity_state_machine_complete_without_cancel():
     m = ActivityDecisionMachine(activity_id="act-1", schedule_attributes=attrs)
     d = m.collect_pending_decisions()
     assert len(d) == 1 and d[0].HasField("schedule_activity_task_decision_attributes")
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=20,
             activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(
                 activity_id="act-1"
             ),
-        )
+        ),
+        "initiated"
     )
-    m.handle_started_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=21,
             activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(
                 scheduled_event_id=20
             ),
-        )
+        ),
+        "started"
     )
-    m.handle_completion_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=22,
             activity_task_completed_event_attributes=history.ActivityTaskCompletedEventAttributes(
                 scheduled_event_id=20, started_event_id=21
             ),
-        )
+        ),
+        "completion"
     )
     assert m.status is DecisionState.COMPLETED
 
@@ -193,41 +198,39 @@ def test_activity_state_machine_completed_after_cancel():
     attrs = decision.ScheduleActivityTaskDecisionAttributes(activity_id="act-cac")
     m = ActivityDecisionMachine(activity_id="act-cac", schedule_attributes=attrs)
     _ = m.collect_pending_decisions()
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=30,
             activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(
                 activity_id="act-cac"
             ),
-        )
+        ),
+        "initiated"
     )
-    m.handle_started_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=31,
             activity_task_started_event_attributes=history.ActivityTaskStartedEventAttributes(
                 scheduled_event_id=30
             ),
-        )
+        ),
+        "started"
     )
     m.request_cancel()
     _ = m.collect_pending_decisions()
-    m.handle_completion_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=32,
             activity_task_completed_event_attributes=history.ActivityTaskCompletedEventAttributes(
                 scheduled_event_id=30, started_event_id=31
             ),
-        )
+        ),
+        "completion"
     )
     assert m.status is DecisionState.COMPLETED
 
 
-@pytest.mark.unit
-@pytest.mark.skip(
-    "Invalid state transition panics are not applicable in this Python implementation"
-)
-def test_activity_state_machine_panic_invalid_state_transition():
-    pass
+
 
 
 @pytest.mark.unit
@@ -240,29 +243,32 @@ def test_child_workflow_state_machine_basic():
     assert len(d) == 1 and d[0].HasField(
         "start_child_workflow_execution_decision_attributes"
     )
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=40,
             start_child_workflow_execution_initiated_event_attributes=history.StartChildWorkflowExecutionInitiatedEventAttributes(
                 domain="d1", workflow_id="wf-1"
             ),
-        )
+        ),
+        "initiated"
     )
-    m.handle_started_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=41,
             child_workflow_execution_started_event_attributes=history.ChildWorkflowExecutionStartedEventAttributes(
                 initiated_event_id=40
             ),
-        )
+        ),
+        "started"
     )
-    m.handle_completion_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=42,
             child_workflow_execution_completed_event_attributes=history.ChildWorkflowExecutionCompletedEventAttributes(
                 initiated_event_id=40
             ),
-        )
+        ),
+        "completion"
     )
     assert m.status is DecisionState.COMPLETED
 
@@ -274,34 +280,33 @@ def test_child_workflow_state_machine_cancel_succeed():
     )
     m = ChildWorkflowDecisionMachine(client_id="cw-2", start_attributes=attrs)
     _ = m.collect_pending_decisions()
-    m.handle_initiated_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=50,
             start_child_workflow_execution_initiated_event_attributes=history.StartChildWorkflowExecutionInitiatedEventAttributes(
                 domain="d2", workflow_id="wf-2"
             ),
-        )
+        ),
+        "initiated"
     )
     m.request_cancel()
     d = m.collect_pending_decisions()
     assert len(d) == 1 and d[0].HasField(
         "request_cancel_external_workflow_execution_decision_attributes"
     )
-    m.handle_canceled_event(
+    m.handle_event(
         history.HistoryEvent(
             event_id=51,
             child_workflow_execution_canceled_event_attributes=history.ChildWorkflowExecutionCanceledEventAttributes(
                 initiated_event_id=50
             ),
-        )
+        ),
+        "canceled"
     )
-    assert m.status is DecisionState.CANCELED
+    assert m.status is DecisionState.CANCELED_AFTER_INITIATED
 
 
-@pytest.mark.unit
-@pytest.mark.skip("Invalid state checks from Go are not applicable here")
-def test_child_workflow_state_machine_invalid_states():
-    pass
+
 
 
 @pytest.mark.unit

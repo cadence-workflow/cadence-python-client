@@ -23,7 +23,7 @@ def example_workflow_execution():
     wf_exec.workflow_id = "my-workflow-123"
     wf_exec.run_id = "run-456"
     
-    print(f"Created workflow execution:")
+    print("Created workflow execution:")
     print(f"  - Workflow ID: {wf_exec.workflow_id}")
     print(f"  - Run ID: {wf_exec.run_id}")
     
@@ -34,7 +34,7 @@ def example_workflow_execution():
     wf_info.start_time.seconds = 1234567890
     wf_info.close_time.seconds = 1234567990
     
-    print(f"Created workflow execution info:")
+    print("Created workflow execution info:")
     print(f"  - Type: {wf_info.type.name}")
     print(f"  - Start Time: {wf_info.start_time.seconds}")
     print(f"  - Close Time: {wf_info.close_time.seconds}")
@@ -54,7 +54,7 @@ def example_domain_operations():
     domain_obj.status = domain.DOMAIN_STATUS_REGISTERED
     domain_obj.description = "My test domain"
     
-    print(f"Created domain:")
+    print("Created domain:")
     print(f"  - Name: {domain_obj.name}")
     print(f"  - Status: {domain_obj.status}")
     print(f"  - Description: {domain_obj.description}")
@@ -94,7 +94,7 @@ def example_serialization():
     """Example of serializing and deserializing protobuf objects."""
     print("\n=== Serialization Example ===")
     
-    from cadence.api.v1 import common, workflow
+    from cadence.api.v1 import common
     
     # Create a workflow execution
     wf_exec = common.WorkflowExecution()
@@ -109,7 +109,7 @@ def example_serialization():
     new_wf_exec = common.WorkflowExecution()
     new_wf_exec.ParseFromString(serialized)
     
-    print(f"Deserialized workflow execution:")
+    print("Deserialized workflow execution:")
     print(f"  - Workflow ID: {new_wf_exec.workflow_id}")
     print(f"  - Run ID: {new_wf_exec.run_id}")
     

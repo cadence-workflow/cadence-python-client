@@ -14,7 +14,7 @@ def run_command(cmd, description):
     """Run a command and handle errors."""
     print(f"Running: {description}")
     try:
-        result = subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, shell=True, check=True)
         print(f"✓ {description} completed successfully")
         return True
     except subprocess.CalledProcessError as e:
@@ -50,12 +50,12 @@ def lint():
         ("uv run flake8 .", "Running flake8 linting"),
         ("uv run mypy .", "Running mypy type checking"),
     ]
-    
+
     success = True
     for cmd, desc in commands:
         if not run_command(cmd, desc):
             success = False
-    
+
     return success
 
 
@@ -65,12 +65,12 @@ def format():
         ("uv run black .", "Formatting code with black"),
         ("uv run isort .", "Sorting imports with isort"),
     ]
-    
+
     success = True
     for cmd, desc in commands:
         if not run_command(cmd, desc):
             success = False
-    
+
     return success
 
 
@@ -85,22 +85,17 @@ def clean():
         "htmlcov/",
         ".mypy_cache/",
     ]
-    
-    files_to_remove = [
-        "*.pyc",
-        "__pycache__",
-    ]
-    
+
     print("Cleaning build artifacts...")
-    
+
     # Remove directories
     for dir_pattern in dirs_to_remove:
         run_command(f"rm -rf {dir_pattern}", f"Removing {dir_pattern}")
-    
+
     # Remove Python cache files
     run_command("find . -type d -name __pycache__ -delete", "Removing __pycache__ directories")
     run_command("find . -type f -name '*.pyc' -delete", "Removing .pyc files")
-    
+
     print("✓ Clean completed")
 
 
@@ -135,12 +130,12 @@ def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="Development script for Cadence Python client")
     parser.add_argument("command", choices=[
-        "install", "install-dev", "test", "test-cov", "lint", "format", 
+        "install", "install-dev", "test", "test-cov", "lint", "format",
         "clean", "build", "protobuf", "docs", "check"
     ], help="Command to run")
-    
+
     args = parser.parse_args()
-    
+
     # Map commands to functions
     commands = {
         "install": install,
@@ -155,13 +150,13 @@ def main():
         "docs": docs,
         "check": check,
     }
-    
+
     # Run the command
     success = commands[args.command]()
-    
+
     if not success:
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Dict, List, Optional, Sequence, Callable, Any, Tuple
+from enum import Enum
+from typing import Dict, List, Optional, Callable
 
 from cadence.api.v1 import (
     decision_pb2 as decision,

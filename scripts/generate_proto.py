@@ -428,12 +428,7 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
                 f"--proto_path={temp_proto_dir}",
             ]
 
-            # Add brew protobuf include path if available
-            if brew_include:
-                grpc_cmd.append(f"--proto_path={brew_include}")
-            else:
-                # Fallback to local include directory
-                grpc_cmd.append(f"--proto_path={project_root}/include")
+            grpc_cmd.append(f"--proto_path={project_root}/include")
 
             grpc_cmd.append(str(proto_file))
 
@@ -452,12 +447,7 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
                 f"--proto_path={temp_proto_dir}",
             ]
 
-            # Add brew protobuf include path if available
-            if brew_include:
-                grpc_cmd.append(f"--proto_path={brew_include}")
-            else:
-                # Fallback to local include directory
-                grpc_cmd.append(f"--proto_path={project_root}/include")
+            grpc_cmd.append(f"--proto_path={project_root}/include")
 
             grpc_cmd.append(str(proto_file))
 

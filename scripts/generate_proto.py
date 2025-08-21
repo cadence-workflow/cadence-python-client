@@ -117,6 +117,15 @@ def download_protoc_29_1(project_root: Path) -> str:
             shutil.copy2(source_protoc, protoc_bin)
             protoc_bin.chmod(0o755)  # Make executable
 
+            # Also copy the include directory with Google protobuf standard library files
+            source_include = unzip_dir / "include"
+            if source_include.exists():
+                target_include = project_root / ".bin" / "include"
+                if target_include.exists():
+                    shutil.rmtree(target_include)
+                shutil.copytree(source_include, target_include)
+                print(f"✓ Copied protobuf include files to {target_include}")
+
             # Clean up
             shutil.rmtree(unzip_dir)
             zip_path.unlink()
@@ -231,59 +240,82 @@ def generate_init_file(output_dir: Path) -> None:
     print(f"  ✓ Generated {init_file} with {len(pb2_files)} modules")
 
 
-def find_brew_protobuf_include(project_root: Path) -> str:
-    """Find the protobuf include directory, preferring downloaded protoc 29.1, then brew installations."""
+def find_protobuf_include(project_root: Path) -> str:
+    """Find the protobuf include directory, preferring downloaded protoc 29.1, then system installations."""
     # First, check if we have downloaded protoc 29.1 and use its include directory
-    protoc_29_1_bin = project_root / "bin" / "protoc-29.1"
+    protoc_29_1_bin = project_root / ".bin" / "protoc-29.1"
     if protoc_29_1_bin.exists():
         # The downloaded protoc includes the well-known types in the zip
-        # We'll use the local include directory as fallback
+        # Check for the include directory in .bin first
+        bin_include = project_root / ".bin" / "include"
+        if bin_include.exists():
+            print(f"Using .bin protobuf include directory: {bin_include}")
+            return str(bin_include)
+
+        # Fallback to local include directory
         local_include = project_root / "include"
         if local_include.exists():
             print(f"Using local include directory: {local_include}")
             return str(local_include)
 
-    try:
-        # Try to find main brew protobuf installation (version 29.3)
-        result = subprocess.run(["brew", "--prefix", "protobuf"],
-                              capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            brew_prefix = result.stdout.strip()
-            include_path = f"{brew_prefix}/include"
-            if os.path.exists(include_path):
-                print(f"Using main protobuf include: {include_path}")
-                return include_path
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    # Check if we're on macOS (using brew)
+    if platform.system().lower() == 'darwin':
+        try:
+            # Try to find main brew protobuf installation (version 29.3)
+            result = subprocess.run(["brew", "--prefix", "protobuf"],
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                brew_prefix = result.stdout.strip()
+                include_path = f"{brew_prefix}/include"
+                if os.path.exists(include_path):
+                    print(f"Using main protobuf include: {include_path}")
+                    return include_path
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
 
-    # Check protobuf@29 second (version 29.4)
-    protobuf_29_include = "/opt/homebrew/opt/protobuf@29/include"
-    if os.path.exists(protobuf_29_include):
-        print(f"Using protobuf@29 include: {protobuf_29_include}")
-        return protobuf_29_include
+        # Check protobuf@29 second (version 29.4)
+        protobuf_29_include = "/opt/homebrew/opt/protobuf@29/include"
+        if os.path.exists(protobuf_29_include):
+            print(f"Using protobuf@29 include: {protobuf_29_include}")
+            return protobuf_29_include
 
-    # Fallback to common brew location
-    common_paths = [
-        "/opt/homebrew/include",
-        "/usr/local/include",
-        "/opt/homebrew/Cellar/protobuf/*/include"
-    ]
+        # Fallback to common brew location
+        common_paths = [
+            "/opt/homebrew/include",
+            "/usr/local/include",
+            "/opt/homebrew/Cellar/protobuf/*/include"
+        ]
 
-    for path_pattern in common_paths:
-        if "*" in path_pattern:
-            # Handle wildcard pattern
-            import glob
-            matches = glob.glob(path_pattern)
-            if matches:
-                # Use the latest version
-                latest = sorted(matches)[-1]
-                if os.path.exists(latest):
-                    print(f"Using brew protobuf include: {latest}")
-                    return latest
-        else:
-            if os.path.exists(path_pattern):
-                print(f"Using brew protobuf include: {path_pattern}")
-                return path_pattern
+        for path_pattern in common_paths:
+            if "*" in path_pattern:
+                # Handle wildcard pattern
+                import glob
+                matches = glob.glob(path_pattern)
+                if matches:
+                    # Use the latest version
+                    latest = sorted(matches)[-1]
+                    if os.path.exists(latest):
+                        print(f"Using brew protobuf include: {latest}")
+                        return latest
+            else:
+                if os.path.exists(path_pattern):
+                    print(f"Using brew protobuf include: {path_pattern}")
+                    return path_pattern
+
+    # Linux paths
+    elif platform.system().lower() == 'linux':
+        # Common Linux protobuf include paths
+        linux_paths = [
+            "/usr/include",
+            "/usr/local/include",
+            "/opt/protobuf/include",
+            "/usr/share/protobuf/include"
+        ]
+
+        for path in linux_paths:
+            if os.path.exists(path):
+                print(f"Using Linux protobuf include: {path}")
+                return path
 
     return None
 
@@ -362,8 +394,8 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
         else:
             print("Warning: grpc_python_plugin not found, skipping gRPC code generation")
 
-    # Find brew protobuf include directory
-    brew_include = find_brew_protobuf_include(project_root)
+    # Find protobuf include directory
+    brew_include = find_protobuf_include(project_root)
 
     # Generate Python files for each proto file
     for proto_file in proto_files:

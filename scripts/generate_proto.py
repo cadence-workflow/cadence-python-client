@@ -234,7 +234,7 @@ def generate_init_file(output_dir: Path) -> None:
 def find_brew_protobuf_include(project_root: Path) -> str:
     """Find the protobuf include directory, preferring downloaded protoc 29.1, then brew installations."""
     # First, check if we have downloaded protoc 29.1 and use its include directory
-    protoc_29_1_bin = project_root / "bin" / "protoc-29.1"
+    protoc_29_1_bin = project_root / ".bin" / "protoc-29.1"
     if protoc_29_1_bin.exists():
         # The downloaded protoc includes the well-known types in the zip
         # We'll use the local include directory as fallback

@@ -394,9 +394,6 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
         else:
             print("Warning: grpc_python_plugin not found, skipping gRPC code generation")
 
-    # Find protobuf include directory
-    brew_include = find_protobuf_include(project_root)
-
     # Generate Python files for each proto file
     for proto_file in proto_files:
         # Get relative path from temp proto directory
@@ -410,12 +407,7 @@ def generate_protobuf_files(temp_proto_dir: Path, output_dir: Path, project_root
             f"--proto_path={temp_proto_dir}",
         ]
 
-        # Add brew protobuf include path if available
-        if brew_include:
-            cmd.append(f"--proto_path={brew_include}")
-        else:
-            # Fallback to local include directory
-            cmd.append(f"--proto_path={project_root}/include")
+        cmd.append(f"--proto_path={project_root}/include")
 
         cmd.append(str(proto_file))
 

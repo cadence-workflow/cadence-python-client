@@ -1,0 +1,36 @@
+name: CI Checks
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+      - name: Install dependencies
+        run: |
+          uv sync
+      - name: Ensure Proto Files changes are committed
+        run: |
+          uv run python scripts/generate_proto.py
+          if [ -n "$(git status --porcelain  2>&1)" ]; then
+            echo "There are file changes after generating proto files."
+            echo "Please run this command and commit the changes:"
+            echo "\tuv run python scripts/generate_proto.py"
+            git status --porcelain
+            git --no-pager diff
+            exit 1
+          fi
+      - name: Run Ruff linter
+        run: |
+          uv tool run ruff check

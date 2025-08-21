@@ -156,4 +156,9 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "class .*\\bProtocol\\):",
     "@(abc.)?abstractmethod",
-] 
+]
+
+[tool.ruff]
+exclude = [
+    "cadence/api", # generated proto files
+]

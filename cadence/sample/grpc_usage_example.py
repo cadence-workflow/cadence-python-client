@@ -5,8 +5,7 @@ This example shows how to create a gRPC client and make calls to Cadence workflo
 """
 
 import grpc
-from google.protobuf import duration_pb2
-from cadence.api.v1 import service_workflow_grpc, service_workflow, workflow, common, tasklist
+from cadence.api.v1 import service_workflow_grpc, service_workflow, common
 
 
 def create_grpc_channel(server_address: str = "localhost:7833", use_ssl: bool = False) -> grpc.Channel:

@@ -29,6 +29,7 @@ dependencies = [
     "grpcio>=1.50.0",
     "grpcio-tools>=1.50.0",
     "protobuf==5.29.1",
+    "pytest>=8.4.1",
     "typing-extensions>=4.0.0",
 ]
 

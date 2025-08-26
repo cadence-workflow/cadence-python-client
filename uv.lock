@@ -155,6 +155,7 @@ dependencies = [
     { name = "grpcio" },
     { name = "grpcio-tools" },
     { name = "protobuf" },
+    { name = "pytest" },
     { name = "typing-extensions" },
 ]
 
@@ -191,6 +192,7 @@ requires-dist = [
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=1.0.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.0.0" },
     { name = "protobuf", specifier = "==5.29.1" },
+    { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirna
 
 from cadence.worker._registry import (
     Registry, new_registry, registry,
-    RegistryError, WorkflowNotFoundError, ActivityNotFoundError, DuplicateRegistrationError
+    WorkflowNotFoundError, ActivityNotFoundError, DuplicateRegistrationError
 )
 
 

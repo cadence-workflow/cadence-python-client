@@ -19,7 +19,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
       - name: Install dependencies
         run: |
-          uv sync
+          uv sync --extra dev
       - name: Ensure Proto Files changes are committed
         run: |
           uv run python scripts/generate_proto.py
@@ -34,3 +34,23 @@ jobs:
       - name: Run Ruff linter
         run: |
           uv tool run ruff check
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+      - name: Run unit tests
+        run: |
+          uv run python -m pytest tests/ -v

@@ -8,6 +8,7 @@ similar to the Go client's registry.go implementation.
 
 import logging
 from typing import Callable, Dict, Optional, Unpack, TypedDict
+from cadence._internal.type_utils import validate_fn_parameters
 
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,7 @@ class Registry:
         options = RegisterActivityOptions(**kwargs)
         
         def decorator(f: Callable) -> Callable:
+            validate_fn_parameters(f)
             activity_name = options.get('name') or f.__name__
             
             if activity_name in self._activities:

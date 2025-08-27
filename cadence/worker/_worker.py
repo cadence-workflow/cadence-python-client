@@ -3,6 +3,7 @@ import uuid
 from typing import Unpack, cast
 
 from cadence.client import Client
+from cadence.worker._registry import Registry
 from cadence.worker._activity import ActivityWorker
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
@@ -10,14 +11,14 @@ from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
 
 class Worker:
 
-    def __init__(self, client: Client, task_list: str, **kwargs: Unpack[WorkerOptions]) -> None:
+    def __init__(self, client: Client, task_list: str, registry: Registry, **kwargs: Unpack[WorkerOptions]) -> None:
         self._client = client
         self._task_list = task_list
 
         options = WorkerOptions(**kwargs)
         _validate_and_copy_defaults(client, task_list, options)
         self._options = options
-        self._activity_worker = ActivityWorker(client, task_list, options)
+        self._activity_worker = ActivityWorker(client, task_list, registry, options)
         self._decision_worker = DecisionWorker(client, task_list, options)
 
 

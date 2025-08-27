@@ -7,25 +7,22 @@ similar to the Go client's registry.go implementation.
 """
 
 import logging
-from typing import Callable, Dict, Optional
-from dataclasses import dataclass
+from typing import Callable, Dict, Optional, Unpack, TypedDict
 
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class RegisterWorkflowOptions:
+class RegisterWorkflowOptions(TypedDict, total=False):
     """Options for registering a workflow."""
-    name: Optional[str] = None
-    alias: Optional[str] = None
+    name: Optional[str]
+    alias: Optional[str]
 
 
-@dataclass
-class RegisterActivityOptions:
+class RegisterActivityOptions(TypedDict, total=False):
     """Options for registering an activity."""
-    name: Optional[str] = None
-    alias: Optional[str] = None
+    name: Optional[str]
+    alias: Optional[str]
 
 
 class Registry:
@@ -46,7 +43,7 @@ class Registry:
     def workflow(
         self,
         func: Optional[Callable] = None,
-        **kwargs: RegisterWorkflowOptions
+        **kwargs: Unpack[RegisterWorkflowOptions]
     ) -> Callable:
         """
         Register a workflow function.
@@ -66,7 +63,7 @@ class Registry:
         options = RegisterWorkflowOptions(**kwargs)
         
         def decorator(f: Callable) -> Callable:
-            workflow_name = options.name or f.__name__
+            workflow_name = options.get('name') or f.__name__
             
             if workflow_name in self._workflows:
                 raise KeyError(f"Workflow '{workflow_name}' is already registered")
@@ -74,10 +71,11 @@ class Registry:
             self._workflows[workflow_name] = f
             
             # Register alias if provided
-            if options.alias:
-                if options.alias in self._workflow_aliases:
-                    raise KeyError(f"Workflow alias '{options.alias}' is already registered")
-                self._workflow_aliases[options.alias] = workflow_name
+            alias = options.get('alias')
+            if alias:
+                if alias in self._workflow_aliases:
+                    raise KeyError(f"Workflow alias '{alias}' is already registered")
+                self._workflow_aliases[alias] = workflow_name
             
             logger.info(f"Registered workflow '{workflow_name}'")
             return f
@@ -89,7 +87,7 @@ class Registry:
     def activity(
         self,
         func: Optional[Callable] = None,
-        **kwargs: RegisterActivityOptions
+        **kwargs: Unpack[RegisterActivityOptions]
     ) -> Callable:
         """
         Register an activity function.
@@ -109,7 +107,7 @@ class Registry:
         options = RegisterActivityOptions(**kwargs)
         
         def decorator(f: Callable) -> Callable:
-            activity_name = options.name or f.__name__
+            activity_name = options.get('name') or f.__name__
             
             if activity_name in self._activities:
                 raise KeyError(f"Activity '{activity_name}' is already registered")
@@ -117,10 +115,11 @@ class Registry:
             self._activities[activity_name] = f
             
             # Register alias if provided
-            if options.alias:
-                if options.alias in self._activity_aliases:
-                    raise KeyError(f"Activity alias '{options.alias}' is already registered")
-                self._activity_aliases[options.alias] = activity_name
+            alias = options.get('alias')
+            if alias:
+                if alias in self._activity_aliases:
+                    raise KeyError(f"Activity alias '{alias}' is already registered")
+                self._activity_aliases[alias] = activity_name
             
             logger.info(f"Registered activity '{activity_name}'")
             return f

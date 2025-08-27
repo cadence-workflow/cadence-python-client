@@ -170,7 +170,7 @@ class TestRegistry:
         if registration_type == "workflow":
             options = RegisterWorkflowOptions(name="custom_name", alias="custom_alias")
             
-            @reg.workflow(**options.__dict__)
+            @reg.workflow(**options)
             def test_func():
                 return "test"
             
@@ -179,7 +179,7 @@ class TestRegistry:
         else:
             options = RegisterActivityOptions(name="custom_name", alias="custom_alias")
             
-            @reg.activity(**options.__dict__)
+            @reg.activity(**options)
             def test_func():
                 return "test"
             

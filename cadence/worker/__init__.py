@@ -5,7 +5,16 @@ from ._worker import (
     WorkerOptions
 )
 
+from ._registry import (
+    Registry,
+    RegisterWorkflowOptions,
+    RegisterActivityOptions,
+)
+
 __all__ = [
     "Worker",
-    "WorkerOptions"
+    "WorkerOptions",
+    'Registry',
+    'RegisterWorkflowOptions',
+    'RegisterActivityOptions',
 ]

@@ -22,136 +22,184 @@ class TestRegistry:
         assert len(reg._workflows) == 0
         assert len(reg._activities) == 0
     
-    def test_register_and_retrieve_workflow(self):
-        """Test registering and retrieving workflows."""
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_basic_registration_and_retrieval(self, registration_type):
+        """Test basic registration and retrieval for both workflows and activities."""
         reg = Registry()
         
-        @reg.workflow
-        def test_workflow():
-            return "test"
+        if registration_type == "workflow":
+            @reg.workflow
+            def test_func():
+                return "test"
+            
+            assert "test_func" in reg._workflows
+            func = reg.get_workflow("test_func")
+        else:
+            @reg.activity
+            def test_func():
+                return "test"
+            
+            assert "test_func" in reg._activities
+            func = reg.get_activity("test_func")
         
-        assert "test_workflow" in reg._workflows
-        wf = reg.get_workflow("test_workflow")
-        assert wf() == "test"
+        assert func() == "test"
     
-    def test_register_and_retrieve_activity(self):
-        """Test registering and retrieving activities."""
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_direct_call_behavior(self, registration_type):
+        """Test direct function call behavior for both workflows and activities."""
         reg = Registry()
         
-        @reg.activity
-        def test_activity():
-            return "test"
+        def test_func():
+            return "direct_call"
         
-        assert "test_activity" in reg._activities
-        act = reg.get_activity("test_activity")
-        assert act() == "test"
+        if registration_type == "workflow":
+            # Direct call behavior - should register and return the function
+            registered_func = reg.workflow(test_func)
+            assert "test_func" in reg._workflows
+            func = reg.get_workflow("test_func")
+        else:
+            # Direct call behavior - should register and return the function
+            registered_func = reg.activity(test_func)
+            assert "test_func" in reg._activities
+            func = reg.get_activity("test_func")
+        
+        # Should be the same function
+        assert registered_func == test_func
+        assert func() == "direct_call"
     
-    def test_workflow_registration(self):
-        """Test workflow registration."""
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_decorator_with_options(self, registration_type):
+        """Test decorator with options for both workflows and activities."""
         reg = Registry()
         
-        @reg.workflow
-        def global_workflow():
-            return "global"
+        if registration_type == "workflow":
+            @reg.workflow(name="custom_name", alias="custom_alias")
+            def test_func():
+                return "decorator_with_options"
+            
+            assert "custom_name" in reg._workflows
+            assert "custom_alias" in reg._workflow_aliases
+            func = reg.get_workflow("custom_name")
+        else:
+            @reg.activity(name="custom_name", alias="custom_alias")
+            def test_func():
+                return "decorator_with_options"
+            
+            assert "custom_name" in reg._activities
+            assert "custom_alias" in reg._activity_aliases
+            func = reg.get_activity("custom_name")
         
-        assert "global_workflow" in reg._workflows
-        wf = reg.get_workflow("global_workflow")
-        assert wf() == "global"
+        assert func() == "decorator_with_options"
     
-    def test_activity_registration(self):
-        """Test activity registration."""
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_direct_call_with_options(self, registration_type):
+        """Test direct call with options for both workflows and activities."""
         reg = Registry()
         
-        @reg.activity
-        def global_activity():
-            return "global"
+        def test_func():
+            return "direct_call_with_options"
         
-        assert "global_activity" in reg._activities
-        act = reg.get_activity("global_activity")
-        assert act() == "global"
+        if registration_type == "workflow":
+            # Direct call with options
+            registered_func = reg.workflow(test_func, name="custom_name", alias="custom_alias")
+            assert "custom_name" in reg._workflows
+            assert "custom_alias" in reg._workflow_aliases
+            func = reg.get_workflow("custom_name")
+        else:
+            # Direct call with options
+            registered_func = reg.activity(test_func, name="custom_name", alias="custom_alias")
+            assert "custom_name" in reg._activities
+            assert "custom_alias" in reg._activity_aliases
+            func = reg.get_activity("custom_name")
+        
+        assert registered_func == test_func
+        assert func() == "direct_call_with_options"
     
-
-    
-    def test_workflow_not_found_error(self):
-        """Test KeyError is raised when workflow not found."""
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_not_found_error(self, registration_type):
+        """Test KeyError is raised when function not found."""
         reg = Registry()
         
-        with pytest.raises(KeyError):
-            reg.get_workflow("nonexistent")
+        if registration_type == "workflow":
+            with pytest.raises(KeyError):
+                reg.get_workflow("nonexistent")
+        else:
+            with pytest.raises(KeyError):
+                reg.get_activity("nonexistent")
     
-    def test_activity_not_found_error(self):
-        """Test KeyError is raised when activity not found."""
-        reg = Registry()
-        
-        with pytest.raises(KeyError):
-            reg.get_activity("nonexistent")
-    
-    def test_duplicate_registration_error(self):
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_duplicate_registration_error(self, registration_type):
         """Test KeyError is raised for duplicate registrations."""
         reg = Registry()
         
-        @reg.workflow
-        def test_workflow():
-            return "test"
-        
-        with pytest.raises(KeyError):
+        if registration_type == "workflow":
             @reg.workflow
-            def test_workflow():
-                return "duplicate"
+            def test_func():
+                return "test"
+            
+            with pytest.raises(KeyError):
+                @reg.workflow
+                def test_func():
+                    return "duplicate"
+        else:
+            @reg.activity
+            def test_func():
+                return "test"
+            
+            with pytest.raises(KeyError):
+                @reg.activity
+                def test_func():
+                    return "duplicate"
     
-    def test_workflow_alias(self):
-        """Test workflow alias functionality."""
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_alias_functionality(self, registration_type):
+        """Test alias functionality for both workflows and activities."""
         reg = Registry()
         
-        @reg.workflow(name="custom_name")
-        def test_workflow():
-            return "test"
+        if registration_type == "workflow":
+            @reg.workflow(name="custom_name")
+            def test_func():
+                return "test"
+            
+            assert "custom_name" in reg._workflows
+            func = reg.get_workflow("custom_name")
+        else:
+            @reg.activity(alias="custom_alias")
+            def test_func():
+                return "test"
+            
+            assert "custom_alias" in reg._activity_aliases
+            func = reg.get_activity("custom_alias")
         
-        assert "custom_name" in reg._workflows
-        wf = reg.get_workflow("custom_name")
-        assert wf() == "test"
+        assert func() == "test"
     
-    def test_activity_alias(self):
-        """Test activity alias functionality."""
+    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
+    def test_options_class(self, registration_type):
+        """Test using options classes for both workflows and activities."""
         reg = Registry()
         
-        @reg.activity(alias="custom_alias")
-        def test_activity():
-            return "test"
+        if registration_type == "workflow":
+            options = RegisterWorkflowOptions(name="custom_name", alias="custom_alias")
+            
+            @reg.workflow(**options.__dict__)
+            def test_func():
+                return "test"
+            
+            assert "custom_name" in reg._workflows
+            assert "custom_alias" in reg._workflow_aliases
+            func = reg.get_workflow("custom_name")
+        else:
+            options = RegisterActivityOptions(name="custom_name", alias="custom_alias")
+            
+            @reg.activity(**options.__dict__)
+            def test_func():
+                return "test"
+            
+            assert "custom_name" in reg._activities
+            assert "custom_alias" in reg._activity_aliases
+            func = reg.get_activity("custom_name")
         
-        assert "custom_alias" in reg._activity_aliases
-        act = reg.get_activity("custom_alias")
-        assert act() == "test"
-    
-    def test_workflow_options_class(self):
-        """Test using RegisterWorkflowOptions class."""
-        reg = Registry()
-        
-        options = RegisterWorkflowOptions(name="custom_name", alias="custom_alias")
-        
-        @reg.workflow(**options.__dict__)
-        def test_workflow():
-            return "test"
-        
-        assert "custom_name" in reg._workflows
-        assert "custom_alias" in reg._workflow_aliases
-        wf = reg.get_workflow("custom_name")
-        assert wf() == "test"
-    
-    def test_activity_options_class(self):
-        """Test using RegisterActivityOptions class."""
-        reg = Registry()
-        
-        options = RegisterActivityOptions(name="custom_name", alias="custom_alias")
-        
-        @reg.activity(**options.__dict__)
-        def test_activity():
-            return "test"
-        
-        assert "custom_name" in reg._activities
-        assert "custom_alias" in reg._activity_aliases
-        act = reg.get_activity("custom_name")
-        assert act() == "test"
+        assert func() == "test"
 
 
 if __name__ == "__main__":

@@ -35,6 +35,26 @@ jobs:
         run: |
           uv tool run ruff check
 
+  type-check:
+    name: Type Safety Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+      - name: Run mypy type checker
+        run: |
+          uv tool run mypy cadence/
+
   test:
     name: Unit Tests
     runs-on: ubuntu-latest

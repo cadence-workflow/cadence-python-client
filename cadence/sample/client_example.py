@@ -4,7 +4,7 @@ from grpc.aio import insecure_channel, Metadata
 
 from cadence.client import Client, ClientOptions
 from cadence._internal.rpc.metadata import MetadataInterceptor
-from cadence.worker import Worker
+from cadence.worker import Worker, Registry
 
 
 async def main():
@@ -15,7 +15,7 @@ async def main():
     metadata["rpc-caller"] = "nate"
     async with insecure_channel("localhost:7833", interceptors=[MetadataInterceptor(metadata)]) as channel:
         client = Client(channel, ClientOptions(domain="foo"))
-        worker = Worker(client, "task_list")
+        worker = Worker(client, "task_list", Registry())
         await worker.run()
 
 if __name__ == '__main__':

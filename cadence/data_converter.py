@@ -9,7 +9,7 @@ from msgspec import json, convert
 class DataConverter(Protocol):
 
     @abstractmethod
-    async def from_data(self, payload: Payload, type_hints: List[Type]) -> List[Any]:
+    async def from_data(self, payload: Payload, type_hints: List[Type | None]) -> List[Any]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -23,7 +23,10 @@ class DefaultDataConverter(DataConverter):
         self._fallback_decoder = JSONDecoder(strict=False)
 
 
-    async def from_data(self, payload: Payload, type_hints: List[Type]) -> List[Any]:
+    async def from_data(self, payload: Payload, type_hints: List[Type | None]) -> List[Any]:
+        if not payload.data:
+            return DefaultDataConverter._convert_into([], type_hints)
+
         if len(type_hints) > 1:
             payload_str = payload.data.decode()
             # Handle payloads from the Go client, which are a series of json objects rather than a json array
@@ -37,7 +40,7 @@ class DefaultDataConverter(DataConverter):
         return DefaultDataConverter._convert_into([as_value], type_hints)
 
 
-    def _decode_whitespace_delimited(self, payload: str, type_hints: List[Type]) -> List[Any]:
+    def _decode_whitespace_delimited(self, payload: str, type_hints: List[Type | None]) -> List[Any]:
         results: List[Any] = []
         start, end = 0, len(payload)
         while start < end and len(results) < len(type_hints):
@@ -49,10 +52,12 @@ class DefaultDataConverter(DataConverter):
         return DefaultDataConverter._convert_into(results, type_hints)
 
     @staticmethod
-    def _convert_into(values: List[Any], type_hints: List[Type]) -> List[Any]:
+    def _convert_into(values: List[Any], type_hints: List[Type | None]) -> List[Any]:
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
-            if i < len(values):
+            if not type_hint:
+                value = values[i]
+            elif i < len(values):
                 value = convert(values[i], type_hint)
             else:
                 value = DefaultDataConverter._get_default(type_hint)

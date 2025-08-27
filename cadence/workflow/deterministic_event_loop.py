@@ -1,4 +1,4 @@
-from asyncio import AbstractEventLoop, BaseEventLoop, EventLoop, futures, tasks
+from asyncio import AbstractEventLoop, futures, tasks
 from asyncio import Future
 import logging
 import collections
@@ -108,6 +108,9 @@ class DeterministicEventLoop(AbstractEventLoop):
             # task.exception().__traceback__->BaseEventLoop.create_task->task
             del task
 
+    def create_future(self):
+        return futures.Future(loop=self)
+
     def _run_once(self):
         ntodo = len(self._ready)
         for i in range(ntodo):
@@ -165,7 +168,5 @@ def _run_until_complete_cb(fut: Future):
     if not fut.cancelled():
         exc = fut.exception()
         if isinstance(exc, (SystemExit, KeyboardInterrupt)):
-            # Issue #22429: run_forever() already finished, no need to
-            # stop it.
             return
     fut.get_loop().stop()

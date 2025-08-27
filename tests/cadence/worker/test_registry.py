@@ -4,11 +4,6 @@ Tests for the registry functionality.
 """
 
 import pytest
-import sys
-import os
-
-# Add the project root to the path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from cadence.worker import Registry, RegisterWorkflowOptions, RegisterActivityOptions
 
@@ -19,8 +14,10 @@ class TestRegistry:
     def test_basic_registry_creation(self):
         """Test basic registry creation."""
         reg = Registry()
-        assert len(reg._workflows) == 0
-        assert len(reg._activities) == 0
+        with pytest.raises(KeyError):
+            reg.get_workflow("nonexistent")
+        with pytest.raises(KeyError):
+            reg.get_activity("nonexistent")
     
     @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
     def test_basic_registration_and_retrieval(self, registration_type):
@@ -32,14 +29,12 @@ class TestRegistry:
             def test_func():
                 return "test"
             
-            assert "test_func" in reg._workflows
             func = reg.get_workflow("test_func")
         else:
             @reg.activity
             def test_func():
                 return "test"
             
-            assert "test_func" in reg._activities
             func = reg.get_activity("test_func")
         
         assert func() == "test"
@@ -53,17 +48,12 @@ class TestRegistry:
             return "direct_call"
         
         if registration_type == "workflow":
-            # Direct call behavior - should register and return the function
             registered_func = reg.workflow(test_func)
-            assert "test_func" in reg._workflows
             func = reg.get_workflow("test_func")
         else:
-            # Direct call behavior - should register and return the function
             registered_func = reg.activity(test_func)
-            assert "test_func" in reg._activities
             func = reg.get_activity("test_func")
         
-        # Should be the same function
         assert registered_func == test_func
         assert func() == "direct_call"
     
@@ -77,19 +67,19 @@ class TestRegistry:
             def test_func():
                 return "decorator_with_options"
             
-            assert "custom_name" in reg._workflows
-            assert "custom_alias" in reg._workflow_aliases
             func = reg.get_workflow("custom_name")
+            func_by_alias = reg.get_workflow("custom_alias")
         else:
             @reg.activity(name="custom_name", alias="custom_alias")
             def test_func():
                 return "decorator_with_options"
             
-            assert "custom_name" in reg._activities
-            assert "custom_alias" in reg._activity_aliases
             func = reg.get_activity("custom_name")
+            func_by_alias = reg.get_activity("custom_alias")
         
         assert func() == "decorator_with_options"
+        assert func_by_alias() == "decorator_with_options"
+        assert func == func_by_alias
     
     @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
     def test_direct_call_with_options(self, registration_type):
@@ -100,20 +90,18 @@ class TestRegistry:
             return "direct_call_with_options"
         
         if registration_type == "workflow":
-            # Direct call with options
             registered_func = reg.workflow(test_func, name="custom_name", alias="custom_alias")
-            assert "custom_name" in reg._workflows
-            assert "custom_alias" in reg._workflow_aliases
             func = reg.get_workflow("custom_name")
+            func_by_alias = reg.get_workflow("custom_alias")
         else:
-            # Direct call with options
             registered_func = reg.activity(test_func, name="custom_name", alias="custom_alias")
-            assert "custom_name" in reg._activities
-            assert "custom_alias" in reg._activity_aliases
             func = reg.get_activity("custom_name")
+            func_by_alias = reg.get_activity("custom_name")
         
         assert registered_func == test_func
         assert func() == "direct_call_with_options"
+        assert func_by_alias() == "direct_call_with_options"
+        assert func == func_by_alias
     
     @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
     def test_not_found_error(self, registration_type):
@@ -161,15 +149,16 @@ class TestRegistry:
             def test_func():
                 return "test"
             
-            assert "custom_name" in reg._workflows
             func = reg.get_workflow("custom_name")
         else:
             @reg.activity(alias="custom_alias")
             def test_func():
                 return "test"
             
-            assert "custom_alias" in reg._activity_aliases
             func = reg.get_activity("custom_alias")
+            func_by_name = reg.get_activity("test_func")
+            assert func_by_name() == "test"
+            assert func == func_by_name
         
         assert func() == "test"
     
@@ -185,9 +174,8 @@ class TestRegistry:
             def test_func():
                 return "test"
             
-            assert "custom_name" in reg._workflows
-            assert "custom_alias" in reg._workflow_aliases
             func = reg.get_workflow("custom_name")
+            func_by_alias = reg.get_workflow("custom_alias")
         else:
             options = RegisterActivityOptions(name="custom_name", alias="custom_alias")
             
@@ -195,12 +183,9 @@ class TestRegistry:
             def test_func():
                 return "test"
             
-            assert "custom_name" in reg._activities
-            assert "custom_alias" in reg._activity_aliases
             func = reg.get_activity("custom_name")
+            func_by_alias = reg.get_activity("custom_alias")
         
         assert func() == "test"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
+        assert func_by_alias() == "test"
+        assert func == func_by_alias

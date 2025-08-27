@@ -46,7 +46,7 @@ class Registry:
     def workflow(
         self,
         func: Optional[Callable] = None,
-        **kwargs
+        **kwargs: RegisterWorkflowOptions
     ) -> Callable:
         """
         Register a workflow function.
@@ -89,7 +89,7 @@ class Registry:
     def activity(
         self,
         func: Optional[Callable] = None,
-        **kwargs
+        **kwargs: RegisterActivityOptions
     ) -> Callable:
         """
         Register an activity function.

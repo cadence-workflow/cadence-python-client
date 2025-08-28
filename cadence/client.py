@@ -11,7 +11,7 @@ class ClientOptions(TypedDict, total=False):
     identity: str
 
 class Client:
-    def __init__(self, channel: Channel, options: ClientOptions):
+    def __init__(self, channel: Channel, options: ClientOptions) -> None:
         self._channel = channel
         self._worker_stub = WorkerAPIStub(channel)
         self._options = options
@@ -31,7 +31,7 @@ class Client:
         return self._worker_stub
 
 
-    async def close(self):
+    async def close(self) -> None:
         await self._channel.close()
 
 

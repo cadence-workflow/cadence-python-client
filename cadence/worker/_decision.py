@@ -12,7 +12,7 @@ from cadence.worker._types import WorkerOptions, _LONG_POLL_TIMEOUT
 
 
 class DecisionWorker:
-    def __init__(self, client: Client, task_list: str, options: WorkerOptions):
+    def __init__(self, client: Client, task_list: str, options: WorkerOptions) -> None:
         self._client = client
         self._task_list = task_list
         self._identity = options["identity"]
@@ -20,7 +20,7 @@ class DecisionWorker:
         self._poller = Poller[PollForDecisionTaskResponse](options["decision_task_pollers"], permits, self._poll, self._execute)
         # TODO: Sticky poller, actually running workflows, etc.
 
-    async def run(self):
+    async def run(self) -> None:
         await self._poller.run()
 
     async def _poll(self) -> Optional[PollForDecisionTaskResponse]:
@@ -36,7 +36,7 @@ class DecisionWorker:
             return None
 
 
-    async def _execute(self, task: PollForDecisionTaskResponse):
+    async def _execute(self, task: PollForDecisionTaskResponse) -> None:
         await self._client.worker_stub.RespondDecisionTaskFailed(RespondDecisionTaskFailedRequest(
             task_token=task.task_token,
             cause=DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION,

@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, Type
+from typing import Any, Type, Optional
 
 import pytest
 
@@ -8,10 +8,10 @@ from cadence.data_converter import DefaultDataConverter
 from msgspec import json
 
 @dataclasses.dataclass
-class TestDataClass:
+class _TestDataClass:
     foo: str = "foo"
     bar: int = -1
-    baz: 'TestDataClass' = None
+    baz: Optional['_TestDataClass'] = None
 
 @pytest.mark.parametrize(
     "json,types,expected",
@@ -35,7 +35,7 @@ class TestDataClass:
             "[true]", [bool, bool], [True, False], id="bools"
         ),
         pytest.param(
-            '[{"foo": "hello world", "bar": 42, "baz": {"bar": 43}}]', [TestDataClass, TestDataClass], [TestDataClass("hello world", 42, TestDataClass(bar=43)), None], id="data classes"
+            '[{"foo": "hello world", "bar": 42, "baz": {"bar": 43}}]', [_TestDataClass, _TestDataClass], [_TestDataClass("hello world", 42, _TestDataClass(bar=43)), None], id="data classes"
         ),
         pytest.param(
             '[{"foo": "hello world"}]', [dict, dict], [{"foo": "hello world"}, None], id="dicts"
@@ -53,17 +53,17 @@ class TestDataClass:
             '["hello", "world"]', [list[str]], [["hello", "world"]], id="list"
         ),
         pytest.param(
-            '{"foo": "bar"} {"bar": 100} ["hello"] "world"', [TestDataClass, TestDataClass, list[str], str],
-            [TestDataClass(foo="bar"), TestDataClass(bar=100), ["hello"], "world"], id="space delimited mix"
+            '{"foo": "bar"} {"bar": 100} ["hello"] "world"', [_TestDataClass, _TestDataClass, list[str], str],
+            [_TestDataClass(foo="bar"), _TestDataClass(bar=100), ["hello"], "world"], id="space delimited mix"
         ),
         pytest.param(
-            '[{"foo": "bar"},{"bar": 100},["hello"],"world"]', [TestDataClass, TestDataClass, list[str], str],
-            [TestDataClass(foo="bar"), TestDataClass(bar=100), ["hello"], "world"], id="json array mix"
+            '[{"foo": "bar"},{"bar": 100},["hello"],"world"]', [_TestDataClass, _TestDataClass, list[str], str],
+            [_TestDataClass(foo="bar"), _TestDataClass(bar=100), ["hello"], "world"], id="json array mix"
         ),
     ]
 )
 @pytest.mark.asyncio
-async def test_data_converter_from_data(json: str, types: list[Type], expected: list[Any]):
+async def test_data_converter_from_data(json: str, types: list[Type], expected: list[Any]) -> None:
     converter = DefaultDataConverter()
     actual = await converter.from_data(Payload(data=json.encode()), types)
     assert expected == actual
@@ -78,12 +78,12 @@ async def test_data_converter_from_data(json: str, types: list[Type], expected: 
             ["hello", "world"], '["hello", "world"]', id="multiple values"
         ),
         pytest.param(
-            [TestDataClass()], '{"foo": "foo", "bar": -1, "baz": null}', id="data classes"
+            [_TestDataClass()], '{"foo": "foo", "bar": -1, "baz": null}', id="data classes"
         ),
     ]
 )
 @pytest.mark.asyncio
-async def test_data_converter_to_data(values: list[Any], expected: str):
+async def test_data_converter_to_data(values: list[Any], expected: str) -> None:
     converter = DefaultDataConverter()
     actual = await converter.to_data(values)
     # Parse both rather than trying to compare strings

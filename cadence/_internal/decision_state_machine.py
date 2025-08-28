@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, TypedDict, Union, Literal, cast
 
 from cadence.api.v1 import (
     decision_pb2 as decision,
@@ -81,12 +81,18 @@ class DecisionId:
 @dataclass
 class StateTransition:
     """Represents a state transition with associated actions."""
-    next_state: DecisionState
+    next_state: Optional[DecisionState]
     action: Optional[Callable[['BaseDecisionStateMachine', history.HistoryEvent], None]] = None
     condition: Optional[Callable[['BaseDecisionStateMachine', history.HistoryEvent], bool]] = None
 
 
-decision_state_transition_map = {
+class TransitionInfo(TypedDict):
+    type: Literal["initiated", "started", "completion", "canceled", "cancel_initiated", "cancel_failed", "initiation_failed"]
+    decision_type: DecisionType
+    transition: StateTransition
+
+
+decision_state_transition_map: Dict[str, TransitionInfo] = {
     "activity_task_scheduled_event_attributes": {
         "type": "initiated",
         "decision_type": DecisionType.ACTIVITY,
@@ -247,6 +253,10 @@ class BaseDecisionStateMachine:
     Subclasses are responsible for mapping workflow history events into state
     transitions and producing the next set of decisions when queried.
     """
+    
+    # Common fields that subclasses may use
+    scheduled_event_id: Optional[int] = None
+    started_event_id: Optional[int] = None
 
     def get_id(self) -> str:
         raise NotImplementedError
@@ -890,12 +900,12 @@ class DecisionManager:
         if transition_info:
             event_type = transition_info["type"]
             # Route to all relevant machines using the new unified handle_event method
-            for m in list(self.activities.values()):
-                m.handle_event(event, event_type)
-            for m in list(self.timers.values()):
-                m.handle_event(event, event_type)
-            for m in list(self.children.values()):
-                m.handle_event(event, event_type)
+            for activity_machine in list(self.activities.values()):
+                activity_machine.handle_event(event, event_type)
+            for timer_machine in list(self.timers.values()):
+                timer_machine.handle_event(event, event_type)
+            for child_machine in list(self.children.values()):
+                child_machine.handle_event(event, event_type)
 
     # ----- Decision aggregation -----
 
@@ -907,11 +917,11 @@ class DecisionManager:
             decisions.extend(machine.collect_pending_decisions())
 
         # Timers
-        for machine in list(self.timers.values()):
-            decisions.extend(machine.collect_pending_decisions())
+        for timer_machine in list(self.timers.values()):
+            decisions.extend(timer_machine.collect_pending_decisions())
 
         # Children
-        for machine in list(self.children.values()):
-            decisions.extend(machine.collect_pending_decisions())
+        for child_machine in list(self.children.values()):
+            decisions.extend(child_machine.collect_pending_decisions())
 
         return decisions

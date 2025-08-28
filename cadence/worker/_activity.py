@@ -11,7 +11,7 @@ from cadence.worker._poller import Poller
 
 
 class ActivityWorker:
-    def __init__(self, client: Client, task_list: str, options: WorkerOptions):
+    def __init__(self, client: Client, task_list: str, options: WorkerOptions) -> None:
         self._client = client
         self._task_list = task_list
         self._identity = options["identity"]
@@ -19,7 +19,7 @@ class ActivityWorker:
         self._poller = Poller[PollForActivityTaskResponse](options["activity_task_pollers"], permits, self._poll, self._execute)
         # TODO: Local dispatch, local activities, actually running activities, etc
 
-    async def run(self):
+    async def run(self) -> None:
         await self._poller.run()
 
     async def _poll(self) -> Optional[PollForActivityTaskResponse]:
@@ -34,7 +34,7 @@ class ActivityWorker:
         else:
             return None
 
-    async def _execute(self, task: PollForActivityTaskResponse):
+    async def _execute(self, task: PollForActivityTaskResponse) -> None:
         await self._client.worker_stub.RespondActivityTaskFailed(RespondActivityTaskFailedRequest(
             task_token=task.task_token,
             identity=self._identity,

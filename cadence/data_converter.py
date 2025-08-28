@@ -17,7 +17,7 @@ class DataConverter(Protocol):
         raise NotImplementedError()
 
 class DefaultDataConverter(DataConverter):
-    def __init__(self):
+    def __init__(self) -> None:
         self._encoder = json.Encoder()
         self._decoder = json.Decoder()
         self._fallback_decoder = JSONDecoder(strict=False)
@@ -38,7 +38,7 @@ class DefaultDataConverter(DataConverter):
 
 
     def _decode_whitespace_delimited(self, payload: str, type_hints: List[Type]) -> List[Any]:
-        results = []
+        results: List[Any] = []
         start, end = 0, len(payload)
         while start < end and len(results) < len(type_hints):
             remaining = payload[start:end]
@@ -50,7 +50,7 @@ class DefaultDataConverter(DataConverter):
 
     @staticmethod
     def _convert_into(values: List[Any], type_hints: List[Type]) -> List[Any]:
-        results = []
+        results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
             if i < len(values):
                 value = convert(values[i], type_hint)

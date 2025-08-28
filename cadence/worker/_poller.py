@@ -7,24 +7,23 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
 class Poller(Generic[T]):
-    def __init__(self, num_tasks: int, permits: asyncio.Semaphore, poll: Callable[[], Awaitable[Optional[T]]], callback: Callable[[T], Awaitable[None]]):
+    def __init__(self, num_tasks: int, permits: asyncio.Semaphore, poll: Callable[[], Awaitable[Optional[T]]], callback: Callable[[T], Awaitable[None]]) -> None:
         self._num_tasks = num_tasks
         self._permits = permits
         self._poll = poll
         self._callback = callback
         self._background_tasks: set[asyncio.Task[None]] = set()
-        pass
 
-    async def run(self):
+    async def run(self) -> None:
         try:
             async with asyncio.TaskGroup() as tg:
                 for i in range(self._num_tasks):
                     tg.create_task(self._poll_loop())
         except asyncio.CancelledError:
-            pass
+           pass 
 
 
-    async def _poll_loop(self):
+    async def _poll_loop(self) -> None:
         while True:
             try:
                 await self._poll_and_dispatch()
@@ -34,7 +33,7 @@ class Poller(Generic[T]):
                 logger.exception('Exception while polling')
 
 
-    async def _poll_and_dispatch(self):
+    async def _poll_and_dispatch(self) -> None:
         await self._permits.acquire()
         try:
             task = await self._poll()
@@ -51,7 +50,7 @@ class Poller(Generic[T]):
         self._background_tasks.add(scheduled)
         scheduled.add_done_callback(self._background_tasks.remove)
 
-    async def _execute_callback(self, task: T):
+    async def _execute_callback(self, task: T) -> None:
         try:
             await self._callback(task)
         except Exception:

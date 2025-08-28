@@ -1,9 +1,11 @@
-from asyncio import AbstractEventLoop, futures, tasks
+from asyncio import AbstractEventLoop, Handle, futures, tasks
 from asyncio import Future
+from contextvars import Context
 import logging
 import collections
 import asyncio.events as events
 import threading
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._stopping = False
         self._closed = False
 
-    def call_soon(self, callback, *args, context=None):
+    def call_soon(self, callback: Callable, *args, context : Context | None = None) -> Handle:
         self._call_soon(callback, args, context)
 
     def _call_soon(self, callback, args, context):

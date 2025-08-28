@@ -26,7 +26,7 @@ cd cadence-python-client
    ```bash
    # macOS
    brew install protobuf@29
-   
+
    # Linux/Other
    # Install protobuf 29.x via your package manager
    ```
@@ -35,7 +35,7 @@ cd cadence-python-client
    ```bash
    # macOS
    brew install uv
-   
+
    # Linux/Other
    curl -LsSf https://astral.sh/uv/install.sh | sh
    source $HOME/.local/bin/env  # Add to your shell profile for persistence
@@ -59,6 +59,7 @@ cd cadence-python-client
 Run the generation script:
 ```bash
 # Using uv (recommended)
+uv sync --extra dev
 uv run python scripts/generate_proto.py
 
 # Or using traditional Python

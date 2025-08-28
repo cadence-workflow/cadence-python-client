@@ -37,6 +37,8 @@ class DeterministicEventLoop(AbstractEventLoop):
     def get_debug(self):
         return self._debug
 
+    def set_debug(self, enabled: bool):
+        self._debug = enabled
 
     def run_forever(self):
         """Run until stop() is called."""

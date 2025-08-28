@@ -33,7 +33,7 @@ class Registry:
     workflows and activities in a Cadence application.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the registry."""
         self._workflows: Dict[str, Callable] = {}
         self._activities: Dict[str, Callable] = {}

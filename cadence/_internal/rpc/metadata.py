@@ -1,4 +1,5 @@
 import collections
+from typing import Any, Callable
 
 from grpc.aio import Metadata
 from grpc.aio import UnaryUnaryClientInterceptor, ClientCallDetails
@@ -16,7 +17,12 @@ class MetadataInterceptor(UnaryUnaryClientInterceptor):
     def __init__(self, metadata: Metadata):
         self._metadata = metadata
 
-    async def intercept_unary_unary(self, continuation, client_call_details: ClientCallDetails, request):
+    async def intercept_unary_unary(
+        self, 
+        continuation: Callable[[ClientCallDetails, Any], Any], 
+        client_call_details: ClientCallDetails, 
+        request: Any
+    ) -> Any:
         return await continuation(self._replace_details(client_call_details), request)
 
 

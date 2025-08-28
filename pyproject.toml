@@ -113,16 +113,14 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 explicit_package_bases = true
-disable_error_code = [
-    "var-annotated",
-    "arg-type",
-    "attr-defined",
-    "assignment",
-    "literal-required",
-]
 exclude = [
-    "cadence/api/*",  # Exclude entire api directory with generated proto files
+    "cadence/api",
+    "cadence/api/.*",
+    "cadence/sample",
 ]
+
+# Reduce recursive module checking
+follow_imports = "silent"
 
 [[tool.mypy.overrides]]
 module = [
@@ -133,6 +131,7 @@ module = [
     "google.protobuf.*",
     "uber.cadence.*",
     "msgspec.*",
+    "cadence.api.*",
 ]
 ignore_missing_imports = true
 

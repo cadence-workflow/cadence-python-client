@@ -1,14 +1,15 @@
 from asyncio import AbstractEventLoop, Handle, futures, tasks
-from asyncio import Future
 from contextvars import Context
 import logging
 import collections
 import asyncio.events as events
 import threading
 from typing import Callable
+from typing_extensions import Unpack, TypeVarTuple
 
 logger = logging.getLogger(__name__)
 
+_Ts = TypeVarTuple("_Ts")
 
 class DeterministicEventLoop(AbstractEventLoop):
     """
@@ -19,19 +20,17 @@ class DeterministicEventLoop(AbstractEventLoop):
     """
 
     def __init__(self):
-        self._thread_id: int = None # indicate if the event loop is running
+        self._thread_id = None # indicate if the event loop is running
         self._debug = False
         self._ready  = collections.deque[events.Handle]()
         self._stopping = False
         self._closed = False
 
-    def call_soon(self, callback: Callable, *args, context : Context | None = None) -> Handle:
-        self._call_soon(callback, args, context)
+    def call_soon(self, callback: Callable[[Unpack[_Ts]], object], *args: Unpack[_Ts], context: Context | None = None) -> Handle:
+        return self._call_soon(callback, args, context)
 
-    def _call_soon(self, callback, args, context):
+    def _call_soon(self, callback, args, context) -> Handle:
         handle = events.Handle(callback, args, self, context)
-        if handle._source_traceback:
-            del handle._source_traceback[-1]
         self._ready.append(handle)
         return handle
 
@@ -50,8 +49,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         finally:
             self._run_forever_cleanup()
 
-
-    def run_until_complete(self, future: Future):
+    def run_until_complete(self, future):
         """Run until the Future is done.
 
         If the argument is a coroutine, it is wrapped in a Task.
@@ -67,10 +65,6 @@ class DeterministicEventLoop(AbstractEventLoop):
 
         new_task = not futures.isfuture(future)
         future = tasks.ensure_future(future, loop=self)
-        if new_task:
-            # An exception is raised if the future didn't complete, so there
-            # is no need to log the "destroy pending task" message
-            future._log_destroy_pending = False
 
         future.add_done_callback(_run_until_complete_cb)
         try:
@@ -100,15 +94,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         if kwargs.get("eager_start", False):
             raise RuntimeError("eager_start in create_task is not supported for deterministic event loop")
 
-        task = tasks.Task(coro, loop=self, **kwargs)
-        if task._source_traceback:
-            del task._source_traceback[-1]
-        try:
-            return task
-        finally:
-            # gh-128552: prevent a refcycle of
-            # task.exception().__traceback__->BaseEventLoop.create_task->task
-            del task
+        return tasks.Task(coro, loop=self, **kwargs)
 
     def create_future(self):
         return futures.Future(loop=self)
@@ -166,7 +152,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         """Returns True if the event loop was closed."""
         return self._closed
 
-def _run_until_complete_cb(fut: Future):
+def _run_until_complete_cb(fut):
     if not fut.cancelled():
         exc = fut.exception()
         if isinstance(exc, (SystemExit, KeyboardInterrupt)):

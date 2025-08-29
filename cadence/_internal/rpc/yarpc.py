@@ -13,9 +13,18 @@ class _ClientCallDetails(
 ):
     pass
 
-class MetadataInterceptor(UnaryUnaryClientInterceptor):
-    def __init__(self, metadata: Metadata):
-        self._metadata = metadata
+SERVICE_KEY = "rpc-service"
+CALLER_KEY = "rpc-caller"
+ENCODING_KEY = "rpc-encoding"
+ENCODING_PROTO = "proto"
+
+class YarpcMetadataInterceptor(UnaryUnaryClientInterceptor):
+    def __init__(self, service: str, caller: str):
+        self._metadata = Metadata(
+            (SERVICE_KEY, service),
+            (CALLER_KEY, caller),
+            (ENCODING_KEY, ENCODING_PROTO),
+        )
 
     async def intercept_unary_unary(
         self, 

@@ -60,6 +60,19 @@ class _TestDataClass:
             '[{"foo": "bar"},{"bar": 100},["hello"],"world"]', [_TestDataClass, _TestDataClass, list[str], str],
             [_TestDataClass(foo="bar"), _TestDataClass(bar=100), ["hello"], "world"], id="json array mix"
         ),
+        pytest.param(
+            "", [], [], id="no input expected"
+        ),
+        pytest.param(
+            "", [str], [None], id="no input unexpected"
+        ),
+        pytest.param(
+            '["hello world", {"foo":"bar"}, 7]', [None, None, None], ["hello world", {"foo":"bar"}, 7], id="no type hints"
+        ),
+        pytest.param(
+            '"hello" "world" "goodbye"', [str, str], ["hello", "world"],
+            id="extra content"
+        ),
     ]
 )
 @pytest.mark.asyncio

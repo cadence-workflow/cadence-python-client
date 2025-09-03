@@ -27,6 +27,7 @@ classifiers = [
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "grpcio==1.71.2",
+    "grpcio-status>=1.71.2",
     "msgspec>=0.19.0",
     "protobuf==5.29.1",
     "typing-extensions>=4.0.0",

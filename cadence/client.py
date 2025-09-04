@@ -6,6 +6,7 @@ from grpc import ChannelCredentials, Compression
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
+from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 from grpc.aio import Channel, ClientInterceptor, secure_channel, insecure_channel
 from cadence.data_converter import DataConverter, DefaultDataConverter
@@ -39,6 +40,7 @@ class Client:
         self._options = _validate_and_copy_defaults(ClientOptions(**kwargs))
         self._channel = _create_channel(self._options)
         self._worker_stub = WorkerAPIStub(self._channel)
+        self._domain_stub = DomainAPIStub(self._channel)
 
     @property
     def data_converter(self) -> DataConverter:
@@ -53,11 +55,24 @@ class Client:
         return self._options["identity"]
 
     @property
+    def domain_stub(self) -> DomainAPIStub:
+        return self._domain_stub
+
+    @property
     def worker_stub(self) -> WorkerAPIStub:
         return self._worker_stub
 
+    async def ready(self) -> None:
+        await self._channel.channel_ready()
+
     async def close(self) -> None:
         await self._channel.close()
+
+    async def __aenter__(self) -> 'Client':
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
 def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     if "target" not in options:

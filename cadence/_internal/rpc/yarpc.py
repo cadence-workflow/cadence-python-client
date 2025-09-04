@@ -44,7 +44,8 @@ class YarpcMetadataInterceptor(UnaryUnaryClientInterceptor):
 
         return _ClientCallDetails(
             method=client_call_details.method,
-            timeout=client_call_details.timeout,
+            # YARPC seems to require a TTL value
+            timeout=client_call_details.timeout or 60.0,
             metadata=metadata,
             credentials=client_call_details.credentials,
             wait_for_ready=client_call_details.wait_for_ready,

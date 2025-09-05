@@ -44,6 +44,7 @@ dev = [
     "flake8>=6.0.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "pytest-docker>=3.2.3",
 ]
 docs = [
     "sphinx>=6.0.0",
@@ -138,14 +139,14 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --strict-config"
+addopts = "-ra -q --strict-markers --strict-config --import-mode=importlib"
+asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "asyncio: marks tests as async tests",
 ]

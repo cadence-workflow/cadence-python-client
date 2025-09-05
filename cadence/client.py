@@ -5,6 +5,7 @@ from typing import TypedDict, Unpack, Any, cast
 from grpc import ChannelCredentials, Compression
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
+from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
@@ -91,8 +92,9 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
 
 def _create_channel(options: ClientOptions) -> Channel:
     interceptors = list(options["interceptors"])
-    interceptors.append(CadenceErrorInterceptor())
     interceptors.append(YarpcMetadataInterceptor(options["service_name"], options["caller_name"]))
+    interceptors.append(RetryInterceptor())
+    interceptors.append(CadenceErrorInterceptor())
 
     if options["credentials"]:
         return secure_channel(options["target"], options["credentials"], options["channel_arguments"], options["compression"], interceptors)

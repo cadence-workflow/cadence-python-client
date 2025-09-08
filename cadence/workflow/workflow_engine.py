@@ -1,4 +1,3 @@
-from ast import List
 from dataclasses import dataclass
 from typing import Callable
 
@@ -6,8 +5,6 @@ from cadence.api.v1.decision_pb2 import Decision
 from cadence.client import Client
 from cadence.data_converter import DataConverter
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
-
-
 
 @dataclass
 class WorkflowContext:
@@ -20,11 +17,12 @@ class WorkflowContext:
 
 @dataclass
 class DecisionResult:
-    decisions: List[Decision]
+    decisions: list[Decision]
 
 class WorkflowEngine:
     def __init__(self, context: WorkflowContext):
         self._context = context
 
+    # TODO: Implement this
     def process_decision(self, decision_task: PollForDecisionTaskResponse) -> DecisionResult:
-        pass
+        return DecisionResult(decisions=[])

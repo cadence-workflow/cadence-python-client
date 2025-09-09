@@ -1,17 +1,8 @@
-import collections
 from typing import Any, Callable
 
 from grpc.aio import Metadata
 from grpc.aio import UnaryUnaryClientInterceptor, ClientCallDetails
 
-
-class _ClientCallDetails(
-    collections.namedtuple(
-        "_ClientCallDetails", ("method", "timeout", "metadata", "credentials", "wait_for_ready")
-    ),
-    ClientCallDetails,
-):
-    pass
 
 SERVICE_KEY = "rpc-service"
 CALLER_KEY = "rpc-caller"
@@ -42,11 +33,6 @@ class YarpcMetadataInterceptor(UnaryUnaryClientInterceptor):
         else:
             metadata += self._metadata
 
-        return _ClientCallDetails(
-            method=client_call_details.method,
-            # YARPC seems to require a TTL value
-            timeout=client_call_details.timeout or 60.0,
-            metadata=metadata,
-            credentials=client_call_details.credentials,
-            wait_for_ready=client_call_details.wait_for_ready,
-        )
+        # Namedtuple methods start with an underscore to avoid conflicts and aren't actually private
+        # noinspection PyProtectedMember
+        return client_call_details._replace(metadata=metadata, timeout=client_call_details.timeout or 60.0)

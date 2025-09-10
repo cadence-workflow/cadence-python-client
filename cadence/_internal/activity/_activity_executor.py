@@ -1,11 +1,13 @@
-import asyncio
 import inspect
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
 from typing import Any, Callable
+from google.protobuf.duration import to_timedelta
+from google.protobuf.timestamp import to_datetime
 
-from cadence._internal.type_utils import get_fn_parameters
+from cadence._internal.activity._context import _Context, _SyncContext
+from cadence.activity import ActivityInfo
 from cadence.api.v1.common_pb2 import Failure
 from cadence.api.v1.service_worker_pb2 import PollForActivityTaskResponse, RespondActivityTaskFailedRequest, \
     RespondActivityTaskCompletedRequest
@@ -19,35 +21,31 @@ class ActivityExecutor:
         self._data_converter = client.data_converter
         self._registry = registry
         self._identity = identity
+        self._task_list = task_list
         self._thread_pool = ThreadPoolExecutor(max_workers=max_workers,
                                                thread_name_prefix=f'{task_list}-activity-')
 
     async def execute(self, task: PollForActivityTaskResponse):
-        activity_type = task.activity_type.name
         try:
-            activity_fn = self._registry(activity_type)
-        except KeyError as e:
-            _logger.error("Activity type not found.", extra={'activity_type': activity_type})
-            await self._report_failure(task, e)
-            return
-
-        await self._execute_fn(activity_fn, task)
-
-    async def _execute_fn(self, activity_fn: Callable[[Any], Any], task: PollForActivityTaskResponse):
-        try:
-            type_hints = get_fn_parameters(activity_fn)
-            params = await self._client.data_converter.from_data(task.input, type_hints)
-            if inspect.iscoroutinefunction(activity_fn):
-                result = await activity_fn(*params)
-            else:
-                result = await self._invoke_sync_activity(activity_fn, params)
+            context = self._create_context(task)
+            result = await context.execute(task.input)
             await self._report_success(task, result)
         except Exception as e:
             await self._report_failure(task, e)
 
-    async def _invoke_sync_activity(self, activity_fn: Callable[[Any], Any], params: list[Any]) -> Any:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._thread_pool, activity_fn, *params)
+    def _create_context(self, task: PollForActivityTaskResponse) -> _Context:
+        activity_type = task.activity_type.name
+        try:
+            activity_fn = self._registry(activity_type)
+        except KeyError:
+            raise KeyError(f"Activity type not found: {activity_type}") from None
+
+        info = self._create_info(task)
+
+        if inspect.iscoroutinefunction(activity_fn):
+            return _Context(self._client, info, activity_fn)
+        else:
+            return _SyncContext(self._client, info, activity_fn, self._thread_pool)
 
     async def _report_failure(self, task: PollForActivityTaskResponse, error: Exception):
         try:
@@ -70,6 +68,23 @@ class ActivityExecutor:
             ))
         except Exception:
             _logger.exception('Exception reporting activity complete')
+
+    def _create_info(self, task: PollForActivityTaskResponse) -> ActivityInfo:
+        return ActivityInfo(
+            task_token=task.task_token,
+            workflow_type=task.workflow_type.name,
+            workflow_domain=task.workflow_domain,
+            workflow_id=task.workflow_execution.workflow_id,
+            workflow_run_id=task.workflow_execution.run_id,
+            activity_id=task.activity_id,
+            activity_type=task.activity_type.name,
+            task_list=self._task_list,
+            heartbeat_timeout=to_timedelta(task.heartbeat_timeout),
+            scheduled_timestamp=to_datetime(task.scheduled_time),
+            started_timestamp=to_datetime(task.started_time),
+            start_to_close_timeout=to_timedelta(task.start_to_close_timeout),
+            attempt=task.attempt,
+        )
 
 
 def _to_failure(exception: Exception) -> Failure:

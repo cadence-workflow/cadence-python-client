@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from cadence.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 
 
 async def coro_append(results: list, i: int):

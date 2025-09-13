@@ -1,0 +1,359 @@
+#!/usr/bin/env python3
+"""
+Unit tests for DecisionTaskHandler class.
+"""
+
+import pytest
+from unittest.mock import Mock, AsyncMock, patch, PropertyMock
+from typing import Dict, Any
+
+from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.service_worker_pb2 import (
+    PollForDecisionTaskResponse,
+    RespondDecisionTaskCompletedRequest,
+    RespondDecisionTaskFailedRequest
+)
+from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
+from cadence.api.v1.decision_pb2 import Decision
+from cadence.client import Client
+from cadence.worker._decision_task_handler import DecisionTaskHandler
+from cadence.worker._registry import Registry
+from cadence.workflow import WorkflowInfo
+from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
+
+
+class TestDecisionTaskHandler:
+    """Test cases for DecisionTaskHandler."""
+    
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock client."""
+        client = Mock(spec=Client)
+        client.worker_stub = Mock()
+        client.worker_stub.RespondDecisionTaskCompleted = AsyncMock()
+        client.worker_stub.RespondDecisionTaskFailed = AsyncMock()
+        type(client).domain = PropertyMock(return_value="test_domain")
+        return client
+    
+    @pytest.fixture
+    def mock_registry(self):
+        """Create a mock registry."""
+        registry = Mock(spec=Registry)
+        return registry
+    
+    @pytest.fixture
+    def handler(self, mock_client, mock_registry):
+        """Create a DecisionTaskHandler instance."""
+        return DecisionTaskHandler(
+            client=mock_client,
+            task_list="test_task_list",
+            registry=mock_registry,
+            identity="test_identity"
+        )
+    
+    @pytest.fixture
+    def sample_decision_task(self):
+        """Create a sample decision task."""
+        task = Mock(spec=PollForDecisionTaskResponse)
+        task.task_token = b"test_task_token"
+        task.workflow_execution = Mock()
+        task.workflow_execution.workflow_id = "test_workflow_id"
+        task.workflow_execution.run_id = "test_run_id"
+        task.workflow_type = Mock()
+        task.workflow_type.name = "TestWorkflow"
+        return task
+    
+    def test_initialization(self, mock_client, mock_registry):
+        """Test DecisionTaskHandler initialization."""
+        handler = DecisionTaskHandler(
+            client=mock_client,
+            task_list="test_task_list",
+            registry=mock_registry,
+            identity="test_identity",
+            option1="value1"
+        )
+        
+        assert handler._client == mock_client
+        assert handler._task_list == "test_task_list"
+        assert handler._identity == "test_identity"
+        assert handler._registry == mock_registry
+        assert handler._options == {"option1": "value1"}
+        assert isinstance(handler._workflow_engines, dict)
+        assert len(handler._workflow_engines) == 0
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_implementation_success(self, handler, sample_decision_task, mock_registry):
+        """Test successful decision task handling."""
+        # Mock workflow function
+        mock_workflow_func = Mock()
+        mock_registry.get_workflow.return_value = mock_workflow_func
+        
+        # Mock workflow engine
+        mock_engine = Mock(spec=WorkflowEngine)
+        mock_decision_result = Mock(spec=DecisionResult)
+        mock_decision_result.decisions = [Decision()]
+        mock_decision_result.force_create_new_decision_task = False
+        mock_decision_result.query_results = {}
+        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        
+        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
+            await handler._handle_task_implementation(sample_decision_task)
+        
+        # Verify registry was called
+        mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
+        
+        # Verify workflow engine was created and used
+        mock_engine.process_decision.assert_called_once_with(sample_decision_task)
+        
+        # Verify response was sent
+        handler._client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_implementation_missing_workflow_execution(self, handler):
+        """Test decision task handling with missing workflow execution."""
+        task = Mock(spec=PollForDecisionTaskResponse)
+        task.task_token = b"test_task_token"
+        task.workflow_execution = None
+        task.workflow_type = Mock()
+        task.workflow_type.name = "TestWorkflow"
+        
+        with patch.object(handler, 'handle_task_failure', new_callable=AsyncMock) as mock_handle_failure:
+            await handler._handle_task_implementation(task)
+            
+            mock_handle_failure.assert_called_once()
+            args = mock_handle_failure.call_args[0]
+            assert args[0] == task
+            assert isinstance(args[1], ValueError)
+            assert "Missing workflow execution or type" in str(args[1])
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_implementation_missing_workflow_type(self, handler):
+        """Test decision task handling with missing workflow type."""
+        task = Mock(spec=PollForDecisionTaskResponse)
+        task.task_token = b"test_task_token"
+        task.workflow_execution = Mock()
+        task.workflow_execution.workflow_id = "test_workflow_id"
+        task.workflow_execution.run_id = "test_run_id"
+        task.workflow_type = None
+        
+        with patch.object(handler, 'handle_task_failure', new_callable=AsyncMock) as mock_handle_failure:
+            await handler._handle_task_implementation(task)
+            
+            mock_handle_failure.assert_called_once()
+            args = mock_handle_failure.call_args[0]
+            assert args[0] == task
+            assert isinstance(args[1], ValueError)
+            assert "Missing workflow execution or type" in str(args[1])
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_implementation_workflow_not_found(self, handler, sample_decision_task, mock_registry):
+        """Test decision task handling when workflow is not found in registry."""
+        mock_registry.get_workflow.side_effect = KeyError("Workflow not found")
+        
+        with patch.object(handler, 'handle_task_failure', new_callable=AsyncMock) as mock_handle_failure:
+            await handler._handle_task_implementation(sample_decision_task)
+            
+            mock_handle_failure.assert_called_once()
+            args = mock_handle_failure.call_args[0]
+            assert args[0] == sample_decision_task
+            assert isinstance(args[1], KeyError)
+            assert "Workflow type 'TestWorkflow' not found" in str(args[1])
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_implementation_reuses_existing_engine(self, handler, sample_decision_task, mock_registry):
+        """Test that decision task handler reuses existing workflow engine."""
+        # Mock workflow function
+        mock_workflow_func = Mock()
+        mock_registry.get_workflow.return_value = mock_workflow_func
+        
+        # Mock workflow engine
+        mock_engine = Mock(spec=WorkflowEngine)
+        mock_decision_result = Mock(spec=DecisionResult)
+        mock_decision_result.decisions = []
+        mock_decision_result.force_create_new_decision_task = False
+        mock_decision_result.query_results = {}
+        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        
+        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
+            # First call - should create new engine
+            await handler._handle_task_implementation(sample_decision_task)
+            
+            # Second call - should reuse existing engine
+            await handler._handle_task_implementation(sample_decision_task)
+        
+        # Registry should only be called once
+        mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
+        
+        # Engine should be called twice
+        assert mock_engine.process_decision.call_count == 2
+        
+        # Should have one engine in the cache
+        assert len(handler._workflow_engines) == 1
+        engine_key = "test_workflow_id:test_run_id"
+        assert engine_key in handler._workflow_engines
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_failure_keyerror(self, handler, sample_decision_task):
+        """Test task failure handling for KeyError."""
+        error = KeyError("Workflow not found")
+        
+        await handler.handle_task_failure(sample_decision_task, error)
+        
+        # Verify the correct failure cause was used
+        call_args = handler._client.worker_stub.RespondDecisionTaskFailed.call_args[0][0]
+        assert call_args.cause == DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+        assert call_args.task_token == sample_decision_task.task_token
+        assert call_args.identity == handler._identity
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_failure_valueerror(self, handler, sample_decision_task):
+        """Test task failure handling for ValueError."""
+        error = ValueError("Invalid workflow attributes")
+        
+        await handler.handle_task_failure(sample_decision_task, error)
+        
+        # Verify the correct failure cause was used
+        call_args = handler._client.worker_stub.RespondDecisionTaskFailed.call_args[0][0]
+        assert call_args.cause == DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_BAD_SCHEDULE_ACTIVITY_ATTRIBUTES
+        assert call_args.task_token == sample_decision_task.task_token
+        assert call_args.identity == handler._identity
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_failure_generic_error(self, handler, sample_decision_task):
+        """Test task failure handling for generic error."""
+        error = RuntimeError("Generic error")
+        
+        await handler.handle_task_failure(sample_decision_task, error)
+        
+        # Verify the default failure cause was used
+        call_args = handler._client.worker_stub.RespondDecisionTaskFailed.call_args[0][0]
+        assert call_args.cause == DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION
+        assert call_args.task_token == sample_decision_task.task_token
+        assert call_args.identity == handler._identity
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_failure_with_error_details(self, handler, sample_decision_task):
+        """Test task failure handling includes error details."""
+        error = ValueError("Test error message")
+        
+        await handler.handle_task_failure(sample_decision_task, error)
+        
+        call_args = handler._client.worker_stub.RespondDecisionTaskFailed.call_args[0][0]
+        assert isinstance(call_args.details, Payload)
+        assert call_args.details.data == b"Test error message"
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_failure_respond_error(self, handler, sample_decision_task):
+        """Test task failure handling when respond fails."""
+        error = ValueError("Test error")
+        handler._client.worker_stub.RespondDecisionTaskFailed.side_effect = Exception("Respond failed")
+        
+        # Should not raise exception, but should log error
+        with patch('cadence.worker._decision_task_handler.logger') as mock_logger:
+            await handler.handle_task_failure(sample_decision_task, error)
+            mock_logger.exception.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_respond_decision_task_completed_success(self, handler, sample_decision_task):
+        """Test successful decision task completion response."""
+        decision_result = Mock(spec=DecisionResult)
+        decision_result.decisions = [Decision(), Decision()]
+        decision_result.force_create_new_decision_task = True
+        decision_result.query_results = None  # Test without query results first
+        
+        await handler._respond_decision_task_completed(sample_decision_task, decision_result)
+        
+        # Verify the request was created correctly
+        call_args = handler._client.worker_stub.RespondDecisionTaskCompleted.call_args[0][0]
+        assert isinstance(call_args, RespondDecisionTaskCompletedRequest)
+        assert call_args.task_token == sample_decision_task.task_token
+        assert call_args.identity == handler._identity
+        assert call_args.return_new_decision_task == True
+        assert call_args.force_create_new_decision_task == True
+        assert len(call_args.decisions) == 2
+        # query_results should not be set when None
+        assert not hasattr(call_args, 'query_results') or len(call_args.query_results) == 0
+    
+    @pytest.mark.asyncio
+    async def test_respond_decision_task_completed_no_query_results(self, handler, sample_decision_task):
+        """Test decision task completion response without query results."""
+        decision_result = Mock(spec=DecisionResult)
+        decision_result.decisions = []
+        decision_result.force_create_new_decision_task = False
+        decision_result.query_results = None
+        
+        await handler._respond_decision_task_completed(sample_decision_task, decision_result)
+        
+        call_args = handler._client.worker_stub.RespondDecisionTaskCompleted.call_args[0][0]
+        assert call_args.return_new_decision_task == False
+        assert call_args.force_create_new_decision_task == False
+        assert len(call_args.decisions) == 0
+        # query_results should not be set when None
+        assert not hasattr(call_args, 'query_results') or len(call_args.query_results) == 0
+    
+    @pytest.mark.asyncio
+    async def test_respond_decision_task_completed_error(self, handler, sample_decision_task):
+        """Test decision task completion response error handling."""
+        decision_result = Mock(spec=DecisionResult)
+        decision_result.decisions = []
+        decision_result.force_create_new_decision_task = False
+        decision_result.query_results = {}
+        
+        handler._client.worker_stub.RespondDecisionTaskCompleted.side_effect = Exception("Respond failed")
+        
+        with pytest.raises(Exception, match="Respond failed"):
+            await handler._respond_decision_task_completed(sample_decision_task, decision_result)
+    
+    def test_cleanup_workflow_engine(self, handler):
+        """Test workflow engine cleanup."""
+        # Add some mock engines
+        handler._workflow_engines["workflow1:run1"] = Mock()
+        handler._workflow_engines["workflow2:run2"] = Mock()
+        
+        # Clean up one engine
+        handler.cleanup_workflow_engine("workflow1", "run1")
+        
+        # Verify only one engine was removed
+        assert len(handler._workflow_engines) == 1
+        assert "workflow1:run1" not in handler._workflow_engines
+        assert "workflow2:run2" in handler._workflow_engines
+    
+    def test_cleanup_workflow_engine_not_found(self, handler):
+        """Test cleanup of non-existent workflow engine."""
+        # Should not raise error
+        handler.cleanup_workflow_engine("nonexistent", "run")
+        
+        # Should not affect existing engines
+        assert len(handler._workflow_engines) == 0
+    
+    @pytest.mark.asyncio
+    async def test_workflow_engine_creation_with_workflow_info(self, handler, sample_decision_task, mock_registry):
+        """Test that WorkflowEngine is created with correct WorkflowInfo."""
+        mock_workflow_func = Mock()
+        mock_registry.get_workflow.return_value = mock_workflow_func
+        
+        mock_engine = Mock(spec=WorkflowEngine)
+        mock_decision_result = Mock(spec=DecisionResult)
+        mock_decision_result.decisions = []
+        mock_decision_result.force_create_new_decision_task = False
+        mock_decision_result.query_results = {}
+        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        
+        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_workflow_engine_class:
+            with patch('cadence.worker._decision_task_handler.WorkflowInfo') as mock_workflow_info_class:
+                await handler._handle_task_implementation(sample_decision_task)
+                
+                # Verify WorkflowInfo was created with correct parameters
+                mock_workflow_info_class.assert_called_once_with(
+                    workflow_type="TestWorkflow",
+                    workflow_domain="test_domain",
+                    workflow_id="test_workflow_id",
+                    workflow_run_id="test_run_id"
+                )
+                
+                # Verify WorkflowEngine was created with correct parameters
+                mock_workflow_engine_class.assert_called_once()
+                call_args = mock_workflow_engine_class.call_args
+                assert call_args[1]['info'] is not None
+                assert call_args[1]['client'] == handler._client
+                assert call_args[1]['workflow_func'] == mock_workflow_func

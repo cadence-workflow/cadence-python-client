@@ -4,8 +4,7 @@ Unit tests for BaseTaskHandler class.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from typing import Any
+from unittest.mock import Mock
 
 from cadence.worker._base_task_handler import BaseTaskHandler
 

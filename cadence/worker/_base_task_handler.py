@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic
+from typing import Any, Dict, TypeVar, Generic
 
 logger = logging.getLogger(__name__)
 

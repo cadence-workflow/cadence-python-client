@@ -5,20 +5,17 @@ Unit tests for DecisionTaskHandler class.
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock
-from typing import Dict, Any
 
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
-    RespondDecisionTaskCompletedRequest,
-    RespondDecisionTaskFailedRequest
+    RespondDecisionTaskCompletedRequest
 )
 from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.api.v1.decision_pb2 import Decision
 from cadence.client import Client
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
-from cadence.workflow import WorkflowInfo
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
 
 
@@ -268,8 +265,8 @@ class TestDecisionTaskHandler:
         assert isinstance(call_args, RespondDecisionTaskCompletedRequest)
         assert call_args.task_token == sample_decision_task.task_token
         assert call_args.identity == handler._identity
-        assert call_args.return_new_decision_task == True
-        assert call_args.force_create_new_decision_task == True
+        assert call_args.return_new_decision_task
+        assert call_args.force_create_new_decision_task
         assert len(call_args.decisions) == 2
         # query_results should not be set when None
         assert not hasattr(call_args, 'query_results') or len(call_args.query_results) == 0
@@ -285,8 +282,8 @@ class TestDecisionTaskHandler:
         await handler._respond_decision_task_completed(sample_decision_task, decision_result)
         
         call_args = handler._client.worker_stub.RespondDecisionTaskCompleted.call_args[0][0]
-        assert call_args.return_new_decision_task == False
-        assert call_args.force_create_new_decision_task == False
+        assert not call_args.return_new_decision_task
+        assert not call_args.force_create_new_decision_task
         assert len(call_args.decisions) == 0
         # query_results should not be set when None
         assert not hasattr(call_args, 'query_results') or len(call_args.query_results) == 0

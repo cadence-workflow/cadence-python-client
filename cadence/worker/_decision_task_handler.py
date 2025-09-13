@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any
+from typing import Dict
 
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import (

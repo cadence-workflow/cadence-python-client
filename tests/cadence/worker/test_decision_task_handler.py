@@ -137,8 +137,8 @@ class TestDecisionTaskHandler:
             await handler._handle_task_implementation(sample_decision_task)
     
     @pytest.mark.asyncio
-    async def test_handle_task_implementation_creates_new_engine(self, handler, sample_decision_task, mock_registry):
-        """Test that decision task handler creates new workflow engine for each task."""
+    async def test_handle_task_implementation_creates_new_engines(self, handler, sample_decision_task, mock_registry):
+        """Test that decision task handler creates new workflow engines for each task."""
         # Mock workflow function
         mock_workflow_func = Mock()
         mock_registry.get_workflow.return_value = mock_workflow_func
@@ -231,6 +231,8 @@ class TestDecisionTaskHandler:
         """Test successful decision task completion response."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = [Decision(), Decision()]
+        decision_result.force_create_new_decision_task = False
+        decision_result.query_results = None
         
         await handler._respond_decision_task_completed(sample_decision_task, decision_result)
         
@@ -248,6 +250,8 @@ class TestDecisionTaskHandler:
         """Test decision task completion response without query results."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
+        decision_result.force_create_new_decision_task = False
+        decision_result.query_results = None
         
         await handler._respond_decision_task_completed(sample_decision_task, decision_result)
         
@@ -261,6 +265,8 @@ class TestDecisionTaskHandler:
         """Test decision task completion response error handling."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
+        decision_result.force_create_new_decision_task = False
+        decision_result.query_results = None
         
         handler._client.worker_stub.RespondDecisionTaskCompleted.side_effect = Exception("Respond failed")
         

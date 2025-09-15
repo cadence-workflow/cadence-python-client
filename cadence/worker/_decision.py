@@ -14,6 +14,7 @@ class DecisionWorker:
     def __init__(self, client: Client, task_list: str, registry: Registry, options: WorkerOptions) -> None:
         self._client = client
         self._task_list = task_list
+        self._registry = registry
         self._identity = options["identity"]
         permits = asyncio.Semaphore(options["max_concurrent_decision_task_execution_size"])
         self._decision_handler = DecisionTaskHandler(client, task_list, registry, **options)

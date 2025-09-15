@@ -8,11 +8,12 @@ from google.protobuf.duration import from_timedelta
 
 from cadence import activity, Client
 from cadence._internal.activity import ActivityExecutor
-from cadence.activity import ActivityInfo
+from cadence.activity import ActivityInfo, ActivityDefinition
 from cadence.api.v1.common_pb2 import WorkflowExecution, ActivityType, Payload, Failure, WorkflowType
 from cadence.api.v1.service_worker_pb2 import RespondActivityTaskCompletedResponse, PollForActivityTaskResponse, \
     RespondActivityTaskCompletedRequest, RespondActivityTaskFailedResponse, RespondActivityTaskFailedRequest
 from cadence.data_converter import DefaultDataConverter
+from cadence.worker import Registry
 
 
 @pytest.fixture
@@ -27,12 +28,14 @@ async def test_activity_async_success(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCompleted = AsyncMock(return_value=RespondActivityTaskCompletedResponse())
 
+    reg = Registry()
+    @reg.activity(name="activity_type")
     async def activity_fn():
         return "success"
 
-    executor = ActivityExecutor(client, 'task_list', 'identity', 1, lambda name: activity_fn)
+    executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
-    await executor.execute(fake_task("any", ""))
+    await executor.execute(fake_task("activity_type", ""))
 
     worker_stub.RespondActivityTaskCompleted.assert_called_once_with(RespondActivityTaskCompletedRequest(
         task_token=b'task_token',
@@ -44,12 +47,14 @@ async def test_activity_async_failure(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskFailed = AsyncMock(return_value=RespondActivityTaskFailedResponse())
 
+    reg = Registry()
+    @reg.activity(name="activity_type")
     async def activity_fn():
         raise KeyError("failure")
 
-    executor = ActivityExecutor(client, 'task_list', 'identity', 1, lambda name: activity_fn)
+    executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
-    await executor.execute(fake_task("any", ""))
+    await executor.execute(fake_task("activity_type", ""))
 
     worker_stub.RespondActivityTaskFailed.assert_called_once()
 
@@ -70,12 +75,14 @@ async def test_activity_args(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCompleted = AsyncMock(return_value=RespondActivityTaskCompletedResponse())
 
+    reg = Registry()
+    @reg.activity(name="activity_type")
     async def activity_fn(first: str, second: str):
         return " ".join([first, second])
 
-    executor = ActivityExecutor(client, 'task_list', 'identity', 1, lambda name: activity_fn)
+    executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
-    await executor.execute(fake_task("any", '["hello", "world"]'))
+    await executor.execute(fake_task("activity_type", '["hello", "world"]'))
 
     worker_stub.RespondActivityTaskCompleted.assert_called_once_with(RespondActivityTaskCompletedRequest(
         task_token=b'task_token',
@@ -87,6 +94,8 @@ async def test_activity_sync_success(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCompleted = AsyncMock(return_value=RespondActivityTaskCompletedResponse())
 
+    reg = Registry()
+    @reg.activity(name="activity_type")
     def activity_fn():
         try:
             asyncio.get_running_loop()
@@ -94,9 +103,9 @@ async def test_activity_sync_success(client):
             return "success"
         raise RuntimeError("expected to be running outside of the event loop")
 
-    executor = ActivityExecutor(client, 'task_list', 'identity', 1, lambda name: activity_fn)
+    executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
-    await executor.execute(fake_task("any", ""))
+    await executor.execute(fake_task("activity_type", ""))
 
     worker_stub.RespondActivityTaskCompleted.assert_called_once_with(RespondActivityTaskCompletedRequest(
         task_token=b'task_token',
@@ -107,13 +116,14 @@ async def test_activity_sync_success(client):
 async def test_activity_sync_failure(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskFailed = AsyncMock(return_value=RespondActivityTaskFailedResponse())
-
+    reg = Registry()
+    @reg.activity(name="activity_type")
     def activity_fn():
         raise KeyError("failure")
 
-    executor = ActivityExecutor(client, 'task_list', 'identity', 1, lambda name: activity_fn)
+    executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
-    await executor.execute(fake_task("any", ""))
+    await executor.execute(fake_task("activity_type", ""))
 
     worker_stub.RespondActivityTaskFailed.assert_called_once()
 
@@ -134,18 +144,18 @@ async def test_activity_unknown(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskFailed = AsyncMock(return_value=RespondActivityTaskFailedResponse())
 
-    def registry(name: str):
+    def registry(name: str) -> ActivityDefinition:
         raise KeyError(f"unknown activity: {name}")
 
     executor = ActivityExecutor(client, 'task_list', 'identity', 1, registry)
 
-    await executor.execute(fake_task("any", ""))
+    await executor.execute(fake_task("activity_type", ""))
 
     worker_stub.RespondActivityTaskFailed.assert_called_once()
 
     call = worker_stub.RespondActivityTaskFailed.call_args[0][0]
 
-    assert 'Activity type not found: any' in call.failure.details.decode()
+    assert 'Activity type not found: activity_type' in call.failure.details.decode()
     call.failure.details = bytes()
     assert call == RespondActivityTaskFailedRequest(
         task_token=b'task_token',
@@ -158,14 +168,15 @@ async def test_activity_unknown(client):
 async def test_activity_context(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCompleted = AsyncMock(return_value=RespondActivityTaskCompletedResponse())
-
+    reg = Registry()
+    @reg.activity(name="activity_type")
     async def activity_fn():
         assert fake_info("activity_type") == activity.info()
         assert activity.in_activity()
         assert activity.client() is not None
         return "success"
 
-    executor = ActivityExecutor(client, 'task_list', 'identity', 1, lambda name: activity_fn)
+    executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
     await executor.execute(fake_task("activity_type", ""))
 
@@ -179,6 +190,8 @@ async def test_activity_context_sync(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCompleted = AsyncMock(return_value=RespondActivityTaskCompletedResponse())
 
+    reg = Registry()
+    @reg.activity(name="activity_type")
     def activity_fn():
         assert fake_info("activity_type") == activity.info()
         assert activity.in_activity()
@@ -186,7 +199,7 @@ async def test_activity_context_sync(client):
             activity.client()
         return "success"
 
-    executor = ActivityExecutor(client, 'task_list', 'identity', 1, lambda name: activity_fn)
+    executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
     await executor.execute(fake_task("activity_type", ""))
 

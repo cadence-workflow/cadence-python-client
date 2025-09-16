@@ -8,7 +8,6 @@ from ._worker import (
 from ._registry import (
     Registry,
     RegisterWorkflowOptions,
-    RegisterActivityOptions,
 )
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "WorkerOptions",
     'Registry',
     'RegisterWorkflowOptions',
-    'RegisterActivityOptions',
 ]

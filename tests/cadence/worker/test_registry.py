@@ -5,7 +5,9 @@ Tests for the registry functionality.
 
 import pytest
 
-from cadence.worker import Registry, RegisterWorkflowOptions, RegisterActivityOptions
+from cadence import activity
+from cadence.worker import Registry
+from tests.cadence import common_activities
 
 
 class TestRegistry:
@@ -35,73 +37,21 @@ class TestRegistry:
             def test_func():
                 return "test"
             
-            func = reg.get_activity("test_func")
+            func = reg.get_activity(test_func.name)
         
         assert func() == "test"
     
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_direct_call_behavior(self, registration_type):
-        """Test direct function call behavior for both workflows and activities."""
+    def test_direct_call_behavior(self):
         reg = Registry()
-        
+
+        @activity.defn(name="test_func")
         def test_func():
             return "direct_call"
+
+        reg.register_activity(test_func)
+        func = reg.get_activity("test_func")
         
-        if registration_type == "workflow":
-            registered_func = reg.workflow(test_func)
-            func = reg.get_workflow("test_func")
-        else:
-            registered_func = reg.activity(test_func)
-            func = reg.get_activity("test_func")
-        
-        assert registered_func == test_func
         assert func() == "direct_call"
-    
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_decorator_with_options(self, registration_type):
-        """Test decorator with options for both workflows and activities."""
-        reg = Registry()
-        
-        if registration_type == "workflow":
-            @reg.workflow(name="custom_name", alias="custom_alias")
-            def test_func():
-                return "decorator_with_options"
-            
-            func = reg.get_workflow("custom_name")
-            func_by_alias = reg.get_workflow("custom_alias")
-        else:
-            @reg.activity(name="custom_name", alias="custom_alias")
-            def test_func():
-                return "decorator_with_options"
-            
-            func = reg.get_activity("custom_name")
-            func_by_alias = reg.get_activity("custom_alias")
-        
-        assert func() == "decorator_with_options"
-        assert func_by_alias() == "decorator_with_options"
-        assert func == func_by_alias
-    
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_direct_call_with_options(self, registration_type):
-        """Test direct call with options for both workflows and activities."""
-        reg = Registry()
-        
-        def test_func():
-            return "direct_call_with_options"
-        
-        if registration_type == "workflow":
-            registered_func = reg.workflow(test_func, name="custom_name", alias="custom_alias")
-            func = reg.get_workflow("custom_name")
-            func_by_alias = reg.get_workflow("custom_alias")
-        else:
-            registered_func = reg.activity(test_func, name="custom_name", alias="custom_alias")
-            func = reg.get_activity("custom_name")
-            func_by_alias = reg.get_activity("custom_name")
-        
-        assert registered_func == test_func
-        assert func() == "direct_call_with_options"
-        assert func_by_alias() == "direct_call_with_options"
-        assert func == func_by_alias
     
     @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
     def test_not_found_error(self, registration_type):
@@ -130,62 +80,73 @@ class TestRegistry:
                 def test_func():
                     return "duplicate"
         else:
-            @reg.activity
+            @reg.activity(name="test_func")
             def test_func():
                 return "test"
-            
+
             with pytest.raises(KeyError):
-                @reg.activity
+                @reg.activity(name="test_func")
                 def test_func():
                     return "duplicate"
-    
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_alias_functionality(self, registration_type):
-        """Test alias functionality for both workflows and activities."""
+
+    def test_register_activities_instance(self):
         reg = Registry()
-        
-        if registration_type == "workflow":
-            @reg.workflow(name="custom_name")
-            def test_func():
-                return "test"
-            
-            func = reg.get_workflow("custom_name")
-        else:
-            @reg.activity(alias="custom_alias")
-            def test_func():
-                return "test"
-            
-            func = reg.get_activity("custom_alias")
-            func_by_name = reg.get_activity("test_func")
-            assert func_by_name() == "test"
-            assert func == func_by_name
-        
-        assert func() == "test"
-    
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_options_class(self, registration_type):
-        """Test using options classes for both workflows and activities."""
+
+        reg.register_activities(common_activities.Activities())
+
+        assert reg.get_activity("Activities.echo_sync") is not None
+        assert reg.get_activity("Activities.echo_sync") is not None
+
+    def test_register_activities_interface(self):
+        impl = common_activities.ActivityImpl("result")
         reg = Registry()
-        
-        if registration_type == "workflow":
-            options = RegisterWorkflowOptions(name="custom_name", alias="custom_alias")
-            
-            @reg.workflow(**options)
-            def test_func():
-                return "test"
-            
-            func = reg.get_workflow("custom_name")
-            func_by_alias = reg.get_workflow("custom_alias")
-        else:
-            options = RegisterActivityOptions(name="custom_name", alias="custom_alias")
-            
-            @reg.activity(**options)
-            def test_func():
-                return "test"
-            
-            func = reg.get_activity("custom_name")
-            func_by_alias = reg.get_activity("custom_alias")
-        
-        assert func() == "test"
-        assert func_by_alias() == "test"
-        assert func == func_by_alias
+
+        reg.register_activities(impl)
+
+        assert reg.get_activity(common_activities.ActivityInterface.do_something.name) is not None
+        assert reg.get_activity("ActivityInterface.do_something") is not None
+        assert reg.get_activity(common_activities.ActivityInterface.do_something.name)() == "result"
+
+    def test_register_activities_invalid_impl(self):
+        impl = common_activities.InvalidImpl()
+        reg = Registry()
+
+        with pytest.raises(ValueError):
+            reg.register_activities(impl)
+
+
+    def test_add(self):
+        registry = Registry()
+        registry.register_activity(common_activities.simple_fn)
+        other = Registry()
+        other.register_activity(common_activities.echo)
+
+        result = registry + other
+
+        assert result.get_activity("simple_fn") is not None
+        assert result.get_activity("echo") is not None
+        with pytest.raises(KeyError):
+            registry.get_activity("echo")
+        with pytest.raises(KeyError):
+            other.get_activity("simple_fn")
+
+    def test_add_duplicate(self):
+        registry = Registry()
+        registry.register_activity(common_activities.simple_fn)
+        other = Registry()
+        other.register_activity(common_activities.simple_fn)
+        with pytest.raises(KeyError):
+            registry + other
+
+    def test_of(self):
+        first = Registry()
+        second = Registry()
+        third = Registry()
+        first.register_activity(common_activities.simple_fn)
+        second.register_activity(common_activities.echo)
+        third.register_activity(common_activities.async_fn)
+
+        result = Registry.of(first, second, third)
+        assert result.get_activity("simple_fn") is not None
+        assert result.get_activity("echo") is not None
+        assert result.get_activity("async_fn") is not None

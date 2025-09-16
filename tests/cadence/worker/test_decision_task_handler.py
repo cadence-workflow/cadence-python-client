@@ -75,8 +75,6 @@ class TestDecisionTaskHandler:
         assert handler._identity == "test_identity"
         assert handler._registry == mock_registry
         assert handler._options == {"option1": "value1"}
-        assert isinstance(handler._workflow_engines, dict)
-        assert len(handler._workflow_engines) == 0
     
     @pytest.mark.asyncio
     async def test_handle_task_implementation_success(self, handler, sample_decision_task, mock_registry):
@@ -139,8 +137,8 @@ class TestDecisionTaskHandler:
             await handler._handle_task_implementation(sample_decision_task)
     
     @pytest.mark.asyncio
-    async def test_handle_task_implementation_reuses_existing_engine(self, handler, sample_decision_task, mock_registry):
-        """Test that decision task handler reuses existing workflow engine."""
+    async def test_handle_task_implementation_creates_new_engine(self, handler, sample_decision_task, mock_registry):
+        """Test that decision task handler creates new workflow engine for each task."""
         # Mock workflow function
         mock_workflow_func = Mock()
         mock_registry.get_workflow.return_value = mock_workflow_func
@@ -153,23 +151,19 @@ class TestDecisionTaskHandler:
         mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
-        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
+        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_engine_class:
             # First call - should create new engine
             await handler._handle_task_implementation(sample_decision_task)
             
-            # Second call - should reuse existing engine
+            # Second call - should create another new engine
             await handler._handle_task_implementation(sample_decision_task)
         
-        # Registry should only be called once
-        mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
+        # Registry should be called for each task
+        assert mock_registry.get_workflow.call_count == 2
         
-        # Engine should be called twice
+        # Engine should be created twice and called twice
+        assert mock_engine_class.call_count == 2
         assert mock_engine.process_decision.call_count == 2
-        
-        # Should have one engine in the cache
-        assert len(handler._workflow_engines) == 1
-        engine_key = "test_workflow_id:test_run_id"
-        assert engine_key in handler._workflow_engines
     
     @pytest.mark.asyncio
     async def test_handle_task_failure_keyerror(self, handler, sample_decision_task):
@@ -237,8 +231,6 @@ class TestDecisionTaskHandler:
         """Test successful decision task completion response."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = [Decision(), Decision()]
-        decision_result.force_create_new_decision_task = True
-        decision_result.query_results = None  # Test without query results first
         
         await handler._respond_decision_task_completed(sample_decision_task, decision_result)
         
@@ -248,62 +240,33 @@ class TestDecisionTaskHandler:
         assert call_args.task_token == sample_decision_task.task_token
         assert call_args.identity == handler._identity
         assert call_args.return_new_decision_task
-        assert call_args.force_create_new_decision_task
+        assert not call_args.force_create_new_decision_task
         assert len(call_args.decisions) == 2
-        # query_results should not be set when None
-        assert not hasattr(call_args, 'query_results') or len(call_args.query_results) == 0
     
     @pytest.mark.asyncio
     async def test_respond_decision_task_completed_no_query_results(self, handler, sample_decision_task):
         """Test decision task completion response without query results."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
-        decision_result.force_create_new_decision_task = False
-        decision_result.query_results = None
         
         await handler._respond_decision_task_completed(sample_decision_task, decision_result)
         
         call_args = handler._client.worker_stub.RespondDecisionTaskCompleted.call_args[0][0]
-        assert not call_args.return_new_decision_task
+        assert call_args.return_new_decision_task
         assert not call_args.force_create_new_decision_task
         assert len(call_args.decisions) == 0
-        # query_results should not be set when None
-        assert not hasattr(call_args, 'query_results') or len(call_args.query_results) == 0
     
     @pytest.mark.asyncio
     async def test_respond_decision_task_completed_error(self, handler, sample_decision_task):
         """Test decision task completion response error handling."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
-        decision_result.force_create_new_decision_task = False
-        decision_result.query_results = {}
         
         handler._client.worker_stub.RespondDecisionTaskCompleted.side_effect = Exception("Respond failed")
         
         with pytest.raises(Exception, match="Respond failed"):
             await handler._respond_decision_task_completed(sample_decision_task, decision_result)
     
-    def test_cleanup_workflow_engine(self, handler):
-        """Test workflow engine cleanup."""
-        # Add some mock engines
-        handler._workflow_engines["workflow1:run1"] = Mock()
-        handler._workflow_engines["workflow2:run2"] = Mock()
-        
-        # Clean up one engine
-        handler.cleanup_workflow_engine("workflow1", "run1")
-        
-        # Verify only one engine was removed
-        assert len(handler._workflow_engines) == 1
-        assert "workflow1:run1" not in handler._workflow_engines
-        assert "workflow2:run2" in handler._workflow_engines
-    
-    def test_cleanup_workflow_engine_not_found(self, handler):
-        """Test cleanup of non-existent workflow engine."""
-        # Should not raise error
-        handler.cleanup_workflow_engine("nonexistent", "run")
-        
-        # Should not affect existing engines
-        assert len(handler._workflow_engines) == 0
     
     @pytest.mark.asyncio
     async def test_workflow_engine_creation_with_workflow_info(self, handler, sample_decision_task, mock_registry):

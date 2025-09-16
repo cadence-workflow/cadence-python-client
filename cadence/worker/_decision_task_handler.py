@@ -36,7 +36,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         """
         super().__init__(client, task_list, identity, **options)
         self._registry = registry
-        self._workflow_engines: Dict[str, WorkflowEngine] = {}
+        self._workflow_engine: WorkflowEngine
         
     
     async def _handle_task_implementation(self, task: PollForDecisionTaskResponse) -> None:
@@ -51,7 +51,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         workflow_type = task.workflow_type
         
         if not workflow_execution or not workflow_type:
-            logger.error("Decision task missing workflow execution or type")
+            logger.error("Decision task missing workflow execution or type. Task: %r", task)
             raise ValueError("Missing workflow execution or type")
         
         workflow_id = workflow_execution.workflow_id
@@ -60,34 +60,27 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         
         logger.info(f"Processing decision task for workflow {workflow_id} (type: {workflow_type_name})")
         
-        # Get or create workflow engine for this workflow execution
-        engine_key = f"{workflow_id}:{run_id}"
-        if engine_key not in self._workflow_engines:
-            # Get the workflow function from registry
-            try:
-                workflow_func = self._registry.get_workflow(workflow_type_name)
-            except KeyError:
-                logger.error(f"Workflow type '{workflow_type_name}' not found in registry")
-                raise KeyError(f"Workflow type '{workflow_type_name}' not found")
-            
-            # Create workflow info and engine
-            workflow_info = WorkflowInfo(
-                workflow_type=workflow_type_name,
-                workflow_domain=self._client.domain,
-                workflow_id=workflow_id,
-                workflow_run_id=run_id
-            )
-            
-            self._workflow_engines[engine_key] = WorkflowEngine(
-                info=workflow_info, 
-                client=self._client, 
-                workflow_func=workflow_func
-            )
+        try:
+            workflow_func = self._registry.get_workflow(workflow_type_name)
+        except KeyError:
+            logger.error(f"Workflow type '{workflow_type_name}' not found in registry")
+            raise KeyError(f"Workflow type '{workflow_type_name}' not found")
         
-        # Create workflow context and execute with it active
-        workflow_engine = self._workflow_engines[engine_key]
+        # Create workflow info and engine
+        workflow_info = WorkflowInfo(
+            workflow_type=workflow_type_name,
+            workflow_domain=self._client.domain,
+            workflow_id=workflow_id,
+            workflow_run_id=run_id
+        )
         
-        decision_result = await workflow_engine.process_decision(task)
+        self._workflow_engine = WorkflowEngine(
+            info=workflow_info, 
+            client=self._client, 
+            workflow_func=workflow_func
+        )
+        
+        decision_result = await self._workflow_engine.process_decision(task)
         
         # Respond with the decisions
         await self._respond_decision_task_completed(task, decision_result)
@@ -102,21 +95,22 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             task: The task that failed
             error: The exception that occurred
         """
+        logger.error(f"Decision task failed: {error}")
+        
+        # Determine the failure cause
+        cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION
+        if isinstance(error, KeyError):
+            cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+        elif isinstance(error, ValueError):
+            cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_BAD_SCHEDULE_ACTIVITY_ATTRIBUTES
+        
+        # Create error details
+        # TODO: Use a data converter for error details serialization
+        error_message = str(error).encode('utf-8')
+        details = Payload(data=error_message)
+        
+        # Respond with failure
         try:
-            logger.error(f"Decision task failed: {error}")
-            
-            # Determine the failure cause
-            cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION
-            if isinstance(error, KeyError):
-                cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
-            elif isinstance(error, ValueError):
-                cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_BAD_SCHEDULE_ACTIVITY_ATTRIBUTES
-            
-            # Create error details
-            error_message = str(error).encode('utf-8')
-            details = Payload(data=error_message)
-            
-            # Respond with failure
             await self._client.worker_stub.RespondDecisionTaskFailed(
                 RespondDecisionTaskFailedRequest(
                     task_token=task.task_token,
@@ -125,11 +119,10 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     details=details
                 )
             )
-            
             logger.info("Decision task failure response sent")
-            
         except Exception:
-            logger.exception("Error handling decision task failure")
+            logger.exception("Error responding to decision task failure")
+            
     
     async def _respond_decision_task_completed(self, task: PollForDecisionTaskResponse, decision_result: DecisionResult) -> None:
         """
@@ -144,13 +137,9 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 task_token=task.task_token,
                 decisions=decision_result.decisions,
                 identity=self._identity,
-                return_new_decision_task=decision_result.force_create_new_decision_task,
-                force_create_new_decision_task=decision_result.force_create_new_decision_task
+                return_new_decision_task=True,
+                force_create_new_decision_task=False
             )
-            
-            # Add query results if present
-            if decision_result.query_results:
-                request.query_results.update(decision_result.query_results)
             
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)
             logger.debug(f"Decision task completed with {len(decision_result.decisions)} decisions")
@@ -158,16 +147,3 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         except Exception:
             logger.exception("Error responding to decision task completion")
             raise
-    
-    def cleanup_workflow_engine(self, workflow_id: str, run_id: str) -> None:
-        """
-        Clean up a workflow engine when workflow execution is complete.
-        
-        Args:
-            workflow_id: The workflow ID
-            run_id: The run ID
-        """
-        engine_key = f"{workflow_id}:{run_id}"
-        if engine_key in self._workflow_engines:
-            del self._workflow_engines[engine_key]
-            logger.debug(f"Cleaned up workflow engine for {workflow_id}:{run_id}")

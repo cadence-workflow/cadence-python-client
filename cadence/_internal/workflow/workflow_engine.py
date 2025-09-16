@@ -11,8 +11,6 @@ from cadence.workflow import WorkflowInfo
 @dataclass
 class DecisionResult:
     decisions: list[Decision]
-    force_create_new_decision_task: bool = False
-    query_results: Optional[dict] = None
 
 class WorkflowEngine:
     def __init__(self, info: WorkflowInfo, client: Client, workflow_func: Optional[Callable[..., Any]] = None):

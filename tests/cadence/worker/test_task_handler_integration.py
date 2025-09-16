@@ -66,8 +66,6 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
@@ -111,8 +109,6 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         # Track if context is activated
@@ -135,7 +131,7 @@ class TestTaskHandlerIntegration:
     
     @pytest.mark.asyncio
     async def test_multiple_workflow_executions(self, handler, mock_registry):
-        """Test handling multiple workflow executions with different engines."""
+        """Test handling multiple workflow executions creates new engines for each."""
         # Mock workflow function
         mock_workflow_func = Mock()
         mock_registry.get_workflow.return_value = mock_workflow_func
@@ -157,43 +153,28 @@ class TestTaskHandlerIntegration:
         task2.workflow_type = Mock()
         task2.workflow_type.name = "TestWorkflow"
         
-        # Mock workflow engines
-        mock_engine1 = Mock(spec=WorkflowEngine)
-        mock_engine2 = Mock(spec=WorkflowEngine)
+        # Mock workflow engine
+        mock_engine = Mock(spec=WorkflowEngine)
         
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         
-        mock_engine1.process_decision = AsyncMock(return_value=mock_decision_result)
-        mock_engine2.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
-        def mock_workflow_engine_creator(*args, **kwargs):
-            # Return different engines based on workflow info
-            workflow_info = kwargs.get('info')
-            if workflow_info and workflow_info.workflow_id == "workflow1":
-                return mock_engine1
-            else:
-                return mock_engine2
-        
-        with patch('cadence.worker._decision_task_handler.WorkflowEngine', side_effect=mock_workflow_engine_creator):
+        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_engine_class:
             # Process both tasks
             await handler.handle_task(task1)
             await handler.handle_task(task2)
         
-        # Verify both engines were created and used
-        assert len(handler._workflow_engines) == 2
-        assert "workflow1:run1" in handler._workflow_engines
-        assert "workflow2:run2" in handler._workflow_engines
+        # Verify engines were created for each task
+        assert mock_engine_class.call_count == 2
         
-        # Verify both engines were called
-        mock_engine1.process_decision.assert_called_once_with(task1)
-        mock_engine2.process_decision.assert_called_once_with(task2)
+        # Verify both tasks were processed
+        assert mock_engine.process_decision.call_count == 2
     
     @pytest.mark.asyncio
-    async def test_workflow_engine_cleanup_integration(self, handler, sample_decision_task, mock_registry):
-        """Test workflow engine cleanup integration."""
+    async def test_workflow_engine_creation_integration(self, handler, sample_decision_task, mock_registry):
+        """Test workflow engine creation integration."""
         # Mock workflow function
         mock_workflow_func = Mock()
         mock_registry.get_workflow.return_value = mock_workflow_func
@@ -202,23 +183,15 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
-        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
+        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_engine_class:
             # Process task to create engine
             await handler.handle_task(sample_decision_task)
             
-            # Verify engine was created
-            assert len(handler._workflow_engines) == 1
-            assert "test_workflow_id:test_run_id" in handler._workflow_engines
-            
-            # Clean up engine
-            handler.cleanup_workflow_engine("test_workflow_id", "test_run_id")
-            
-            # Verify engine was cleaned up
-            assert len(handler._workflow_engines) == 0
+            # Verify engine was created and used
+            mock_engine_class.assert_called_once()
+            mock_engine.process_decision.assert_called_once_with(sample_decision_task)
     
     @pytest.mark.asyncio
     async def test_error_handling_with_context_cleanup(self, handler, sample_decision_task, mock_registry):
@@ -277,8 +250,6 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
@@ -288,6 +259,3 @@ class TestTaskHandlerIntegration:
         # Verify all tasks were processed
         assert mock_engine.process_decision.call_count == 3
         assert handler._client.worker_stub.RespondDecisionTaskCompleted.call_count == 3
-        
-        # Verify engines were created for each workflow
-        assert len(handler._workflow_engines) == 3

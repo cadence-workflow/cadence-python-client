@@ -16,8 +16,6 @@ class ConcreteTaskHandler(BaseTaskHandler[str]):
         super().__init__(client, task_list, identity, **options)
         self._handle_task_implementation_called = False
         self._handle_task_failure_called = False
-        self._propagate_context_called = False
-        self._unset_current_context_called = False
         self._last_task: str = ""
         self._last_error: Exception | None = None
     
@@ -33,15 +31,6 @@ class ConcreteTaskHandler(BaseTaskHandler[str]):
         self._handle_task_failure_called = True
         self._last_task = task
         self._last_error = error
-    
-    async def _propagate_context(self, task: str) -> None:
-        """Test implementation of context propagation."""
-        self._propagate_context_called = True
-        self._last_task = task
-    
-    async def _unset_current_context(self) -> None:
-        """Test implementation of context cleanup."""
-        self._unset_current_context_called = True
 
 
 class TestBaseTaskHandler:
@@ -71,10 +60,8 @@ class TestBaseTaskHandler:
         
         await handler.handle_task("test_task")
         
-        # Verify all methods were called in correct order
-        assert handler._propagate_context_called
+        # Verify implementation was called
         assert handler._handle_task_implementation_called
-        assert handler._unset_current_context_called
         assert not handler._handle_task_failure_called
         assert handler._last_task == "test_task"
         assert handler._last_error is None
@@ -88,72 +75,12 @@ class TestBaseTaskHandler:
         await handler.handle_task("raise_error")
         
         # Verify error handling was called
-        assert handler._propagate_context_called
         assert handler._handle_task_implementation_called
         assert handler._handle_task_failure_called
-        assert handler._unset_current_context_called
         assert handler._last_task == "raise_error"
         assert isinstance(handler._last_error, ValueError)
         assert str(handler._last_error) == "Test error"
     
-    @pytest.mark.asyncio
-    async def test_handle_task_with_context_propagation_error(self):
-        """Test task handling when context propagation fails."""
-        client = Mock()
-        handler = ConcreteTaskHandler(client, "test_task_list", "test_identity")
-        
-        # Override _propagate_context to raise an error
-        async def failing_propagate_context(task):
-            raise RuntimeError("Context propagation failed")
-        
-        # Use setattr to avoid mypy error about method assignment
-        setattr(handler, '_propagate_context', failing_propagate_context)
-        
-        await handler.handle_task("test_task")
-        
-        # Verify error handling was called
-        assert handler._handle_task_failure_called
-        assert handler._unset_current_context_called
-        assert isinstance(handler._last_error, RuntimeError)
-        assert str(handler._last_error) == "Context propagation failed"
-    
-    @pytest.mark.asyncio
-    async def test_handle_task_with_cleanup_error(self):
-        """Test task handling when cleanup fails."""
-        client = Mock()
-        handler = ConcreteTaskHandler(client, "test_task_list", "test_identity")
-        
-        # Override _unset_current_context to raise an error
-        async def failing_unset_context():
-            raise RuntimeError("Cleanup failed")
-        
-        # Use setattr to avoid mypy error about method assignment
-        setattr(handler, '_unset_current_context', failing_unset_context)
-        
-        # Cleanup errors in finally block will propagate
-        with pytest.raises(RuntimeError, match="Cleanup failed"):
-            await handler.handle_task("test_task")
-    
-    @pytest.mark.asyncio
-    async def test_handle_task_with_implementation_and_cleanup_errors(self):
-        """Test task handling when both implementation and cleanup fail."""
-        client = Mock()
-        handler = ConcreteTaskHandler(client, "test_task_list", "test_identity")
-        
-        # Override _unset_current_context to raise an error
-        async def failing_unset_context():
-            raise RuntimeError("Cleanup failed")
-        
-        # Use setattr to avoid mypy error about method assignment
-        setattr(handler, '_unset_current_context', failing_unset_context)
-        
-        # The implementation error should be handled, but cleanup error will propagate
-        with pytest.raises(RuntimeError, match="Cleanup failed"):
-            await handler.handle_task("raise_error")
-        
-        # Verify the implementation error was handled before cleanup error
-        assert handler._handle_task_failure_called
-        assert isinstance(handler._last_error, ValueError)
     
     @pytest.mark.asyncio
     async def test_abstract_methods_not_implemented(self):
@@ -175,17 +102,6 @@ class TestBaseTaskHandler:
         with pytest.raises(NotImplementedError):
             await handler.handle_task_failure("test", Exception("test"))
     
-    @pytest.mark.asyncio
-    async def test_default_context_methods(self):
-        """Test default implementations of context methods."""
-        client = Mock()
-        handler = ConcreteTaskHandler(client, "test_task_list", "test_identity")
-        
-        # Test default _propagate_context (should not raise)
-        await handler._propagate_context("test_task")
-        
-        # Test default _unset_current_context (should not raise)
-        await handler._unset_current_context()
     
     @pytest.mark.asyncio
     async def test_generic_type_parameter(self):

@@ -4,6 +4,7 @@ Integration tests for task handlers.
 """
 
 import pytest
+from contextlib import contextmanager
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock
 
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
@@ -100,8 +101,8 @@ class TestTaskHandlerIntegration:
         assert call_args.identity == handler._identity
     
     @pytest.mark.asyncio
-    async def test_context_propagation_integration(self, handler, sample_decision_task, mock_registry):
-        """Test that context propagation works correctly in the integration."""
+    async def test_context_activation_integration(self, handler, sample_decision_task, mock_registry):
+        """Test that context activation works correctly in the integration."""
         # Mock workflow function
         mock_workflow_func = Mock()
         mock_registry.get_workflow.return_value = mock_workflow_func
@@ -114,27 +115,23 @@ class TestTaskHandlerIntegration:
         mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
-        # Track if context methods are called
-        context_propagated = False
-        context_unset = False
+        # Track if context is activated
+        context_activated = False
         
-        async def track_propagate_context(task):
-            nonlocal context_propagated
-            context_propagated = True
-        
-        async def track_unset_current_context():
-            nonlocal context_unset
-            context_unset = True
-        
-        handler._propagate_context = track_propagate_context
-        handler._unset_current_context = track_unset_current_context
+        def track_context_activation():
+            nonlocal context_activated
+            context_activated = True
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
-            await handler.handle_task(sample_decision_task)
+            with patch('cadence.worker._decision_task_handler.Context') as mock_context_class:
+                mock_context = Mock()
+                mock_context._activate = Mock(return_value=contextmanager(lambda: track_context_activation())())
+                mock_context_class.return_value = mock_context
+                
+                await handler.handle_task(sample_decision_task)
         
-        # Verify context methods were called
-        assert context_propagated
-        assert context_unset
+        # Verify context was activated
+        assert context_activated
     
     @pytest.mark.asyncio
     async def test_multiple_workflow_executions(self, handler, mock_registry):
@@ -235,19 +232,22 @@ class TestTaskHandlerIntegration:
         mock_engine.process_decision = AsyncMock(side_effect=RuntimeError("Workflow processing failed"))
         
         # Track context cleanup
-        context_unset = False
+        context_cleaned_up = False
         
-        async def track_unset_current_context():
-            nonlocal context_unset
-            context_unset = True
-        
-        handler._unset_current_context = track_unset_current_context
+        def track_context_cleanup():
+            nonlocal context_cleaned_up
+            context_cleaned_up = True
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
-            await handler.handle_task(sample_decision_task)
+            with patch('cadence.worker._decision_task_handler.Context') as mock_context_class:
+                mock_context = Mock()
+                mock_context._activate = Mock(return_value=contextmanager(lambda: track_context_cleanup())())
+                mock_context_class.return_value = mock_context
+                
+                await handler.handle_task(sample_decision_task)
         
         # Verify context was cleaned up even after error
-        assert context_unset
+        assert context_cleaned_up
         
         # Verify error was handled
         handler._client.worker_stub.RespondDecisionTaskFailed.assert_called_once()

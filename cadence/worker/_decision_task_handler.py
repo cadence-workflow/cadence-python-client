@@ -11,6 +11,7 @@ from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.client import Client
 from cadence.worker._base_task_handler import BaseTaskHandler
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
+from cadence._internal.workflow.context import Context
 from cadence.workflow import WorkflowInfo
 from cadence.worker._registry import Registry
 
@@ -52,8 +53,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         
         if not workflow_execution or not workflow_type:
             logger.error("Decision task missing workflow execution or type")
-            await self.handle_task_failure(task, ValueError("Missing workflow execution or type"))
-            return
+            raise ValueError("Missing workflow execution or type")
         
         workflow_id = workflow_execution.workflow_id
         run_id = workflow_execution.run_id
@@ -69,8 +69,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 workflow_func = self._registry.get_workflow(workflow_type_name)
             except KeyError:
                 logger.error(f"Workflow type '{workflow_type_name}' not found in registry")
-                await self.handle_task_failure(task, KeyError(f"Workflow type '{workflow_type_name}' not found"))
-                return
+                raise KeyError(f"Workflow type '{workflow_type_name}' not found")
             
             # Create workflow info and engine
             workflow_info = WorkflowInfo(
@@ -86,12 +85,22 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 workflow_func=workflow_func
             )
         
-        # Process the decision using the workflow engine
+        # Create workflow context and execute with it active
         workflow_engine = self._workflow_engines[engine_key]
-        decision_result = await workflow_engine.process_decision(task)
+        workflow_info = WorkflowInfo(
+            workflow_type=workflow_type_name,
+            workflow_domain=self._client.domain,
+            workflow_id=workflow_id,
+            workflow_run_id=run_id
+        )
         
-        # Respond with the decisions
-        await self._respond_decision_task_completed(task, decision_result)
+        context = Context(client=self._client, info=workflow_info)
+        with context._activate():
+            # Process the decision using the workflow engine
+            decision_result = await workflow_engine.process_decision(task)
+            
+            # Respond with the decisions
+            await self._respond_decision_task_completed(task, decision_result)
         
         logger.info(f"Successfully processed decision task for workflow {workflow_id}")
     

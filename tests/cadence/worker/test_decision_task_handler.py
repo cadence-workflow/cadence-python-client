@@ -114,14 +114,8 @@ class TestDecisionTaskHandler:
         task.workflow_type = Mock()
         task.workflow_type.name = "TestWorkflow"
         
-        with patch.object(handler, 'handle_task_failure', new_callable=AsyncMock) as mock_handle_failure:
+        with pytest.raises(ValueError, match="Missing workflow execution or type"):
             await handler._handle_task_implementation(task)
-            
-            mock_handle_failure.assert_called_once()
-            args = mock_handle_failure.call_args[0]
-            assert args[0] == task
-            assert isinstance(args[1], ValueError)
-            assert "Missing workflow execution or type" in str(args[1])
     
     @pytest.mark.asyncio
     async def test_handle_task_implementation_missing_workflow_type(self, handler):
@@ -133,28 +127,16 @@ class TestDecisionTaskHandler:
         task.workflow_execution.run_id = "test_run_id"
         task.workflow_type = None
         
-        with patch.object(handler, 'handle_task_failure', new_callable=AsyncMock) as mock_handle_failure:
+        with pytest.raises(ValueError, match="Missing workflow execution or type"):
             await handler._handle_task_implementation(task)
-            
-            mock_handle_failure.assert_called_once()
-            args = mock_handle_failure.call_args[0]
-            assert args[0] == task
-            assert isinstance(args[1], ValueError)
-            assert "Missing workflow execution or type" in str(args[1])
     
     @pytest.mark.asyncio
     async def test_handle_task_implementation_workflow_not_found(self, handler, sample_decision_task, mock_registry):
         """Test decision task handling when workflow is not found in registry."""
         mock_registry.get_workflow.side_effect = KeyError("Workflow not found")
         
-        with patch.object(handler, 'handle_task_failure', new_callable=AsyncMock) as mock_handle_failure:
+        with pytest.raises(KeyError, match="Workflow type 'TestWorkflow' not found"):
             await handler._handle_task_implementation(sample_decision_task)
-            
-            mock_handle_failure.assert_called_once()
-            args = mock_handle_failure.call_args[0]
-            assert args[0] == sample_decision_task
-            assert isinstance(args[1], KeyError)
-            assert "Workflow type 'TestWorkflow' not found" in str(args[1])
     
     @pytest.mark.asyncio
     async def test_handle_task_implementation_reuses_existing_engine(self, handler, sample_decision_task, mock_registry):
@@ -340,13 +322,15 @@ class TestDecisionTaskHandler:
             with patch('cadence.worker._decision_task_handler.WorkflowInfo') as mock_workflow_info_class:
                 await handler._handle_task_implementation(sample_decision_task)
                 
-                # Verify WorkflowInfo was created with correct parameters
-                mock_workflow_info_class.assert_called_once_with(
-                    workflow_type="TestWorkflow",
-                    workflow_domain="test_domain",
-                    workflow_id="test_workflow_id",
-                    workflow_run_id="test_run_id"
-                )
+                # Verify WorkflowInfo was created with correct parameters (called twice - once for engine, once for context)
+                assert mock_workflow_info_class.call_count == 2
+                for call in mock_workflow_info_class.call_args_list:
+                    assert call[1] == {
+                        'workflow_type': "TestWorkflow",
+                        'workflow_domain': "test_domain",
+                        'workflow_id': "test_workflow_id",
+                        'workflow_run_id': "test_run_id"
+                    }
                 
                 # Verify WorkflowEngine was created with correct parameters
                 mock_workflow_engine_class.assert_called_once()

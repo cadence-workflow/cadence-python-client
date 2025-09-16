@@ -87,20 +87,11 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         
         # Create workflow context and execute with it active
         workflow_engine = self._workflow_engines[engine_key]
-        workflow_info = WorkflowInfo(
-            workflow_type=workflow_type_name,
-            workflow_domain=self._client.domain,
-            workflow_id=workflow_id,
-            workflow_run_id=run_id
-        )
         
-        context = Context(client=self._client, info=workflow_info)
-        with context._activate():
-            # Process the decision using the workflow engine
-            decision_result = await workflow_engine.process_decision(task)
-            
-            # Respond with the decisions
-            await self._respond_decision_task_completed(task, decision_result)
+        decision_result = await workflow_engine.process_decision(task)
+        
+        # Respond with the decisions
+        await self._respond_decision_task_completed(task, decision_result)
         
         logger.info(f"Successfully processed decision task for workflow {workflow_id}")
     

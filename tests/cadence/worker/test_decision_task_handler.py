@@ -322,8 +322,8 @@ class TestDecisionTaskHandler:
             with patch('cadence.worker._decision_task_handler.WorkflowInfo') as mock_workflow_info_class:
                 await handler._handle_task_implementation(sample_decision_task)
                 
-                # Verify WorkflowInfo was created with correct parameters (called twice - once for engine, once for context)
-                assert mock_workflow_info_class.call_count == 2
+                # Verify WorkflowInfo was created with correct parameters (called once for engine)
+                assert mock_workflow_info_class.call_count == 1
                 for call in mock_workflow_info_class.call_args_list:
                     assert call[1] == {
                         'workflow_type': "TestWorkflow",

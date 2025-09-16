@@ -1,15 +1,14 @@
 import asyncio
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import Callable, Any
+from typing import Any
 
 from cadence import Client
-from cadence._internal.type_utils import get_fn_parameters
-from cadence.activity import ActivityInfo, ActivityContext
+from cadence.activity import ActivityInfo, ActivityContext, ActivityDefinition
 from cadence.api.v1.common_pb2 import Payload
 
 
 class _Context(ActivityContext):
-    def __init__(self, client: Client, info: ActivityInfo, activity_fn: Callable[[Any], Any]):
+    def __init__(self, client: Client, info: ActivityInfo, activity_fn: ActivityDefinition[[Any], Any]):
         self._client = client
         self._info = info
         self._activity_fn = activity_fn
@@ -20,7 +19,7 @@ class _Context(ActivityContext):
             return await self._activity_fn(*params)
 
     async def _to_params(self, payload: Payload) -> list[Any]:
-        type_hints = get_fn_parameters(self._activity_fn)
+        type_hints = [param.type_hint for param in self._activity_fn.params]
         return await self._client.data_converter.from_data(payload, type_hints)
 
     def client(self) -> Client:
@@ -30,7 +29,7 @@ class _Context(ActivityContext):
         return self._info
 
 class _SyncContext(_Context):
-    def __init__(self, client: Client, info: ActivityInfo, activity_fn: Callable[[Any], Any], executor: ThreadPoolExecutor):
+    def __init__(self, client: Client, info: ActivityInfo, activity_fn: ActivityDefinition[[Any], Any], executor: ThreadPoolExecutor):
         super().__init__(client, info, activity_fn)
         self._executor = executor
 

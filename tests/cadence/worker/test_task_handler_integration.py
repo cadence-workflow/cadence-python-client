@@ -123,7 +123,7 @@ class TestTaskHandlerIntegration:
             context_activated = True
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
-            with patch('cadence.worker._decision_task_handler.Context') as mock_context_class:
+            with patch('cadence._internal.workflow.workflow_engine.Context') as mock_context_class:
                 mock_context = Mock()
                 mock_context._activate = Mock(return_value=contextmanager(lambda: track_context_activation())())
                 mock_context_class.return_value = mock_context
@@ -239,7 +239,7 @@ class TestTaskHandlerIntegration:
             context_cleaned_up = True
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
-            with patch('cadence.worker._decision_task_handler.Context') as mock_context_class:
+            with patch('cadence._internal.workflow.workflow_engine.Context') as mock_context_class:
                 mock_context = Mock()
                 mock_context._activate = Mock(return_value=contextmanager(lambda: track_context_cleanup())())
                 mock_context_class.return_value = mock_context

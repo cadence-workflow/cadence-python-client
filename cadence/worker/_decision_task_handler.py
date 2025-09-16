@@ -11,7 +11,6 @@ from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.client import Client
 from cadence.worker._base_task_handler import BaseTaskHandler
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
-from cadence._internal.workflow.context import Context
 from cadence.workflow import WorkflowInfo
 from cadence.worker._registry import Registry
 

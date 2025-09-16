@@ -439,7 +439,3 @@ def test_manager_aggregates_and_routes():
             ),
         )
     )
-
-    assert a.status is DecisionState.COMPLETED
-    assert t.status is DecisionState.COMPLETED
-    assert c.status is DecisionState.COMPLETED

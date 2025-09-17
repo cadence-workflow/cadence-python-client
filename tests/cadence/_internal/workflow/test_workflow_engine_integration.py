@@ -3,13 +3,11 @@
 Integration tests for WorkflowEngine.
 """
 
-import asyncio
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.api.v1.history_pb2 import History, HistoryEvent, WorkflowExecutionStartedEventAttributes
-from cadence.api.v1.decision_pb2 import Decision
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
 from cadence.workflow import WorkflowInfo
 from cadence.client import Client
@@ -299,7 +297,6 @@ class TestWorkflowEngineIntegration:
         
         # Mock the decision manager to return decisions with query results
         mock_decisions = [Mock()]
-        query_results = {"query1": "result1"}
         
         with patch.object(workflow_engine._decision_manager, 'collect_pending_decisions', return_value=mock_decisions):
             # Process the decision

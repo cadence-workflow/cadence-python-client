@@ -3,20 +3,16 @@
 Integration tests for DecisionTaskHandler and WorkflowEngine.
 """
 
-import asyncio
 import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock, patch
+from unittest.mock import Mock, AsyncMock, patch
 from cadence.api.v1.service_worker_pb2 import (
-    PollForDecisionTaskResponse,
-    RespondDecisionTaskCompletedRequest,
-    RespondDecisionTaskFailedRequest
+    PollForDecisionTaskResponse
 )
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.api.v1.history_pb2 import History, HistoryEvent, WorkflowExecutionStartedEventAttributes
 from cadence.api.v1.decision_pb2 import Decision
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
-from cadence.workflow import WorkflowInfo
 from cadence.client import Client
 
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional, Callable, Any
 
 from cadence._internal.workflow.context import Context
 from cadence.api.v1.decision_pb2 import Decision
@@ -12,10 +13,11 @@ class DecisionResult:
     decisions: list[Decision]
 
 class WorkflowEngine:
-    def __init__(self, info: WorkflowInfo, client: Client):
+    def __init__(self, info: WorkflowInfo, client: Client, workflow_func: Optional[Callable[..., Any]] = None):
         self._context = Context(client, info)
+        self._workflow_func = workflow_func
 
     # TODO: Implement this
-    def process_decision(self, decision_task: PollForDecisionTaskResponse) -> DecisionResult:
+    async def process_decision(self, decision_task: PollForDecisionTaskResponse) -> DecisionResult:
         with self._context._activate():
             return DecisionResult(decisions=[])

@@ -105,3 +105,7 @@ Desktop.ini
 
 # bin
 .bin/
+
+# Claude Code files
+CLAUDE.md
+settings.local.json

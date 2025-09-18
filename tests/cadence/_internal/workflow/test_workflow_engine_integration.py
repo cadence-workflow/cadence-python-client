@@ -96,8 +96,6 @@ class TestWorkflowEngineIntegration:
             # Verify the result
             assert isinstance(result, DecisionResult)
             assert len(result.decisions) == 1
-            assert result.force_create_new_decision_task is False
-            assert result.query_results is None
 
     @pytest.mark.asyncio
     async def test_process_decision_with_history(self, workflow_engine, mock_client):
@@ -305,5 +303,4 @@ class TestWorkflowEngineIntegration:
             # Verify the result
             assert isinstance(result, DecisionResult)
             assert len(result.decisions) == 1
-            assert result.force_create_new_decision_task is False
-            assert result.query_results is None  # Not set in this test
+  # Not set in this test

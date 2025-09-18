@@ -66,8 +66,6 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = None
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
@@ -111,8 +109,6 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = None
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         # Track if context is activated
@@ -162,8 +158,6 @@ class TestTaskHandlerIntegration:
         
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = None
         
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
@@ -189,8 +183,6 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = None
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_engine_class:
@@ -258,8 +250,6 @@ class TestTaskHandlerIntegration:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = None
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):

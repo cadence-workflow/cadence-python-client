@@ -87,8 +87,6 @@ class TestDecisionTaskHandler:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = [Decision()]
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
@@ -147,8 +145,6 @@ class TestDecisionTaskHandler:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_engine_class:
@@ -231,8 +227,6 @@ class TestDecisionTaskHandler:
         """Test successful decision task completion response."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = [Decision(), Decision()]
-        decision_result.force_create_new_decision_task = False
-        decision_result.query_results = None
         
         await handler._respond_decision_task_completed(sample_decision_task, decision_result)
         
@@ -242,7 +236,6 @@ class TestDecisionTaskHandler:
         assert call_args.task_token == sample_decision_task.task_token
         assert call_args.identity == handler._identity
         assert call_args.return_new_decision_task
-        assert not call_args.force_create_new_decision_task
         assert len(call_args.decisions) == 2
     
     @pytest.mark.asyncio
@@ -250,14 +243,11 @@ class TestDecisionTaskHandler:
         """Test decision task completion response without query results."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
-        decision_result.force_create_new_decision_task = False
-        decision_result.query_results = None
         
         await handler._respond_decision_task_completed(sample_decision_task, decision_result)
         
         call_args = handler._client.worker_stub.RespondDecisionTaskCompleted.call_args[0][0]
         assert call_args.return_new_decision_task
-        assert not call_args.force_create_new_decision_task
         assert len(call_args.decisions) == 0
     
     @pytest.mark.asyncio
@@ -265,8 +255,6 @@ class TestDecisionTaskHandler:
         """Test decision task completion response error handling."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
-        decision_result.force_create_new_decision_task = False
-        decision_result.query_results = None
         
         handler._client.worker_stub.RespondDecisionTaskCompleted.side_effect = Exception("Respond failed")
         
@@ -283,8 +271,6 @@ class TestDecisionTaskHandler:
         mock_engine = Mock(spec=WorkflowEngine)
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.force_create_new_decision_task = False
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_workflow_engine_class:

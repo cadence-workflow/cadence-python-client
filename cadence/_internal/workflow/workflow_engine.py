@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Any
 
 from cadence._internal.workflow.context import Context
 from cadence.api.v1.decision_pb2 import Decision
@@ -16,8 +16,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DecisionResult:
     decisions: list[Decision]
-    force_create_new_decision_task: bool = False
-    query_results: Optional[Dict[str, Any]] = None
 
 class WorkflowEngine:
     def __init__(self, info: WorkflowInfo, client: Client, workflow_func: Callable[[Any], Any] | None = None):

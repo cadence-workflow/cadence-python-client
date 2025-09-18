@@ -98,8 +98,6 @@ class TestDecisionTaskHandlerIntegration:
         decision = Decision()
         mock_engine.process_decision = AsyncMock(return_value=Mock(
             decisions=[decision],  # Proper Decision object
-            force_create_new_decision_task=False,
-            query_results=None
         ))
         
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine):
@@ -155,8 +153,6 @@ class TestDecisionTaskHandlerIntegration:
             mock_engine = Mock()
             mock_engine.process_decision = AsyncMock(return_value=Mock(
                 decisions=[],
-                force_create_new_decision_task=False,
-                query_results=None
             ))
             mock_engine_class.return_value = mock_engine
             
@@ -201,8 +197,6 @@ class TestDecisionTaskHandlerIntegration:
         # Create mock decision result
         decision_result = Mock()
         decision_result.decisions = [Decision()]  # Proper Decision object
-        decision_result.force_create_new_decision_task = False
-        decision_result.query_results = None
         
         # Call the response method
         await decision_task_handler._respond_decision_task_completed(decision_task, decision_result)

@@ -136,8 +136,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 task_token=task.task_token,
                 decisions=decision_result.decisions,
                 identity=self._identity,
-                return_new_decision_task=True,
-                force_create_new_decision_task=False
+                return_new_decision_task=True
             )
             
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)

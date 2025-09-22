@@ -5,7 +5,7 @@ from typing import Unpack, cast
 from cadence.client import Client
 from cadence.worker._registry import Registry
 from cadence.worker._activity import ActivityWorker
-from cadence.worker._decision import DecisionWorker
+from cadence.worker._decision_worker import DecisionWorker
 from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
 
 

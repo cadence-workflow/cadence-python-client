@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Callable, Any
 
 from cadence._internal.workflow.context import Context
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.history_helper import HistoryHelper
+from cadence._internal.workflow.decisions_helper import DecisionsHelper
 from cadence.api.v1.decision_pb2 import Decision
 from cadence.client import Client
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
@@ -22,6 +25,8 @@ class WorkflowEngine:
         self._context = Context(client, info)
         self._workflow_func = workflow_func
         self._decision_manager = DecisionManager()
+        self._history_helper = HistoryHelper()
+        self._decisions_helper = DecisionsHelper()
         self._is_workflow_complete = False
 
     async def process_decision(self, decision_task: PollForDecisionTaskResponse) -> DecisionResult:
@@ -37,8 +42,9 @@ class WorkflowEngine:
         try:
             logger.info(f"Processing decision task for workflow {self._context.info().workflow_id}")
             
-            # Process workflow history to update decision state machines
+            # Update history helper and process workflow history to update decision state machines
             if decision_task.history:
+                self._history_helper.update_from_new_history(decision_task.history)
                 self._process_workflow_history(decision_task.history)
             
             # Execute workflow function to generate new decisions
@@ -75,6 +81,7 @@ class WorkflowEngine:
         for event in history.events:
             try:
                 self._decision_manager.handle_history_event(event)
+                self._decisions_helper.process_history_event(event)
             except Exception as e:
                 logger.warning(f"Error processing history event: {e}")
     
@@ -160,14 +167,12 @@ class WorkflowEngine:
         
         # If the workflow function is async, we need to handle it properly
         if asyncio.iscoroutine(result):
-            # Create a simple event loop for async workflow functions
+            # Create a deterministic event loop for async workflow functions
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                loop = DeterministicEventLoop()
                 result = loop.run_until_complete(result)
             finally:
                 loop.close()
-                asyncio.set_event_loop(None)
         
         return result
     

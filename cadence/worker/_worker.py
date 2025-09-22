@@ -5,7 +5,7 @@ from typing import Unpack, cast
 from cadence.client import Client
 from cadence.worker._registry import Registry
 from cadence.worker._activity import ActivityWorker
-from cadence.worker._decision import DecisionWorker
+from cadence.worker._decision_worker import DecisionWorker
 from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
 
 
@@ -19,7 +19,7 @@ class Worker:
         _validate_and_copy_defaults(client, task_list, options)
         self._options = options
         self._activity_worker = ActivityWorker(client, task_list, registry, options)
-        self._decision_worker = DecisionWorker(client, task_list, options)
+        self._decision_worker = DecisionWorker(client, task_list, registry, options)
 
 
     async def run(self) -> None:

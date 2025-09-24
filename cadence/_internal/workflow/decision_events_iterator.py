@@ -7,7 +7,7 @@ particularly focusing on decision-related events for replay and execution.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, AsyncIterator
+from typing import List, Optional
 
 from cadence.api.v1.history_pb2 import HistoryEvent
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse

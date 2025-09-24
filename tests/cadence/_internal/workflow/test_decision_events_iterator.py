@@ -5,7 +5,6 @@ Tests for Decision Events Iterator.
 
 import pytest
 from unittest.mock import Mock, AsyncMock
-from dataclasses import dataclass
 from typing import List
 
 from cadence.api.v1.history_pb2 import HistoryEvent, History
@@ -225,7 +224,7 @@ class TestDecisionEventsIterator:
         # Should process both pages
         iterations_count = 0
         while await iterator.has_next_decision_events():
-            decision_events = await iterator.next_decision_events()
+            await iterator.next_decision_events()
             iterations_count += 1
         
         assert iterations_count == 2
@@ -342,7 +341,7 @@ class TestIntegrationScenarios:
         await iterator._ensure_initialized()
         
         # First decision should be replay (but gets set to false when no more events)
-        first_decision = await iterator.next_decision_events()
+        await iterator.next_decision_events()
         # Since this test has incomplete events (no completion for the third decision),
         # the replay logic may behave differently
         # assert first_decision.is_replay()

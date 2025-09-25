@@ -88,7 +88,6 @@ class TestDecisionEvents:
         decision_events = DecisionEvents()
         
         assert decision_events.get_events() == []
-        assert decision_events.get_decision_events() == []
         assert decision_events.get_markers() == []
         assert not decision_events.is_replay()
         assert decision_events.replay_current_time_milliseconds is None
@@ -96,13 +95,11 @@ class TestDecisionEvents:
     
     def test_decision_events_with_data(self):
         """Test DecisionEvents with actual data."""
-        events = [create_mock_history_event(1, "decision_task_started")]
-        decision_events = [create_mock_history_event(2, "decision_task_completed")]
+        events = [create_mock_history_event(1, "decision_task_started"), create_mock_history_event(2, "decision_task_completed")]
         markers = [create_mock_history_event(3, "marker_recorded")]
         
         decision_events_obj = DecisionEvents(
             events=events,
-            decision_events=decision_events,
             markers=markers,
             replay=True,
             replay_current_time_milliseconds=123456,
@@ -110,22 +107,21 @@ class TestDecisionEvents:
         )
         
         assert decision_events_obj.get_events() == events
-        assert decision_events_obj.get_decision_events() == decision_events
         assert decision_events_obj.get_markers() == markers
         assert decision_events_obj.is_replay()
         assert decision_events_obj.replay_current_time_milliseconds == 123456
         assert decision_events_obj.next_decision_event_id == 4
     
-    def test_get_optional_decision_event(self):
-        """Test retrieving optional decision event by ID."""
+    def test_get_event_by_id(self):
+        """Test retrieving event by ID."""
         event1 = create_mock_history_event(1, "decision_task_started")
         event2 = create_mock_history_event(2, "decision_task_completed")
         
-        decision_events = DecisionEvents(decision_events=[event1, event2])
+        decision_events = DecisionEvents(events=[event1, event2])
         
-        assert decision_events.get_optional_decision_event(1) == event1
-        assert decision_events.get_optional_decision_event(2) == event2
-        assert decision_events.get_optional_decision_event(999) is None
+        assert decision_events.get_event_by_id(1) == event1
+        assert decision_events.get_event_by_id(2) == event2
+        assert decision_events.get_event_by_id(999) is None
 
 
 
@@ -374,10 +370,8 @@ class TestIntegrationScenarios:
         first_decision = all_decisions[0]
         assert len(first_decision.get_events()) == 6  # Events 1-6
         assert len(first_decision.get_markers()) == 1  # Event 4
-        assert len(first_decision.get_decision_events()) == 3  # Events 2, 3, 5
         
         # Second decision should be simpler
         second_decision = all_decisions[1]
         assert len(second_decision.get_events()) == 2  # Events 7-8
         assert len(second_decision.get_markers()) == 0
-        assert len(second_decision.get_decision_events()) == 0

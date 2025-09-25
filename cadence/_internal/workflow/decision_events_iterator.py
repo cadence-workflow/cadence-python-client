@@ -21,7 +21,6 @@ class DecisionEvents:
     Represents events for a single decision iteration.
     """
     events: List[HistoryEvent] = field(default_factory=list)
-    decision_events: List[HistoryEvent] = field(default_factory=list)
     markers: List[HistoryEvent] = field(default_factory=list)
     replay: bool = False
     replay_current_time_milliseconds: Optional[int] = None
@@ -31,9 +30,6 @@ class DecisionEvents:
         """Return all events in this decision iteration."""
         return self.events
     
-    def get_decision_events(self) -> List[HistoryEvent]:
-        """Return decision-related events."""
-        return self.decision_events
     
     def get_markers(self) -> List[HistoryEvent]:
         """Return marker events."""
@@ -43,9 +39,9 @@ class DecisionEvents:
         """Check if this decision is in replay mode."""
         return self.replay
     
-    def get_optional_decision_event(self, event_id: int) -> Optional[HistoryEvent]:
-        """Retrieve a specific decision event by ID."""
-        for event in self.decision_events:
+    def get_event_by_id(self, event_id: int) -> Optional[HistoryEvent]:
+        """Retrieve a specific event by ID, returns None if not found."""
+        for event in self.events:
             if hasattr(event, 'event_id') and event.event_id == event_id:
                 return event
         return None
@@ -181,9 +177,6 @@ class DecisionEventsIterator:
                 self._process_decision_completion_event(event, decision_events)
                 current_index += 1  # Move past this event
                 break
-            else:
-                # Other events that are part of this decision
-                decision_events.decision_events.append(event)
             
             current_index += 1
         
@@ -213,14 +206,6 @@ class DecisionEventsIterator:
     
     def _process_decision_completion_event(self, event: HistoryEvent, decision_events: DecisionEvents):
         """Process the decision completion event and update state."""
-        if self._is_decision_task_completed(event):
-            # Extract decisions from the completed event if available
-            if hasattr(event, 'decision_task_completed_event_attributes'):
-                completed_attrs = event.decision_task_completed_event_attributes
-                if hasattr(completed_attrs, 'decisions'):
-                    # Process decisions - they represent what the workflow decided to do
-                    for decision in completed_attrs.decisions:
-                        decision_events.decision_events.append(decision)
         
         # Check if we're still in replay mode
         # This is determined by comparing event IDs with the current decision task's started event ID

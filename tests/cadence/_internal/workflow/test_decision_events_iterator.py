@@ -17,7 +17,6 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from cadence._internal.workflow.decision_events_iterator import (
     DecisionEvents,
     DecisionEventsIterator,
-    HistoryHelper,
     is_decision_event,
     is_marker_event,
     extract_event_timestamp_millis
@@ -247,42 +246,6 @@ class TestDecisionEventsIterator:
         assert len(decision_events_list) == 2
 
 
-class TestHistoryHelper:
-    """Test the HistoryHelper class."""
-    
-    @pytest.mark.asyncio
-    async def test_history_helper_creation(self, mock_client):
-        """Test HistoryHelper creation and basic functionality."""
-        events = [
-            create_mock_history_event(1, "decision_task_started"),
-            create_mock_history_event(2, "decision_task_completed")
-        ]
-        
-        decision_task = create_mock_decision_task(events)
-        helper = HistoryHelper(decision_task, mock_client)
-        
-        assert helper.get_workflow_execution() == decision_task.workflow_execution
-        assert helper.get_workflow_type() == decision_task.workflow_type
-    
-    @pytest.mark.asyncio
-    async def test_get_all_decision_events(self, mock_client):
-        """Test getting all decision events as a list."""
-        events = [
-            create_mock_history_event(1, "decision_task_started"),
-            create_mock_history_event(2, "decision_task_completed"),
-            create_mock_history_event(3, "decision_task_started"),
-            create_mock_history_event(4, "decision_task_completed")
-        ]
-        
-        decision_task = create_mock_decision_task(events)
-        helper = HistoryHelper(decision_task, mock_client)
-        
-        all_decision_events = await helper.get_all_decision_events()
-        
-        assert len(all_decision_events) == 2
-        for decision_events in all_decision_events:
-            assert isinstance(decision_events, DecisionEvents)
-            assert len(decision_events.get_events()) == 2
 
 
 class TestUtilityFunctions:
@@ -360,9 +323,11 @@ class TestIntegrationScenarios:
         ]
         
         decision_task = create_mock_decision_task(events)
-        helper = HistoryHelper(decision_task, mock_client)
+        iterator = DecisionEventsIterator(decision_task, mock_client)
         
-        all_decisions = await helper.get_all_decision_events()
+        all_decisions = []
+        async for decision_events in iterator:
+            all_decisions.append(decision_events)
         
         assert len(all_decisions) == 2
         

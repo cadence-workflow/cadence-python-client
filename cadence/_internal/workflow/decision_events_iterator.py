@@ -240,56 +240,6 @@ class DecisionEventsIterator:
         return await self.next_decision_events()
 
 
-class HistoryHelper:
-    """
-    Main helper class for processing workflow history events.
-    
-    Provides the primary interface for iterating through decision events
-    and managing workflow history processing.
-    """
-    
-    def __init__(self, decision_task: PollForDecisionTaskResponse, client: Client):
-        self._decision_task = decision_task
-        self._client = client
-        self._decision_events_iterator: Optional[DecisionEventsIterator] = None
-    
-    async def get_decision_events_iterator(self) -> DecisionEventsIterator:
-        """Get the decision events iterator for this history."""
-        if self._decision_events_iterator is None:
-            self._decision_events_iterator = DecisionEventsIterator(
-                self._decision_task, self._client
-            )
-            await self._decision_events_iterator._ensure_initialized()
-        
-        return self._decision_events_iterator
-    
-    async def get_all_decision_events(self) -> List[DecisionEvents]:
-        """Get all decision events as a list."""
-        iterator = await self.get_decision_events_iterator()
-        all_decision_events = []
-        
-        while await iterator.has_next_decision_events():
-            decision_events = await iterator.next_decision_events()
-            all_decision_events.append(decision_events)
-        
-        return all_decision_events
-    
-    def get_workflow_execution(self):
-        """Get the workflow execution from the decision task."""
-        return self._decision_task.workflow_execution
-    
-    def get_workflow_type(self):
-        """Get the workflow type from the decision task."""
-        return self._decision_task.workflow_type
-
-
-# Factory function for easy creation
-async def create_history_helper(
-    decision_task: PollForDecisionTaskResponse, 
-    client: Client
-) -> HistoryHelper:
-    """Create a HistoryHelper instance."""
-    return HistoryHelper(decision_task, client)
 
 
 # Utility functions

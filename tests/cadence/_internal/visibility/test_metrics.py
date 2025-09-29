@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 from cadence._internal.visibility.metrics import (
     MetricsHandler,
+    MetricType,
     NoOpMetricsHandler,
     get_default_handler,
     set_default_handler,
@@ -79,3 +80,14 @@ class TestDefaultHandler:
 
         # Restore original for other tests
         set_default_handler(original_handler)
+
+
+class TestMetricType:
+    """Test cases for MetricType enum."""
+
+    def test_metric_type_values(self):
+        """Test that MetricType enum has correct values."""
+        assert MetricType.COUNTER.value == "counter"
+        assert MetricType.GAUGE.value == "gauge"
+        assert MetricType.HISTOGRAM.value == "histogram"
+        assert MetricType.TIMER.value == "timer"

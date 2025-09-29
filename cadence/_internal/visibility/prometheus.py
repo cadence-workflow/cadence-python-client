@@ -10,7 +10,6 @@ from prometheus_client import (  # type: ignore[import-not-found]
     Counter,
     Gauge,
     Histogram,
-    Summary,
     generate_latest,
     push_to_gateway,
     start_http_server,
@@ -55,7 +54,6 @@ class PrometheusMetrics:
         self._counters: Dict[str, Counter] = {}
         self._gauges: Dict[str, Gauge] = {}
         self._histograms: Dict[str, Histogram] = {}
-        self._summaries: Dict[str, Summary] = {}
 
         # HTTP server handle
         self._http_server: Optional[Any] = None
@@ -128,23 +126,23 @@ class PrometheusMetrics:
 
         return self._histograms[metric_name]
 
-    def _get_or_create_summary(
+    def _get_or_create_timer(
         self, name: str, labels: Optional[Dict[str, str]]
-    ) -> Summary:
-        """Get or create a Summary metric."""
+    ) -> Histogram:
+        """Get or create a timer metric (implemented as histogram)."""
         metric_name = self._get_metric_name(name)
 
-        if metric_name not in self._summaries:
+        if metric_name not in self._histograms:
             label_names = list(self._merge_labels(labels).keys()) if labels else []
-            self._summaries[metric_name] = Summary(
+            self._histograms[metric_name] = Histogram(
                 metric_name,
-                f"Summary metric for {name}",
+                f"Timer metric for {name}",
                 labelnames=label_names,
                 registry=self.registry,
             )
-            logger.debug(f"Created summary metric: {metric_name}")
+            logger.debug(f"Created timer metric: {metric_name}")
 
-        return self._summaries[metric_name]
+        return self._histograms[metric_name]
 
     def counter(
         self, key: str, n: int = 1, tags: Optional[Dict[str, str]] = None
@@ -183,13 +181,13 @@ class PrometheusMetrics:
     ) -> None:
         """Send a timer metric - implemented as histogram."""
         try:
-            histogram = self._get_or_create_histogram(key, tags)
+            timer = self._get_or_create_timer(key, tags)
             merged_tags = self._merge_labels(tags)
 
             if merged_tags:
-                histogram.labels(**merged_tags).observe(duration)
+                timer.labels(**merged_tags).observe(duration)
             else:
-                histogram.observe(duration)
+                timer.observe(duration)
 
         except Exception as e:
             logger.error(f"Failed to send timer {key}: {e}")

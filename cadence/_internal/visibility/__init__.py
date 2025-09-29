@@ -1,12 +1,12 @@
 """Visibility and metrics collection components for Cadence client."""
 
-from .metrics import MetricsHandler, NoOpMetricsHandler, get_default_handler
-from .prometheus import PrometheusMetrics, PrometheusConfig
+from .metrics import MetricsEmitter, NoOpMetricsEmitter
+from .prometheus import PrometheusMetrics, PrometheusConfig, CadenceMetrics
 
 __all__ = [
-    "MetricsHandler",
-    "NoOpMetricsHandler", 
-    "get_default_handler",
+    "MetricsEmitter",
+    "NoOpMetricsEmitter", 
     "PrometheusMetrics", 
     "PrometheusConfig",
+    "CadenceMetrics",
 ]

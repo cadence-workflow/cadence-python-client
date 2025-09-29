@@ -2,7 +2,8 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Any
+from enum import Enum
+from typing import Dict, Optional
 
 from prometheus_client import (  # type: ignore[import-not-found]
     REGISTRY,
@@ -11,9 +12,9 @@ from prometheus_client import (  # type: ignore[import-not-found]
     Gauge,
     Histogram,
     generate_latest,
-    push_to_gateway,
-    start_http_server,
 )
+
+from cadence._internal.visibility.metrics import MetricsEmitter
 
 
 logger = logging.getLogger(__name__)
@@ -22,16 +23,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PrometheusConfig:
     """Configuration for Prometheus metrics."""
-
-    # HTTP server configuration
-    enable_http_server: bool = False
-    http_port: int = 8000
-    http_addr: str = "0.0.0.0"
-
-    # Push gateway configuration
-    enable_push_gateway: bool = False
-    push_gateway_url: str = "localhost:9091"
-    push_job_name: str = "cadence_client"
 
     # Metric name prefix
     metric_prefix: str = "cadence_"
@@ -43,7 +34,7 @@ class PrometheusConfig:
     registry: Optional[CollectorRegistry] = None
 
 
-class PrometheusMetrics:
+class PrometheusMetrics(MetricsEmitter):
     """Prometheus metrics collector implementation."""
 
     def __init__(self, config: Optional[PrometheusConfig] = None):
@@ -54,12 +45,6 @@ class PrometheusMetrics:
         self._counters: Dict[str, Counter] = {}
         self._gauges: Dict[str, Gauge] = {}
         self._histograms: Dict[str, Histogram] = {}
-
-        # HTTP server handle
-        self._http_server: Optional[Any] = None
-
-        if self.config.enable_http_server:
-            self.start_http_server()
 
     def _get_metric_name(self, name: str) -> str:
         """Get the full metric name with prefix."""
@@ -126,23 +111,6 @@ class PrometheusMetrics:
 
         return self._histograms[metric_name]
 
-    def _get_or_create_timer(
-        self, name: str, labels: Optional[Dict[str, str]]
-    ) -> Histogram:
-        """Get or create a timer metric (implemented as histogram)."""
-        metric_name = self._get_metric_name(name)
-
-        if metric_name not in self._histograms:
-            label_names = list(self._merge_labels(labels).keys()) if labels else []
-            self._histograms[metric_name] = Histogram(
-                metric_name,
-                f"Timer metric for {name}",
-                labelnames=label_names,
-                registry=self.registry,
-            )
-            logger.debug(f"Created timer metric: {metric_name}")
-
-        return self._histograms[metric_name]
 
     def counter(
         self, key: str, n: int = 1, tags: Optional[Dict[str, str]] = None
@@ -176,21 +144,6 @@ class PrometheusMetrics:
         except Exception as e:
             logger.error(f"Failed to send gauge {key}: {e}")
 
-    def timer(
-        self, key: str, duration: float, tags: Optional[Dict[str, str]] = None
-    ) -> None:
-        """Send a timer metric - implemented as histogram."""
-        try:
-            timer = self._get_or_create_timer(key, tags)
-            merged_tags = self._merge_labels(tags)
-
-            if merged_tags:
-                timer.labels(**merged_tags).observe(duration)
-            else:
-                timer.observe(duration)
-
-        except Exception as e:
-            logger.error(f"Failed to send timer {key}: {e}")
 
     def histogram(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None
@@ -208,44 +161,6 @@ class PrometheusMetrics:
         except Exception as e:
             logger.error(f"Failed to send histogram {key}: {e}")
 
-    def start_http_server(self) -> None:
-        """Start HTTP server to expose metrics."""
-        if self._http_server is not None:
-            logger.warning("HTTP server already started")
-            return
-
-        try:
-            server_result = start_http_server(
-                self.config.http_port,
-                addr=self.config.http_addr,
-                registry=self.registry,
-            )
-            self._http_server = server_result
-            logger.info(
-                f"Prometheus metrics HTTP server started on "
-                f"{self.config.http_addr}:{self.config.http_port}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to start HTTP server: {e}")
-            raise
-
-    def push_to_gateway(self) -> None:
-        """Push metrics to Prometheus Push Gateway."""
-        if not self.config.enable_push_gateway:
-            logger.warning("Push gateway not enabled")
-            return
-
-        try:
-            push_to_gateway(
-                self.config.push_gateway_url,
-                job=self.config.push_job_name,
-                registry=self.registry,
-            )
-            logger.debug(f"Pushed metrics to gateway: {self.config.push_gateway_url}")
-        except Exception as e:
-            logger.error(f"Failed to push to gateway: {e}")
-            raise
-
     def get_metrics_text(self) -> str:
         """Get metrics in Prometheus text format."""
         try:
@@ -255,19 +170,9 @@ class PrometheusMetrics:
             logger.error(f"Failed to generate metrics text: {e}")
             return ""
 
-    def shutdown(self) -> None:
-        """Shutdown the metrics collector."""
-        if self._http_server:
-            try:
-                self._http_server.shutdown()
-                self._http_server = None
-                logger.info("Prometheus HTTP server shutdown")
-            except Exception as e:
-                logger.error(f"Failed to shutdown HTTP server: {e}")
-
 
 # Default Cadence metrics names
-class CadenceMetrics:
+class CadenceMetrics(Enum):
     """Standard Cadence client metrics."""
 
     # Workflow metrics

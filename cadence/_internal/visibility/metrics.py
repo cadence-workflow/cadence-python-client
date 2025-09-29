@@ -13,10 +13,9 @@ class MetricType(Enum):
     COUNTER = "counter"
     GAUGE = "gauge"
     HISTOGRAM = "histogram"
-    TIMER = "timer"
 
 
-class MetricsHandler(Protocol):
+class MetricsEmitter(Protocol):
     """Protocol for metrics collection backends."""
 
     def counter(
@@ -31,11 +30,6 @@ class MetricsHandler(Protocol):
         """Send a gauge metric."""
         ...
 
-    def timer(
-        self, key: str, duration: float, tags: Optional[Dict[str, str]] = None
-    ) -> None:
-        """Send a timer metric."""
-        ...
 
     def histogram(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None
@@ -44,8 +38,8 @@ class MetricsHandler(Protocol):
         ...
 
 
-class NoOpMetricsHandler:
-    """No-op metrics handler that discards all metrics."""
+class NoOpMetricsEmitter:
+    """No-op metrics emitter that discards all metrics."""
 
     def counter(
         self, key: str, n: int = 1, tags: Optional[Dict[str, str]] = None
@@ -57,10 +51,6 @@ class NoOpMetricsHandler:
     ) -> None:
         pass
 
-    def timer(
-        self, key: str, duration: float, tags: Optional[Dict[str, str]] = None
-    ) -> None:
-        pass
 
     def histogram(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None
@@ -68,19 +58,3 @@ class NoOpMetricsHandler:
         pass
 
 
-# Global default handler
-_default_handler: Optional[MetricsHandler] = None
-
-
-def get_default_handler() -> MetricsHandler:
-    """Get the default global metrics handler."""
-    global _default_handler
-    if _default_handler is None:
-        _default_handler = NoOpMetricsHandler()
-    return _default_handler
-
-
-def set_default_handler(handler: MetricsHandler) -> None:
-    """Set the default global metrics handler."""
-    global _default_handler
-    _default_handler = handler

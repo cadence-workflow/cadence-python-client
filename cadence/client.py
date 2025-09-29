@@ -12,6 +12,7 @@ from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 from grpc.aio import Channel, ClientInterceptor, secure_channel, insecure_channel
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.data_converter import DataConverter, DefaultDataConverter
+from cadence._internal.visibility.metrics import MetricsEmitter, NoOpMetricsEmitter
 
 
 class ClientOptions(TypedDict, total=False):
@@ -24,6 +25,7 @@ class ClientOptions(TypedDict, total=False):
     channel_arguments: dict[str, Any]
     credentials: ChannelCredentials | None
     compression: Compression
+    metrics_emitter: MetricsEmitter
     interceptors: list[ClientInterceptor]
 
 _DEFAULT_OPTIONS: ClientOptions = {
@@ -34,6 +36,7 @@ _DEFAULT_OPTIONS: ClientOptions = {
     "channel_arguments": {},
     "credentials": None,
     "compression": Compression.NoCompression,
+    "metrics_emitter": NoOpMetricsEmitter(),
     "interceptors": [],
 }
 
@@ -68,6 +71,10 @@ class Client:
     @property
     def workflow_stub(self) -> WorkflowAPIStub:
         return self._workflow_stub
+
+    @property
+    def metrics_emitter(self) -> MetricsEmitter:
+        return self._options["metrics_emitter"]
 
     async def ready(self) -> None:
         await self._channel.channel_ready()

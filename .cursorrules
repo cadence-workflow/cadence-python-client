@@ -35,7 +35,15 @@ pip install -e ".[dev]"
 - Use `uv run python scripts/dev.py` for development tasks
 
 ## Code Quality
+- **ALWAYS run linter and type checker after making code changes**
 - Run linter with auto-fix: `uv tool run ruff check --fix`
 - Run type checking: `uv tool run mypy cadence/`
-- Always run both commands before committing code changes
 - Use `uv tool run ruff check --fix && uv tool run mypy cadence/` to run both together
+- **Standard workflow**: Make changes → Run linter → Run type checker → Commit
+
+## Development Workflow
+1. Make code changes
+2. Run `uv tool run ruff check --fix` (fixes formatting and linting issues)
+3. Run `uv tool run mypy cadence/` (checks type safety)
+4. Run `uv run python -m pytest` (run tests)
+5. Commit changes

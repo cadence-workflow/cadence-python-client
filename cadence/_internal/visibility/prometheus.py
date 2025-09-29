@@ -146,10 +146,10 @@ class PrometheusMetrics:
 
         return self._summaries[metric_name]
 
-    def count(
+    def counter(
         self, key: str, n: int = 1, tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Send a count metric (aligned with M3.count)."""
+        """Send a counter metric."""
         try:
             counter = self._get_or_create_counter(key, tags)
             merged_tags = self._merge_labels(tags)
@@ -160,12 +160,12 @@ class PrometheusMetrics:
                 counter.inc(n)
 
         except Exception as e:
-            logger.error(f"Failed to send count {key}: {e}")
+            logger.error(f"Failed to send counter {key}: {e}")
 
     def gauge(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Send a gauge metric (aligned with M3.gauge)."""
+        """Send a gauge metric."""
         try:
             gauge = self._get_or_create_gauge(key, tags)
             merged_tags = self._merge_labels(tags)
@@ -178,10 +178,10 @@ class PrometheusMetrics:
         except Exception as e:
             logger.error(f"Failed to send gauge {key}: {e}")
 
-    def timing(
+    def timer(
         self, key: str, duration: float, tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Send a timing metric (aligned with M3.timing) - implemented as histogram."""
+        """Send a timer metric - implemented as histogram."""
         try:
             histogram = self._get_or_create_histogram(key, tags)
             merged_tags = self._merge_labels(tags)
@@ -192,12 +192,12 @@ class PrometheusMetrics:
                 histogram.observe(duration)
 
         except Exception as e:
-            logger.error(f"Failed to send timing {key}: {e}")
+            logger.error(f"Failed to send timer {key}: {e}")
 
     def histogram(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Send a histogram metric (aligned with M3.histogram)."""
+        """Send a histogram metric."""
         try:
             histogram = self._get_or_create_histogram(key, tags)
             merged_tags = self._merge_labels(tags)

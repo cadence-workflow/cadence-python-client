@@ -92,8 +92,8 @@ class TestPrometheusMetrics:
         assert merged == {"env": "prod", "service": "cadence", "operation": "poll"}
 
     @patch("cadence._internal.visibility.prometheus.Counter")
-    def test_count(self, mock_counter_class):
-        """Test count metric (M3-aligned)."""
+    def test_counter(self, mock_counter_class):
+        """Test counter metric."""
         mock_counter = Mock()
         mock_labeled_counter = Mock()
         mock_counter.labels.return_value = mock_labeled_counter
@@ -103,7 +103,7 @@ class TestPrometheusMetrics:
         metrics = PrometheusMetrics(config)
 
         # Test without labels
-        metrics.count("test_counter", 2)
+        metrics.counter("test_counter", 2)
         mock_counter.inc.assert_called_once_with(2)
 
         # Reset mock
@@ -111,13 +111,13 @@ class TestPrometheusMetrics:
         mock_labeled_counter.reset_mock()
 
         # Test with labels
-        metrics.count("test_counter", 1, {"env": "test"})
+        metrics.counter("test_counter", 1, {"env": "test"})
         mock_counter.labels.assert_called_once_with(env="test")
         mock_labeled_counter.inc.assert_called_once_with(1)
 
     @patch("cadence._internal.visibility.prometheus.Gauge")
     def test_gauge(self, mock_gauge_class):
-        """Test gauge metric (M3-aligned)."""
+        """Test gauge metric."""
         mock_gauge = Mock()
         mock_labeled_gauge = Mock()
         mock_gauge.labels.return_value = mock_labeled_gauge
@@ -140,8 +140,8 @@ class TestPrometheusMetrics:
         mock_labeled_gauge.set.assert_called_once_with(100.0)
 
     @patch("cadence._internal.visibility.prometheus.Histogram")
-    def test_timing(self, mock_histogram_class):
-        """Test timing metric (M3-aligned)."""
+    def test_timer(self, mock_histogram_class):
+        """Test timer metric."""
         mock_histogram = Mock()
         mock_labeled_histogram = Mock()
         mock_histogram.labels.return_value = mock_labeled_histogram
@@ -151,7 +151,7 @@ class TestPrometheusMetrics:
         metrics = PrometheusMetrics(config)
 
         # Test without labels
-        metrics.timing("test_timing", 0.5)
+        metrics.timer("test_timer", 0.5)
         mock_histogram.observe.assert_called_once_with(0.5)
 
         # Reset mock
@@ -159,13 +159,13 @@ class TestPrometheusMetrics:
         mock_labeled_histogram.reset_mock()
 
         # Test with labels
-        metrics.timing("test_timing", 1.0, {"env": "test"})
+        metrics.timer("test_timer", 1.0, {"env": "test"})
         mock_histogram.labels.assert_called_once_with(env="test")
         mock_labeled_histogram.observe.assert_called_once_with(1.0)
 
     @patch("cadence._internal.visibility.prometheus.Histogram")
     def test_histogram(self, mock_histogram_class):
-        """Test histogram metric (M3-aligned)."""
+        """Test histogram metric."""
         mock_histogram = Mock()
         mock_labeled_histogram = Mock()
         mock_histogram.labels.return_value = mock_labeled_histogram

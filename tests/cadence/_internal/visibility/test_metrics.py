@@ -4,126 +4,78 @@ from unittest.mock import Mock
 
 
 from cadence._internal.visibility.metrics import (
-    MetricsRegistry,
-    MetricType,
-    NoOpMetricsCollector,
-    get_default_registry,
-    set_default_registry,
+    MetricsHandler,
+    NoOpMetricsHandler,
+    get_default_handler,
+    set_default_handler,
 )
 
 
-class TestMetricsRegistry:
-    """Test cases for MetricsRegistry."""
+class TestMetricsHandler:
+    """Test cases for MetricsHandler protocol."""
 
-    def test_registry_with_no_collector(self):
-        """Test registry with default no-op collector."""
-        registry = MetricsRegistry()
+    def test_noop_handler(self):
+        """Test no-op handler doesn't raise exceptions."""
+        handler = NoOpMetricsHandler()
 
         # Should not raise any exceptions
-        registry.counter("test_counter", 1)
-        registry.gauge("test_gauge", 42.0)
-        registry.histogram("test_histogram", 0.5)
-        registry.timer("test_timing", 1.5)
+        handler.counter("test_counter", 1)
+        handler.gauge("test_gauge", 42.0)
+        handler.histogram("test_histogram", 0.5)
+        handler.timer("test_timing", 1.5)
 
-    def test_registry_with_mock_collector(self):
-        """Test registry with mock collector."""
-        mock_collector = Mock()
-        registry = MetricsRegistry(mock_collector)
+    def test_mock_handler(self):
+        """Test mock handler implementation."""
+        mock_handler = Mock(spec=MetricsHandler)
 
         # Test counter
-        registry.counter("test_counter", 2, {"label": "value"})
-        mock_collector.counter.assert_called_once_with(
+        mock_handler.counter("test_counter", 2, {"label": "value"})
+        mock_handler.counter.assert_called_once_with(
             "test_counter", 2, {"label": "value"}
         )
 
         # Test gauge
-        registry.gauge("test_gauge", 100.0, {"env": "test"})
-        mock_collector.gauge.assert_called_once_with(
+        mock_handler.gauge("test_gauge", 100.0, {"env": "test"})
+        mock_handler.gauge.assert_called_once_with(
             "test_gauge", 100.0, {"env": "test"}
         )
 
         # Test timer
-        registry.timer("test_timing", 0.75)
-        mock_collector.timer.assert_called_once_with(
-            "test_timing", 0.75, None
+        mock_handler.timer("test_timing", 0.75, {"tag": "value"})
+        mock_handler.timer.assert_called_once_with(
+            "test_timing", 0.75, {"tag": "value"}
         )
 
         # Test histogram
-        registry.histogram("test_histogram", 2.5)
-        mock_collector.histogram.assert_called_once_with(
-            "test_histogram", 2.5, None
+        mock_handler.histogram("test_histogram", 2.5, {"env": "prod"})
+        mock_handler.histogram.assert_called_once_with(
+            "test_histogram", 2.5, {"env": "prod"}
         )
 
-    def test_set_collector(self):
-        """Test setting a new collector."""
-        registry = MetricsRegistry()
-        mock_collector = Mock()
 
-        registry.set_collector(mock_collector)
-        registry.counter("test", 1)
+class TestDefaultHandler:
+    """Test cases for default handler management."""
 
-        mock_collector.counter.assert_called_once_with("test", 1, None)
-
-    def test_register_metric(self):
-        """Test metric registration."""
-        registry = MetricsRegistry()
-
-        registry.register_metric("test_counter", MetricType.COUNTER)
-        registry.register_metric("test_gauge", MetricType.GAUGE)
-
-        # Registering the same metric twice should not raise an error
-        registry.register_metric("test_counter", MetricType.COUNTER)
-
-    def test_collector_exception_handling(self):
-        """Test that collector exceptions are handled gracefully."""
-        mock_collector = Mock()
-        mock_collector.counter.side_effect = Exception("Test exception")
-
-        registry = MetricsRegistry(mock_collector)
-
-        # Should not raise exception, but log error
-        registry.counter("test", 1)
-
-        mock_collector.counter.assert_called_once()
-
-
-class TestNoOpMetricsCollector:
-    """Test cases for NoOpMetricsCollector."""
-
-    def test_no_op_collector(self):
-        """Test that no-op collector doesn't raise exceptions."""
-        collector = NoOpMetricsCollector()
-
-        # Should not raise any exceptions
-        collector.counter("test", 1, {"label": "value"})
-        collector.gauge("test", 42.0)
-        collector.histogram("test", 0.5, {"env": "test"})
-        collector.timer("test", 1.5)
-
-
-class TestDefaultRegistry:
-    """Test cases for default registry management."""
-
-    def test_get_default_registry(self):
-        """Test getting the default registry."""
-        registry = get_default_registry()
-        assert isinstance(registry, MetricsRegistry)
+    def test_get_default_handler(self):
+        """Test getting the default handler."""
+        handler = get_default_handler()
+        assert isinstance(handler, NoOpMetricsHandler)
 
         # Should return the same instance
-        registry2 = get_default_registry()
-        assert registry is registry2
+        handler2 = get_default_handler()
+        assert handler is handler2
 
-    def test_set_default_registry(self):
-        """Test setting a custom default registry."""
-        original_registry = get_default_registry()
-        custom_registry = MetricsRegistry()
+    def test_set_default_handler(self):
+        """Test setting a custom default handler."""
+        original_handler = get_default_handler()
+        custom_handler = NoOpMetricsHandler()
 
-        set_default_registry(custom_registry)
+        set_default_handler(custom_handler)
 
-        # Should return the custom registry
-        current_registry = get_default_registry()
-        assert current_registry is custom_registry
-        assert current_registry is not original_registry
+        # Should return the custom handler
+        current_handler = get_default_handler()
+        assert current_handler is custom_handler
+        assert current_handler is not original_handler
 
         # Restore original for other tests
-        set_default_registry(original_registry)
+        set_default_handler(original_handler)

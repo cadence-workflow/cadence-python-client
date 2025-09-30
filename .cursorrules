@@ -1,0 +1,49 @@
+# Cursor Rules for Cadence Python Client
+
+## Package Management
+- **Always use `uv` for Python package management**
+- Use `uv run` for running Python commands instead of `python` directly
+- Use `uv sync` for installing dependencies instead of `pip install`
+- Use `uv tool run` for running development tools (pytest, mypy, ruff, etc.)
+- Only use `pip` or `python` directly when specifically required by the tool or documentation
+
+## Examples
+```bash
+# ✅ Correct
+uv run python scripts/generate_proto.py
+uv run python -m pytest tests/
+uv tool run mypy cadence/
+uv tool run ruff check
+
+# ❌ Avoid
+python scripts/generate_proto.py
+pip install -e ".[dev]"
+```
+
+## Virtual Environment
+- The project uses `uv` for virtual environment management
+- Always activate the virtual environment using `uv` commands
+- Dependencies are managed through `pyproject.toml` and `uv.lock`
+
+## Testing
+- Run tests with `uv run python -m pytest`
+- Use `uv run` for any Python script execution
+- Development tools should be run with `uv tool run`
+
+## Code Generation
+- Use `uv run python scripts/generate_proto.py` for protobuf generation
+- Use `uv run python scripts/dev.py` for development tasks
+
+## Code Quality
+- **ALWAYS run linter and type checker after making code changes**
+- Run linter with auto-fix: `uv tool run ruff check --fix`
+- Run type checking: `uv tool run mypy cadence/`
+- Use `uv tool run ruff check --fix && uv tool run mypy cadence/` to run both together
+- **Standard workflow**: Make changes → Run linter → Run type checker → Commit
+
+## Development Workflow
+1. Make code changes
+2. Run `uv tool run ruff check --fix` (fixes formatting and linting issues)
+3. Run `uv tool run mypy cadence/` (checks type safety)
+4. Run `uv run python -m pytest` (run tests)
+5. Commit changes

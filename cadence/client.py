@@ -12,7 +12,7 @@ from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 from grpc.aio import Channel, ClientInterceptor, secure_channel, insecure_channel
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.data_converter import DataConverter, DefaultDataConverter
-from cadence._internal.visibility.metrics import MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 
 
 class ClientOptions(TypedDict, total=False):

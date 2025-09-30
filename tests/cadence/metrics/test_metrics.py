@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 
-from cadence._internal.visibility.metrics import (
+from cadence.metrics import (
     MetricsEmitter,
     MetricType,
     NoOpMetricsEmitter,

@@ -2,7 +2,6 @@
 
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Dict, Optional
 
 from prometheus_client import (  # type: ignore[import-not-found]
@@ -14,7 +13,7 @@ from prometheus_client import (  # type: ignore[import-not-found]
     generate_latest,
 )
 
-from cadence._internal.visibility.metrics import MetricsEmitter
+from .metrics import MetricsEmitter
 
 
 logger = logging.getLogger(__name__)
@@ -23,9 +22,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PrometheusConfig:
     """Configuration for Prometheus metrics."""
-
-    # Metric name prefix
-    metric_prefix: str = "cadence_"
 
     # Default labels to apply to all metrics
     default_labels: Dict[str, str] = field(default_factory=dict)
@@ -47,8 +43,8 @@ class PrometheusMetrics(MetricsEmitter):
         self._histograms: Dict[str, Histogram] = {}
 
     def _get_metric_name(self, name: str) -> str:
-        """Get the full metric name with prefix."""
-        return f"{self.config.metric_prefix}{name}"
+        """Get the metric name."""
+        return name
 
     def _merge_labels(self, labels: Optional[Dict[str, str]]) -> Dict[str, str]:
         """Merge provided labels with default labels."""
@@ -169,30 +165,3 @@ class PrometheusMetrics(MetricsEmitter):
         except Exception as e:
             logger.error(f"Failed to generate metrics text: {e}")
             return ""
-
-
-# Default Cadence metrics names
-class CadenceMetrics(Enum):
-    """Standard Cadence client metrics."""
-
-    # Workflow metrics
-    WORKFLOW_STARTED_TOTAL = "workflow_started_total"
-    WORKFLOW_COMPLETED_TOTAL = "workflow_completed_total"
-    WORKFLOW_FAILED_TOTAL = "workflow_failed_total"
-    WORKFLOW_DURATION_SECONDS = "workflow_duration_seconds"
-
-    # Activity metrics
-    ACTIVITY_STARTED_TOTAL = "activity_started_total"
-    ACTIVITY_COMPLETED_TOTAL = "activity_completed_total"
-    ACTIVITY_FAILED_TOTAL = "activity_failed_total"
-    ACTIVITY_DURATION_SECONDS = "activity_duration_seconds"
-
-    # Worker metrics
-    WORKER_TASK_POLLS_TOTAL = "worker_task_polls_total"
-    WORKER_TASK_POLL_ERRORS_TOTAL = "worker_task_poll_errors_total"
-    WORKER_ACTIVE_TASKS = "worker_active_tasks"
-
-    # Client metrics
-    CLIENT_REQUESTS_TOTAL = "client_requests_total"
-    CLIENT_REQUEST_DURATION_SECONDS = "client_request_duration_seconds"
-    CLIENT_REQUEST_ERRORS_TOTAL = "client_request_errors_total"

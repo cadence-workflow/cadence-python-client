@@ -5,6 +5,7 @@ from cadence.api.v1.common_pb2 import Payload
 from json import JSONDecoder
 from msgspec import json, convert
 
+_SPACE = ' '.encode()
 
 class DataConverter(Protocol):
 
@@ -19,33 +20,24 @@ class DataConverter(Protocol):
 class DefaultDataConverter(DataConverter):
     def __init__(self) -> None:
         self._encoder = json.Encoder()
-        self._decoder = json.Decoder()
-        self._fallback_decoder = JSONDecoder(strict=False)
+        # Need to use std lib decoder in order to decode the custom whitespace delimited data format
+        self._decoder = JSONDecoder(strict=False)
 
 
     async def from_data(self, payload: Payload, type_hints: List[Type | None]) -> List[Any]:
         if not payload.data:
             return DefaultDataConverter._convert_into([], type_hints)
 
-        if len(type_hints) > 1:
-            payload_str = payload.data.decode()
-            # Handle payloads from the Go client, which are a series of json objects rather than a json array
-            if not payload_str.startswith("["):
-                return self._decode_whitespace_delimited(payload_str, type_hints)
-            else:
-                as_list = self._decoder.decode(payload_str)
-                return DefaultDataConverter._convert_into(as_list, type_hints)
+        payload_str = payload.data.decode()
 
-        as_value = self._decoder.decode(payload.data)
-        return DefaultDataConverter._convert_into([as_value], type_hints)
-
+        return self._decode_whitespace_delimited(payload_str, type_hints)
 
     def _decode_whitespace_delimited(self, payload: str, type_hints: List[Type | None]) -> List[Any]:
         results: List[Any] = []
         start, end = 0, len(payload)
         while start < end and len(results) < len(type_hints):
             remaining = payload[start:end]
-            (value, value_end) = self._fallback_decoder.raw_decode(remaining)
+            (value, value_end) = self._decoder.raw_decode(remaining)
             start += value_end + 1
             results.append(value)
 
@@ -76,10 +68,11 @@ class DefaultDataConverter(DataConverter):
 
 
     async def to_data(self, values: List[Any]) -> Payload:
-        data_value = values
-        # Don't wrap single values in a json array
-        if len(values) == 1:
-            data_value = values[0]
+        result = bytearray()
+        for index, value in enumerate(values):
+            self._encoder.encode_into(value, result, -1)
+            if index < len(values) - 1:
+                result += _SPACE
 
-        return Payload(data=self._encoder.encode(data_value))
+        return Payload(data=bytes(result))
 

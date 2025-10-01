@@ -82,7 +82,7 @@ async def test_activity_args(client):
 
     executor = ActivityExecutor(client, 'task_list', 'identity', 1, reg.get_activity)
 
-    await executor.execute(fake_task("activity_type", '["hello", "world"]'))
+    await executor.execute(fake_task("activity_type", '"hello" "world"'))
 
     worker_stub.RespondActivityTaskCompleted.assert_called_once_with(RespondActivityTaskCompletedRequest(
         task_token=b'task_token',

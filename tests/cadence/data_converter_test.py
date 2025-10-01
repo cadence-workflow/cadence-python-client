@@ -23,31 +23,28 @@ class _TestDataClass:
             '"Hello" "world"', [str, str], ["Hello", "world"], id="space delimited"
         ),
         pytest.param(
-            '["Hello", "world"]', [str, str], ["Hello", "world"], id="json array"
+            "1", [int, int], [1, 0], id="ints"
         ),
         pytest.param(
-            "[1]", [int, int], [1, 0], id="ints"
+            "1.5", [float, float], [1.5, 0.0], id="floats"
         ),
         pytest.param(
-            "[1.5]", [float, float], [1.5, 0.0], id="floats"
+            "true", [bool, bool], [True, False], id="bools"
         ),
         pytest.param(
-            "[true]", [bool, bool], [True, False], id="bools"
+            '{"foo": "hello world", "bar": 42, "baz": {"bar": 43}}', [_TestDataClass, _TestDataClass], [_TestDataClass("hello world", 42, _TestDataClass(bar=43)), None], id="data classes"
         ),
         pytest.param(
-            '[{"foo": "hello world", "bar": 42, "baz": {"bar": 43}}]', [_TestDataClass, _TestDataClass], [_TestDataClass("hello world", 42, _TestDataClass(bar=43)), None], id="data classes"
+            '{"foo": "hello world"}', [dict, dict], [{"foo": "hello world"}, None], id="dicts"
         ),
         pytest.param(
-            '[{"foo": "hello world"}]', [dict, dict], [{"foo": "hello world"}, None], id="dicts"
+            '{"foo": 52}', [dict[str, int], dict], [{"foo": 52}, None], id="generic dicts"
         ),
         pytest.param(
-            '[{"foo": 52}]', [dict[str, int], dict], [{"foo": 52}, None], id="generic dicts"
+            '["hello"]', [list[str], list[str]], [["hello"], None], id="lists"
         ),
         pytest.param(
-            '[["hello"]]', [list[str], list[str]], [["hello"], None], id="lists"
-        ),
-        pytest.param(
-            '[["hello"]]', [set[str], set[str]], [{"hello"}, None], id="sets"
+            '["hello"]', [set[str], set[str]], [{"hello"}, None], id="sets"
         ),
         pytest.param(
             '["hello", "world"]', [list[str]], [["hello", "world"]], id="list"
@@ -57,17 +54,13 @@ class _TestDataClass:
             [_TestDataClass(foo="bar"), _TestDataClass(bar=100), ["hello"], "world"], id="space delimited mix"
         ),
         pytest.param(
-            '[{"foo": "bar"},{"bar": 100},["hello"],"world"]', [_TestDataClass, _TestDataClass, list[str], str],
-            [_TestDataClass(foo="bar"), _TestDataClass(bar=100), ["hello"], "world"], id="json array mix"
-        ),
-        pytest.param(
             "", [], [], id="no input expected"
         ),
         pytest.param(
             "", [str], [None], id="no input unexpected"
         ),
         pytest.param(
-            '["hello world", {"foo":"bar"}, 7]', [None, None, None], ["hello world", {"foo":"bar"}, 7], id="no type hints"
+            '"hello world" {"foo":"bar"} 7', [None, None, None], ["hello world", {"foo":"bar"}, 7], id="no type hints"
         ),
         pytest.param(
             '"hello" "world" "goodbye"', [str, str], ["hello", "world"],
@@ -75,7 +68,6 @@ class _TestDataClass:
         ),
     ]
 )
-@pytest.mark.asyncio
 async def test_data_converter_from_data(json: str, types: list[Type], expected: list[Any]) -> None:
     converter = DefaultDataConverter()
     actual = await converter.from_data(Payload(data=json.encode()), types)
@@ -88,18 +80,30 @@ async def test_data_converter_from_data(json: str, types: list[Type], expected: 
             ["hello world"], '"hello world"', id="happy path"
         ),
         pytest.param(
-            ["hello", "world"], '["hello", "world"]', id="multiple values"
+            ["hello", "world"], '"hello" "world"', id="multiple values"
         ),
         pytest.param(
-            [_TestDataClass()], '{"foo": "foo", "bar": -1, "baz": null}', id="data classes"
+            [[["hello"]], ["world"]], '[["hello"]] ["world"]', id="lists"
+        ),
+        pytest.param(
+            [1, 2, 10], '1 2 10', id="numeric values"
+        ),
+        pytest.param(
+            [True, False], 'true false', id="bool values"
+        ),
+        pytest.param(
+            [{'foo': 'foo', 'bar': 20}], '{"bar":20,"foo":"foo"}', id="dict values"
+        ),
+        pytest.param(
+            [{'foo', 'bar'}], '["bar","foo"]', id="set values"
+        ),
+        pytest.param(
+            [_TestDataClass()], '{"foo":"foo","bar":-1,"baz":null}', id="data classes"
         ),
     ]
 )
-@pytest.mark.asyncio
 async def test_data_converter_to_data(values: list[Any], expected: str) -> None:
     converter = DefaultDataConverter()
+    converter._encoder = json.Encoder(order='deterministic')
     actual = await converter.to_data(values)
-    # Parse both rather than trying to compare strings
-    actual_parsed = json.decode(actual.data)
-    expected_parsed = json.decode(expected)
-    assert expected_parsed == actual_parsed
+    assert actual.data.decode() == expected

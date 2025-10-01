@@ -57,12 +57,31 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         run_id = workflow_execution.run_id
         workflow_type_name = workflow_type.name
         
-        logger.info(f"Processing decision task for workflow {workflow_id} (type: {workflow_type_name})")
+        # This log matches the WorkflowEngine but at task handler level (like Java ReplayDecisionTaskHandler)
+        logger.info(
+            "Received decision task for workflow",
+            extra={
+                "workflow_type": workflow_type_name,
+                "workflow_id": workflow_id,
+                "run_id": run_id,
+                "started_event_id": getattr(task, 'started_event_id', None),
+                "attempt": getattr(task, 'attempt', None),
+                "task_token": task.task_token[:16].hex() if task.task_token else None  # Log partial token for debugging
+            }
+        )
         
         try:
             workflow_func = self._registry.get_workflow(workflow_type_name)
         except KeyError:
-            logger.error(f"Workflow type '{workflow_type_name}' not found in registry")
+            logger.error(
+                "Workflow type not found in registry",
+                extra={
+                    "workflow_type": workflow_type_name,
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "error_type": "workflow_not_registered"
+                }
+            )
             raise KeyError(f"Workflow type '{workflow_type_name}' not found")
         
         # Create workflow info and engine
@@ -84,7 +103,15 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         # Respond with the decisions
         await self._respond_decision_task_completed(task, decision_result)
         
-        logger.info(f"Successfully processed decision task for workflow {workflow_id}")
+        logger.info(
+            "Successfully processed decision task",
+            extra={
+                "workflow_type": workflow_type_name,
+                "workflow_id": workflow_id,
+                "run_id": run_id,
+                "started_event_id": getattr(task, 'started_event_id', None)
+            }
+        )
     
     async def handle_task_failure(self, task: PollForDecisionTaskResponse, error: Exception) -> None:
         """
@@ -94,7 +121,26 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             task: The task that failed
             error: The exception that occurred
         """
-        logger.error(f"Decision task failed: {error}")
+        # Extract workflow context for error logging (matches Java ReplayDecisionTaskHandler error patterns)
+        workflow_execution = task.workflow_execution
+        workflow_id = workflow_execution.workflow_id if workflow_execution else "unknown"
+        run_id = workflow_execution.run_id if workflow_execution else "unknown"
+        workflow_type = task.workflow_type.name if task.workflow_type else "unknown"
+
+        # Log task failure with full context (matches Java error logging)
+        logger.error(
+            "Decision task processing failure",
+            extra={
+                "workflow_type": workflow_type,
+                "workflow_id": workflow_id,
+                "run_id": run_id,
+                "started_event_id": getattr(task, 'started_event_id', None),
+                "attempt": getattr(task, 'attempt', None),
+                "error_type": type(error).__name__,
+                "error_message": str(error)
+            },
+            exc_info=True
+        )
         
         # Determine the failure cause
         cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION
@@ -118,9 +164,26 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     details=details
                 )
             )
-            logger.info("Decision task failure response sent")
-        except Exception:
-            logger.exception("Error responding to decision task failure")
+            logger.info(
+                "Decision task failure response sent",
+                extra={
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "cause": cause,
+                    "task_token": task.task_token[:16].hex() if task.task_token else None
+                }
+            )
+        except Exception as e:
+            logger.error(
+                "Error responding to decision task failure",
+                extra={
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "original_error": type(error).__name__,
+                    "response_error": type(e).__name__
+                },
+                exc_info=True
+            )
             
     
     async def _respond_decision_task_completed(self, task: PollForDecisionTaskResponse, decision_result: DecisionResult) -> None:
@@ -140,8 +203,34 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
             
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)
-            logger.debug(f"Decision task completed with {len(decision_result.decisions)} decisions")
+
+            # Log completion response (matches Java ReplayDecisionTaskHandler trace/debug patterns)
+            workflow_execution = task.workflow_execution
+            logger.debug(
+                "Decision task completion response sent",
+                extra={
+                    "workflow_type": task.workflow_type.name if task.workflow_type else "unknown",
+                    "workflow_id": workflow_execution.workflow_id if workflow_execution else "unknown",
+                    "run_id": workflow_execution.run_id if workflow_execution else "unknown",
+                    "started_event_id": getattr(task, 'started_event_id', None),
+                    "decisions_count": len(decision_result.decisions),
+                    "return_new_decision_task": True,
+                    "task_token": task.task_token[:16].hex() if task.task_token else None
+                }
+            )
             
-        except Exception:
-            logger.exception("Error responding to decision task completion")
+        except Exception as e:
+            workflow_execution = task.workflow_execution
+            logger.error(
+                "Error responding to decision task completion",
+                extra={
+                    "workflow_type": task.workflow_type.name if task.workflow_type else "unknown",
+                    "workflow_id": workflow_execution.workflow_id if workflow_execution else "unknown",
+                    "run_id": workflow_execution.run_id if workflow_execution else "unknown",
+                    "started_event_id": getattr(task, 'started_event_id', None),
+                    "decisions_count": len(decision_result.decisions),
+                    "error_type": type(e).__name__
+                },
+                exc_info=True
+            )
             raise

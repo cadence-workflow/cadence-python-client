@@ -9,8 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from cadence._internal.decision_state_machine import DecisionId, DecisionType
-from cadence.api.v1.history_pb2 import HistoryEvent
+from cadence._internal.decision_state_machine import DecisionId, DecisionType, DecisionManager
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +27,24 @@ class DecisionTracker:
 
 class DecisionsHelper:
     """
-    Helper class to manage decision IDs and track decision state across workflow execution.
+    Helper class to manage decision IDs and work with DecisionManager state machines.
 
-    This class ensures that each decision gets a unique ID and tracks the lifecycle
-    of decisions through the workflow execution.
+    This class generates unique decision IDs and integrates with the DecisionManager
+    state machines for proper decision lifecycle tracking.
     """
 
-    def __init__(self):
-        """Initialize the DecisionsHelper."""
+    def __init__(self, decision_manager: DecisionManager):
+        """
+        Initialize the DecisionsHelper with a DecisionManager reference.
+
+        Args:
+            decision_manager: The DecisionManager containing the state machines
+        """
         self._next_decision_counters: Dict[DecisionType, int] = {}
         self._tracked_decisions: Dict[str, DecisionTracker] = {}
         self._decision_id_to_key: Dict[str, str] = {}
-        logger.debug("DecisionsHelper initialized")
+        self._decision_manager = decision_manager
+        logger.debug("DecisionsHelper initialized with DecisionManager integration")
 
     def _get_next_counter(self, decision_type: DecisionType) -> int:
         """
@@ -227,92 +232,6 @@ class DecisionsHelper:
         else:
             logger.warning(f"No tracker found for decision key: {decision_key}")
 
-    def process_history_event(self, event: HistoryEvent) -> None:
-        """
-        Process a history event and update decision trackers accordingly.
-
-        Args:
-            event: The history event to process
-        """
-        attr = event.WhichOneof("attributes")
-        if not attr:
-            return
-
-        # Handle activity events
-        if attr == "activity_task_scheduled_event_attributes":
-            attrs = event.activity_task_scheduled_event_attributes
-            if hasattr(attrs, "activity_id"):
-                self.update_decision_scheduled(attrs.activity_id, event.event_id)
-
-        elif attr == "activity_task_started_event_attributes":
-            attrs = event.activity_task_started_event_attributes
-            if hasattr(attrs, "scheduled_event_id"):
-                # Find the decision by scheduled event ID
-                decision_key = self._find_decision_by_scheduled_event_id(
-                    attrs.scheduled_event_id
-                )
-                if decision_key:
-                    self.update_decision_started(decision_key, event.event_id)
-
-        elif attr in [
-            "activity_task_completed_event_attributes",
-            "activity_task_failed_event_attributes",
-            "activity_task_timed_out_event_attributes",
-        ]:
-            attrs = getattr(event, attr)
-            if hasattr(attrs, "scheduled_event_id"):
-                # Find the decision by scheduled event ID
-                decision_key = self._find_decision_by_scheduled_event_id(
-                    attrs.scheduled_event_id
-                )
-                if decision_key:
-                    self.update_decision_completed(decision_key)
-
-        # Handle timer events
-        elif attr == "timer_started_event_attributes":
-            attrs = event.timer_started_event_attributes
-            if hasattr(attrs, "timer_id"):
-                self.update_decision_initiated(attrs.timer_id, event.event_id)
-
-        elif attr == "timer_fired_event_attributes":
-            attrs = event.timer_fired_event_attributes
-            if hasattr(attrs, "started_event_id"):
-                # Find the decision by started event ID
-                decision_key = self._find_decision_by_started_event_id(
-                    attrs.started_event_id
-                )
-                if decision_key:
-                    self.update_decision_completed(decision_key)
-
-        # Handle child workflow events
-        elif attr == "start_child_workflow_execution_initiated_event_attributes":
-            attrs = event.start_child_workflow_execution_initiated_event_attributes
-            if hasattr(attrs, "workflow_id"):
-                self.update_decision_initiated(attrs.workflow_id, event.event_id)
-
-        elif attr == "child_workflow_execution_started_event_attributes":
-            attrs = event.child_workflow_execution_started_event_attributes
-            if hasattr(attrs, "initiated_event_id"):
-                # Find the decision by initiated event ID
-                decision_key = self._find_decision_by_initiated_event_id(
-                    attrs.initiated_event_id
-                )
-                if decision_key:
-                    self.update_decision_started(decision_key, event.event_id)
-
-        elif attr in [
-            "child_workflow_execution_completed_event_attributes",
-            "child_workflow_execution_failed_event_attributes",
-            "child_workflow_execution_timed_out_event_attributes",
-        ]:
-            attrs = getattr(event, attr)
-            if hasattr(attrs, "initiated_event_id"):
-                # Find the decision by initiated event ID
-                decision_key = self._find_decision_by_initiated_event_id(
-                    attrs.initiated_event_id
-                )
-                if decision_key:
-                    self.update_decision_completed(decision_key)
 
     def _find_decision_by_scheduled_event_id(
         self, scheduled_event_id: int

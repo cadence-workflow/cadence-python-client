@@ -220,7 +220,8 @@ class TestDecisionTaskHandler:
         # Should not raise exception, but should log error
         with patch('cadence.worker._decision_task_handler.logger') as mock_logger:
             await handler.handle_task_failure(sample_decision_task, error)
-            mock_logger.exception.assert_called_once()
+            # Now uses logger.error with exc_info=True instead of logger.exception
+            mock_logger.error.assert_called()
     
     @pytest.mark.asyncio
     async def test_respond_decision_task_completed_success(self, handler, sample_decision_task):

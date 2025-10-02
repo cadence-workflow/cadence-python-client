@@ -213,7 +213,7 @@ class TestWorkflowEngineIntegration:
         input_data = "test-input"
         
         # Execute the workflow function
-        result = workflow_engine._execute_workflow_function_sync(workflow_engine._workflow_func, input_data)
+        result = workflow_engine._execute_workflow_function_once(workflow_engine._workflow_func, input_data)
         
         # Verify the result
         assert result == "processed: test-input"
@@ -226,7 +226,7 @@ class TestWorkflowEngineIntegration:
         input_data = "test-input"
         
         # Execute the async workflow function
-        result = workflow_engine._execute_workflow_function_sync(async_workflow_func, input_data)
+        result = workflow_engine._execute_workflow_function_once(async_workflow_func, input_data)
         
         # Verify the result
         assert result == "async-processed: test-input"
@@ -237,7 +237,7 @@ class TestWorkflowEngineIntegration:
         
         # Execute with None workflow function - should raise TypeError
         with pytest.raises(TypeError, match="'NoneType' object is not callable"):
-            workflow_engine._execute_workflow_function_sync(None, input_data)
+            workflow_engine._execute_workflow_function_once(None, input_data)
 
     def test_workflow_engine_initialization(self, workflow_engine, workflow_info, mock_client, mock_workflow_func):
         """Test WorkflowEngine initialization."""

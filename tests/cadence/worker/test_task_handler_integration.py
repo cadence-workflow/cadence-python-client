@@ -53,13 +53,18 @@ class TestTaskHandlerIntegration:
         task.workflow_execution.run_id = "test_run_id"
         task.workflow_type = Mock()
         task.workflow_type.name = "TestWorkflow"
+        # Add the missing attributes that are now accessed directly
+        task.started_event_id = 1
+        task.attempt = 1
         return task
     
     @pytest.mark.asyncio
     async def test_full_task_handling_flow_success(self, handler, sample_decision_task, mock_registry):
         """Test the complete task handling flow from base handler through decision handler."""
         # Mock workflow function
-        mock_workflow_func = Mock()
+        def mock_workflow_func(input_data):
+            return f"processed: {input_data}"
+        
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         # Mock workflow engine
@@ -81,7 +86,9 @@ class TestTaskHandlerIntegration:
     async def test_full_task_handling_flow_with_error(self, handler, sample_decision_task, mock_registry):
         """Test the complete task handling flow when an error occurs."""
         # Mock workflow function
-        mock_workflow_func = Mock()
+        def mock_workflow_func(input_data):
+            return f"processed: {input_data}"
+        
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         # Mock workflow engine to raise an error
@@ -102,7 +109,9 @@ class TestTaskHandlerIntegration:
     async def test_context_activation_integration(self, handler, sample_decision_task, mock_registry):
         """Test that context activation works correctly in the integration."""
         # Mock workflow function
-        mock_workflow_func = Mock()
+        def mock_workflow_func(input_data):
+            return f"processed: {input_data}"
+        
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         # Mock workflow engine
@@ -133,7 +142,9 @@ class TestTaskHandlerIntegration:
     async def test_multiple_workflow_executions(self, handler, mock_registry):
         """Test handling multiple workflow executions creates new engines for each."""
         # Mock workflow function
-        mock_workflow_func = Mock()
+        def mock_workflow_func(input_data):
+            return f"processed: {input_data}"
+        
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         # Create multiple decision tasks for different workflows
@@ -144,6 +155,8 @@ class TestTaskHandlerIntegration:
         task1.workflow_execution.run_id = "run1"
         task1.workflow_type = Mock()
         task1.workflow_type.name = "TestWorkflow"
+        task1.started_event_id = 1
+        task1.attempt = 1
         
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"task2_token"
@@ -152,6 +165,8 @@ class TestTaskHandlerIntegration:
         task2.workflow_execution.run_id = "run2"
         task2.workflow_type = Mock()
         task2.workflow_type.name = "TestWorkflow"
+        task2.started_event_id = 2
+        task2.attempt = 1
         
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
@@ -176,7 +191,9 @@ class TestTaskHandlerIntegration:
     async def test_workflow_engine_creation_integration(self, handler, sample_decision_task, mock_registry):
         """Test workflow engine creation integration."""
         # Mock workflow function
-        mock_workflow_func = Mock()
+        def mock_workflow_func(input_data):
+            return f"processed: {input_data}"
+        
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         # Mock workflow engine
@@ -197,7 +214,9 @@ class TestTaskHandlerIntegration:
     async def test_error_handling_with_context_cleanup(self, handler, sample_decision_task, mock_registry):
         """Test that context cleanup happens even when errors occur."""
         # Mock workflow function
-        mock_workflow_func = Mock()
+        def mock_workflow_func(input_data):
+            return f"processed: {input_data}"
+        
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         # Mock workflow engine to raise an error
@@ -231,7 +250,9 @@ class TestTaskHandlerIntegration:
         import asyncio
         
         # Mock workflow function
-        mock_workflow_func = Mock()
+        def mock_workflow_func(input_data):
+            return f"processed: {input_data}"
+        
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         # Create multiple tasks
@@ -244,6 +265,8 @@ class TestTaskHandlerIntegration:
             task.workflow_execution.run_id = f"run{i}"
             task.workflow_type = Mock()
             task.workflow_type.name = "TestWorkflow"
+            task.started_event_id = i + 1
+            task.attempt = 1
             tasks.append(task)
         
         # Mock workflow engine

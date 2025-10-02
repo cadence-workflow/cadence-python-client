@@ -69,8 +69,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 "workflow_type": workflow_type_name,
                 "workflow_id": workflow_id,
                 "run_id": run_id,
-                "started_event_id": getattr(task, 'started_event_id', None),
-                "attempt": getattr(task, 'attempt', None),
+                "started_event_id": task.started_event_id,
+                "attempt": task.attempt,
                 "task_token": task.task_token[:16].hex() if task.task_token else None  # Log partial token for debugging
             }
         )
@@ -134,7 +134,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 "workflow_type": workflow_type_name,
                 "workflow_id": workflow_id,
                 "run_id": run_id,
-                "started_event_id": getattr(task, 'started_event_id', None)
+                "started_event_id": task.started_event_id
             }
         )
     
@@ -159,8 +159,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 "workflow_type": workflow_type,
                 "workflow_id": workflow_id,
                 "run_id": run_id,
-                "started_event_id": getattr(task, 'started_event_id', None),
-                "attempt": getattr(task, 'attempt', None),
+                "started_event_id": task.started_event_id,
+                "attempt": task.attempt,
                 "error_type": type(error).__name__,
                 "error_message": str(error)
             },
@@ -209,7 +209,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 },
                 exc_info=True
             )
-            
     
     async def _respond_decision_task_completed(self, task: PollForDecisionTaskResponse, decision_result: DecisionResult) -> None:
         """
@@ -237,7 +236,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     "workflow_type": task.workflow_type.name if task.workflow_type else "unknown",
                     "workflow_id": workflow_execution.workflow_id if workflow_execution else "unknown",
                     "run_id": workflow_execution.run_id if workflow_execution else "unknown",
-                    "started_event_id": getattr(task, 'started_event_id', None),
+                    "started_event_id": task.started_event_id,
                     "decisions_count": len(decision_result.decisions),
                     "return_new_decision_task": True,
                     "task_token": task.task_token[:16].hex() if task.task_token else None
@@ -252,7 +251,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     "workflow_type": task.workflow_type.name if task.workflow_type else "unknown",
                     "workflow_id": workflow_execution.workflow_id if workflow_execution else "unknown",
                     "run_id": workflow_execution.run_id if workflow_execution else "unknown",
-                    "started_event_id": getattr(task, 'started_event_id', None),
+                    "started_event_id": task.started_event_id,
                     "decisions_count": len(decision_result.decisions),
                     "error_type": type(e).__name__
                 },

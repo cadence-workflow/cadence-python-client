@@ -48,8 +48,8 @@ class WorkflowEngine:
                     "workflow_type": self._context.info().workflow_type,
                     "workflow_id": self._context.info().workflow_id,
                     "run_id": self._context.info().workflow_run_id,
-                    "started_event_id": getattr(decision_task, 'started_event_id', None),
-                    "attempt": getattr(decision_task, 'attempt', None)
+                    "started_event_id": decision_task.started_event_id,
+                    "attempt": decision_task.attempt
                 }
             )
 
@@ -74,7 +74,7 @@ class WorkflowEngine:
                         "workflow_type": self._context.info().workflow_type,
                         "workflow_id": self._context.info().workflow_id,
                         "run_id": self._context.info().workflow_run_id,
-                        "started_event_id": getattr(decision_task, 'started_event_id', None),
+                        "started_event_id": decision_task.started_event_id,
                         "decisions_count": len(decisions),
                         "replay_mode": self._context.is_replay_mode()
                     }
@@ -90,14 +90,14 @@ class WorkflowEngine:
                     "workflow_type": self._context.info().workflow_type,
                     "workflow_id": self._context.info().workflow_id,
                     "run_id": self._context.info().workflow_run_id,
-                    "started_event_id": getattr(decision_task, 'started_event_id', None),
-                    "attempt": getattr(decision_task, 'attempt', None),
+                    "started_event_id": decision_task.started_event_id,
+                    "attempt": decision_task.attempt,
                     "error_type": type(e).__name__
                 },
                 exc_info=True
             )
-            # Return empty decisions on error - the task will be failed by the handler
-            return DecisionResult(decisions=[])
+            # Re-raise the exception so the handler can properly handle the failure
+            raise
     
     async def _process_decision_events(self, events_iterator: DecisionEventsIterator, decision_task: PollForDecisionTaskResponse) -> None:
         """

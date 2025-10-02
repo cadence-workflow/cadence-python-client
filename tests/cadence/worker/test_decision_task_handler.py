@@ -58,6 +58,9 @@ class TestDecisionTaskHandler:
         task.workflow_execution.run_id = "test_run_id"
         task.workflow_type = Mock()
         task.workflow_type.name = "TestWorkflow"
+        # Add the missing attributes that are now accessed directly
+        task.started_event_id = 1
+        task.attempt = 1
         return task
     
     def test_initialization(self, mock_client, mock_registry):
@@ -178,6 +181,8 @@ class TestDecisionTaskHandler:
         task1.workflow_execution.run_id = "run_1"
         task1.workflow_type = Mock()
         task1.workflow_type.name = "TestWorkflow"
+        task1.started_event_id = 1
+        task1.attempt = 1
         
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"test_task_token_2"
@@ -186,6 +191,8 @@ class TestDecisionTaskHandler:
         task2.workflow_execution.run_id = "run_2"          # Different run
         task2.workflow_type = Mock()
         task2.workflow_type.name = "TestWorkflow"
+        task2.started_event_id = 2
+        task2.attempt = 1
         
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)

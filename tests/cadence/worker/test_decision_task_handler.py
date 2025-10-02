@@ -135,8 +135,8 @@ class TestDecisionTaskHandler:
             await handler._handle_task_implementation(sample_decision_task)
     
     @pytest.mark.asyncio
-    async def test_handle_task_implementation_creates_new_engines(self, handler, sample_decision_task, mock_registry):
-        """Test that decision task handler creates new workflow engines for each task."""
+    async def test_handle_task_implementation_caches_engines(self, handler, sample_decision_task, mock_registry):
+        """Test that decision task handler caches workflow engines for same workflow execution."""
         # Mock workflow function
         mock_workflow_func = Mock()
         mock_registry.get_workflow.return_value = mock_workflow_func
@@ -151,14 +151,60 @@ class TestDecisionTaskHandler:
             # First call - should create new engine
             await handler._handle_task_implementation(sample_decision_task)
             
-            # Second call - should create another new engine
+            # Second call with same workflow_id and run_id - should reuse cached engine
             await handler._handle_task_implementation(sample_decision_task)
+        
+        # Registry should be called for each task (to get workflow function)
+        assert mock_registry.get_workflow.call_count == 2
+        
+        # Engine should be created only once (cached for second call)
+        assert mock_engine_class.call_count == 1
+        
+        # But process_decision should be called twice
+        assert mock_engine.process_decision.call_count == 2
+    
+    @pytest.mark.asyncio
+    async def test_handle_task_implementation_different_executions_get_separate_engines(self, handler, mock_registry):
+        """Test that different workflow executions get separate engines."""
+        # Mock workflow function
+        mock_workflow_func = Mock()
+        mock_registry.get_workflow.return_value = mock_workflow_func
+        
+        # Create two different decision tasks
+        task1 = Mock(spec=PollForDecisionTaskResponse)
+        task1.task_token = b"test_task_token_1"
+        task1.workflow_execution = Mock()
+        task1.workflow_execution.workflow_id = "workflow_1"
+        task1.workflow_execution.run_id = "run_1"
+        task1.workflow_type = Mock()
+        task1.workflow_type.name = "TestWorkflow"
+        
+        task2 = Mock(spec=PollForDecisionTaskResponse)
+        task2.task_token = b"test_task_token_2"
+        task2.workflow_execution = Mock()
+        task2.workflow_execution.workflow_id = "workflow_2"  # Different workflow
+        task2.workflow_execution.run_id = "run_2"          # Different run
+        task2.workflow_type = Mock()
+        task2.workflow_type.name = "TestWorkflow"
+        
+        # Mock workflow engine
+        mock_engine = Mock(spec=WorkflowEngine)
+        mock_decision_result = Mock(spec=DecisionResult)
+        mock_decision_result.decisions = []
+        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        
+        with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_engine_class:
+            # Process different workflow executions
+            await handler._handle_task_implementation(task1)
+            await handler._handle_task_implementation(task2)
         
         # Registry should be called for each task
         assert mock_registry.get_workflow.call_count == 2
         
-        # Engine should be created twice and called twice
+        # Engine should be created twice (different executions)
         assert mock_engine_class.call_count == 2
+        
+        # Process_decision should be called twice
         assert mock_engine.process_decision.call_count == 2
     
     @pytest.mark.asyncio

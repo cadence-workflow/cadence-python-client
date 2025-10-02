@@ -9,7 +9,7 @@ from unittest.mock import Mock, AsyncMock, patch
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.api.v1.history_pb2 import History, HistoryEvent, WorkflowExecutionStartedEventAttributes
-from cadence.worker._decision_worker import DecisionWorker
+from cadence.worker._decision import DecisionWorker
 from cadence.worker._registry import Registry
 from cadence.client import Client
 

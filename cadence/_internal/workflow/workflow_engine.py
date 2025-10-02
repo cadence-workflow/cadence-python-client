@@ -275,7 +275,7 @@ class WorkflowEngine:
             workflow_input = await self._extract_workflow_input(decision_task)
 
             # Execute workflow function
-            result = self._execute_workflow_function_sync(workflow_func, workflow_input)
+            result = self._execute_workflow_function_once(workflow_func, workflow_input)
 
             # Check if workflow is complete
             if result is not None:
@@ -337,14 +337,14 @@ class WorkflowEngine:
         logger.warning("No WorkflowExecutionStarted event found in history")
         return None
     
-    def _execute_workflow_function_sync(self, workflow_func: Callable, workflow_input: Any) -> Any:
+    def _execute_workflow_function_once(self, workflow_func: Callable, workflow_input: Any) -> Any:
         """
-        Execute the workflow function synchronously.
-        
+        Execute the workflow function once (not during replay).
+
         Args:
             workflow_func: The workflow function to execute
             workflow_input: The input data for the workflow function
-            
+
         Returns:
             The result of the workflow function execution
         """

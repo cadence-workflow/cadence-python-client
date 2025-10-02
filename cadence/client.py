@@ -1,8 +1,12 @@
 import os
 import socket
-from typing import TypedDict, Unpack, Any, cast
+import uuid
+from dataclasses import dataclass
+from datetime import timedelta
+from typing import TypedDict, Unpack, Any, cast, Union, Optional, Callable
 
 from grpc import ChannelCredentials, Compression
+from google.protobuf.duration_pb2 import Duration
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
@@ -11,8 +15,49 @@ from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 from grpc.aio import Channel, ClientInterceptor, secure_channel, insecure_channel
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
+from cadence.api.v1.service_workflow_pb2 import StartWorkflowExecutionRequest, StartWorkflowExecutionResponse
+from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
+from cadence.api.v1.tasklist_pb2 import TaskList
+from cadence.api.v1.workflow_pb2 import WorkflowIdReusePolicy
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+
+
+@dataclass
+class WorkflowRun:
+    """Represents a workflow run that can be used to get results."""
+    execution: WorkflowExecution
+    client: 'Client'
+
+    @property
+    def workflow_id(self) -> str:
+        """Get the workflow ID."""
+        return self.execution.workflow_id
+
+    @property
+    def run_id(self) -> str:
+        """Get the run ID."""
+        return self.execution.run_id
+
+    async def get_result(self, result_type: Optional[type] = None) -> Any:  # noqa: ARG002
+        """Wait for workflow completion and return result."""
+        # TODO: Implement workflow result retrieval
+        # This would involve polling GetWorkflowExecutionHistory until completion
+        # and extracting the result from the final event
+        raise NotImplementedError("get_result not yet implemented")
+
+
+@dataclass
+class StartWorkflowOptions:
+    """Options for starting a workflow execution."""
+    workflow_id: Optional[str] = None
+    task_list: str = ""
+    execution_start_to_close_timeout: Optional[timedelta] = None
+    task_start_to_close_timeout: Optional[timedelta] = None
+    workflow_id_reuse_policy: int = WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
+    cron_schedule: Optional[str] = None
+    memo: Optional[dict[str, Any]] = None
+    search_attributes: Optional[dict[str, Any]] = None
 
 
 class ClientOptions(TypedDict, total=False):
@@ -87,6 +132,142 @@ class Client:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
+
+    async def _build_start_workflow_request(
+        self,
+        workflow: Union[str, Callable],
+        args: tuple[Any, ...],
+        options: StartWorkflowOptions
+    ) -> StartWorkflowExecutionRequest:
+        """Build a StartWorkflowExecutionRequest from parameters."""
+        # Generate workflow ID if not provided
+        workflow_id = options.workflow_id or str(uuid.uuid4())
+
+        # Validate required fields
+        if not options.task_list:
+            raise ValueError("task_list is required")
+
+        # Determine workflow type name
+        if isinstance(workflow, str):
+            workflow_type_name = workflow
+        else:
+            # For callable, use function name or __name__ attribute
+            workflow_type_name = getattr(workflow, '__name__', str(workflow))
+
+        # Encode input arguments
+        input_payload = None
+        if args:
+            try:
+                input_payload = await self.data_converter.to_data(list(args))
+            except Exception as e:
+                raise ValueError(f"Failed to encode workflow arguments: {e}")
+
+        # Convert timedelta to protobuf Duration
+        execution_timeout = None
+        if options.execution_start_to_close_timeout:
+            execution_timeout = Duration()
+            execution_timeout.FromTimedelta(options.execution_start_to_close_timeout)
+
+        task_timeout = None
+        if options.task_start_to_close_timeout:
+            task_timeout = Duration()
+            task_timeout.FromTimedelta(options.task_start_to_close_timeout)
+
+        # Build the request
+        request = StartWorkflowExecutionRequest(
+            domain=self.domain,
+            workflow_id=workflow_id,
+            workflow_type=WorkflowType(name=workflow_type_name),
+            task_list=TaskList(name=options.task_list),
+            identity=self.identity,
+            request_id=str(uuid.uuid4())
+        )
+
+        # Set workflow_id_reuse_policy separately to avoid type issues
+        request.workflow_id_reuse_policy = options.workflow_id_reuse_policy  # type: ignore[assignment]
+
+        # Set optional fields
+        if input_payload:
+            request.input.CopyFrom(input_payload)
+        if execution_timeout:
+            request.execution_start_to_close_timeout.CopyFrom(execution_timeout)
+        if task_timeout:
+            request.task_start_to_close_timeout.CopyFrom(task_timeout)
+        if options.cron_schedule:
+            request.cron_schedule = options.cron_schedule
+
+        return request
+
+    async def start_workflow(
+        self,
+        workflow: Union[str, Callable],
+        *args,
+        **options_kwargs
+    ) -> WorkflowExecution:
+        """
+        Start a workflow execution asynchronously.
+
+        Args:
+            workflow: Workflow function or workflow type name string
+            *args: Arguments to pass to the workflow
+            **options_kwargs: StartWorkflowOptions as keyword arguments
+
+        Returns:
+            WorkflowExecution with workflow_id and run_id
+
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            Exception: If the gRPC call fails
+        """
+        # Convert kwargs to StartWorkflowOptions
+        options = StartWorkflowOptions(**options_kwargs)
+
+        # Build the gRPC request
+        request = await self._build_start_workflow_request(workflow, args, options)
+
+        # Execute the gRPC call
+        try:
+            response: StartWorkflowExecutionResponse = await self.workflow_stub.StartWorkflowExecution(request)
+
+            # Emit metrics if available
+            if self.metrics_emitter:
+                # TODO: Add workflow start metrics similar to Go client
+                pass
+
+            execution = WorkflowExecution()
+            execution.workflow_id = request.workflow_id
+            execution.run_id = response.run_id
+            return execution
+        except Exception as e:
+            raise Exception(f"Failed to start workflow: {e}") from e
+
+    async def execute_workflow(
+        self,
+        workflow: Union[str, Callable],
+        *args,
+        **options_kwargs
+    ) -> WorkflowRun:
+        """
+        Start a workflow execution and return a handle to get the result.
+
+        Args:
+            workflow: Workflow function or workflow type name string
+            *args: Arguments to pass to the workflow
+            **options_kwargs: StartWorkflowOptions as keyword arguments
+
+        Returns:
+            WorkflowRun that can be used to get the workflow result
+
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            Exception: If the gRPC call fails
+        """
+        execution = await self.start_workflow(workflow, *args, **options_kwargs)
+
+        return WorkflowRun(
+            execution=execution,
+            client=self
+        )
 
 def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     if "target" not in options:

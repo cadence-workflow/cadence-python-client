@@ -19,7 +19,7 @@ class Worker:
         _validate_and_copy_defaults(client, task_list, options)
         self._options = options
         self._activity_worker = ActivityWorker(client, task_list, registry, options)
-        self._decision_worker = DecisionWorker(client, task_list, options)
+        self._decision_worker = DecisionWorker(client, task_list, registry, options)
 
 
     async def run(self) -> None:

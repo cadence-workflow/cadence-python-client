@@ -218,28 +218,6 @@ class Client:
         except Exception as e:
             raise Exception(f"Failed to start workflow: {e}") from e
 
-    async def execute_workflow(
-        self,
-        workflow: Union[str, Callable],
-        *args,
-        **options_kwargs
-    ) -> WorkflowExecution:
-        """
-        Start a workflow execution and return the execution handle.
-
-        Args:
-            workflow: Workflow function or workflow type name string
-            *args: Arguments to pass to the workflow
-            **options_kwargs: StartWorkflowOptions as keyword arguments
-
-        Returns:
-            WorkflowExecution that contains workflow_id and run_id
-
-        Raises:
-            ValueError: If required parameters are missing or invalid
-            Exception: If the gRPC call fails
-        """
-        return await self.start_workflow(workflow, *args, **options_kwargs)
 
 
 

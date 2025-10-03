@@ -112,8 +112,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         decision_result = await workflow_engine.process_decision(task)
         
         # Clean up completed workflows from cache to prevent memory leaks
-        # Use getattr with default False to handle mocked engines in tests
-        if getattr(workflow_engine, '_is_workflow_complete', False):
+        if workflow_engine._is_workflow_complete:
             with self._cache_lock:
                 self._workflow_engines.pop(cache_key, None)
                 logger.debug(

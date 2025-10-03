@@ -88,6 +88,8 @@ class TestDecisionTaskHandler:
         
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
+        mock_engine._is_workflow_complete = False  # Add missing attribute
+        mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = [Decision()]
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
@@ -146,6 +148,7 @@ class TestDecisionTaskHandler:
         
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
+        mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
@@ -196,6 +199,7 @@ class TestDecisionTaskHandler:
         
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
+        mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
@@ -323,6 +327,7 @@ class TestDecisionTaskHandler:
         mock_registry.get_workflow.return_value = mock_workflow_func
         
         mock_engine = Mock(spec=WorkflowEngine)
+        mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)

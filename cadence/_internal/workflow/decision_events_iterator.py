@@ -157,10 +157,10 @@ class DecisionEventsIterator:
         decision_events.events.append(decision_task_started)
         
         # Update replay time if available
-        if hasattr(decision_task_started, 'event_time') and decision_task_started.event_time:
-            self._replay_current_time_milliseconds = getattr(
-                decision_task_started.event_time, 'seconds', 0
-            ) * 1000
+        if decision_task_started.event_time:
+            self._replay_current_time_milliseconds = (
+                decision_task_started.event_time.seconds * 1000
+            )
             decision_events.replay_current_time_milliseconds = self._replay_current_time_milliseconds
         
         # Process subsequent events until we find the corresponding DecisionTask completion

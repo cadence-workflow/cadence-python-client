@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, PropertyMock
 from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.api.v1.service_workflow_pb2 import StartWorkflowExecutionRequest, StartWorkflowExecutionResponse
 from cadence.api.v1.workflow_pb2 import WorkflowIdReusePolicy
-from cadence.client import Client, StartWorkflowOptions, WorkflowRun
+from cadence.client import Client, StartWorkflowOptions
 from cadence.data_converter import DefaultDataConverter
 
 
@@ -64,32 +64,6 @@ class TestStartWorkflowOptions:
         assert options.search_attributes == {"attr": "value"}
 
 
-class TestWorkflowRun:
-    """Test WorkflowRun class."""
-
-    def test_properties(self, mock_client):
-        """Test WorkflowRun properties."""
-        execution = WorkflowExecution()
-        execution.workflow_id = "test-workflow-id"
-        execution.run_id = "test-run-id"
-
-        workflow_run = WorkflowRun(execution=execution, client=mock_client)
-
-        assert workflow_run.workflow_id == "test-workflow-id"
-        assert workflow_run.run_id == "test-run-id"
-        assert workflow_run.client is mock_client
-
-    @pytest.mark.asyncio
-    async def test_get_result_not_implemented(self, mock_client):
-        """Test that get_result raises NotImplementedError."""
-        execution = WorkflowExecution()
-        execution.workflow_id = "test-workflow-id"
-        execution.run_id = "test-run-id"
-
-        workflow_run = WorkflowRun(execution=execution, client=mock_client)
-
-        with pytest.raises(NotImplementedError, match="get_result not yet implemented"):
-            await workflow_run.get_result()
 
 
 class TestClientBuildStartWorkflowRequest:
@@ -316,17 +290,16 @@ class TestClientExecuteWorkflow:
         client = Client(domain="test-domain", target="localhost:7933")
         client.start_workflow = AsyncMock(return_value=execution)
 
-        workflow_run = await client.execute_workflow(
+        result_execution = await client.execute_workflow(
             "TestWorkflow",
             "arg1", "arg2",
             task_list="test-task-list"
         )
 
-        assert isinstance(workflow_run, WorkflowRun)
-        assert workflow_run.execution is execution
-        assert workflow_run.client is client
-        assert workflow_run.workflow_id == "test-workflow-id"
-        assert workflow_run.run_id == "test-run-id"
+        assert isinstance(result_execution, WorkflowExecution)
+        assert result_execution is execution
+        assert result_execution.workflow_id == "test-workflow-id"
+        assert result_execution.run_id == "test-run-id"
 
         # Verify start_workflow was called with correct arguments
         client.start_workflow.assert_called_once_with(
@@ -361,7 +334,7 @@ async def test_integration_workflow_invocation():
     client._workflow_stub.StartWorkflowExecution = AsyncMock(return_value=response)
 
     # Test the complete flow
-    workflow_run = await client.execute_workflow(
+    execution = await client.execute_workflow(
         "IntegrationTestWorkflow",
         "test-arg",
         42,
@@ -372,8 +345,8 @@ async def test_integration_workflow_invocation():
     )
 
     # Verify result
-    assert workflow_run.workflow_id == "integration-workflow-id"
-    assert workflow_run.run_id == "integration-run-id"
+    assert execution.workflow_id == "integration-workflow-id"
+    assert execution.run_id == "integration-run-id"
 
     # Verify the gRPC call was made with proper request
     client._workflow_stub.StartWorkflowExecution.assert_called_once()

@@ -23,29 +23,6 @@ from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 
 
-@dataclass
-class WorkflowRun:
-    """Represents a workflow run that can be used to get results."""
-    execution: WorkflowExecution
-    client: 'Client'
-
-    @property
-    def workflow_id(self) -> str:
-        """Get the workflow ID."""
-        return self.execution.workflow_id
-
-    @property
-    def run_id(self) -> str:
-        """Get the run ID."""
-        return self.execution.run_id
-
-    async def get_result(self, result_type: Optional[type] = None) -> Any:  # noqa: ARG002
-        """Wait for workflow completion and return result."""
-        # TODO: Implement workflow result retrieval
-        # This would involve polling GetWorkflowExecutionHistory until completion
-        # and extracting the result from the final event
-        raise NotImplementedError("get_result not yet implemented")
-
 
 @dataclass
 class StartWorkflowOptions:
@@ -246,9 +223,9 @@ class Client:
         workflow: Union[str, Callable],
         *args,
         **options_kwargs
-    ) -> WorkflowRun:
+    ) -> WorkflowExecution:
         """
-        Start a workflow execution and return a handle to get the result.
+        Start a workflow execution and return the execution handle.
 
         Args:
             workflow: Workflow function or workflow type name string
@@ -256,18 +233,15 @@ class Client:
             **options_kwargs: StartWorkflowOptions as keyword arguments
 
         Returns:
-            WorkflowRun that can be used to get the workflow result
+            WorkflowExecution that contains workflow_id and run_id
 
         Raises:
             ValueError: If required parameters are missing or invalid
             Exception: If the gRPC call fails
         """
-        execution = await self.start_workflow(workflow, *args, **options_kwargs)
+        return await self.start_workflow(workflow, *args, **options_kwargs)
 
-        return WorkflowRun(
-            execution=execution,
-            client=self
-        )
+
 
 def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     if "target" not in options:

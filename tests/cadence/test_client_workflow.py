@@ -276,50 +276,6 @@ class TestClientStartWorkflow:
         assert captured_options.execution_start_to_close_timeout == timedelta(minutes=30)
 
 
-class TestClientStartWorkflow:
-    """Test Client.start_workflow method."""
-
-    @pytest.mark.asyncio
-    async def test_start_workflow_success(self, mock_client):
-        """Test successful workflow start."""
-        # Mock the gRPC stub
-        execution = WorkflowExecution()
-        execution.workflow_id = "test-workflow-id"
-        execution.run_id = "test-run-id"
-
-        response = StartWorkflowExecutionResponse()
-        response.run_id = "test-run-id"
-
-        client = Client(domain="test-domain", target="localhost:7933")
-        client._workflow_stub = Mock()
-        client._workflow_stub.StartWorkflowExecution = AsyncMock(return_value=response)
-
-        result_execution = await client.start_workflow(
-            "TestWorkflow",
-            "arg1", "arg2",
-            task_list="test-task-list",
-            workflow_id="test-workflow-id"
-        )
-
-        assert isinstance(result_execution, WorkflowExecution)
-        assert result_execution.workflow_id == "test-workflow-id"
-        assert result_execution.run_id == "test-run-id"
-
-        # Verify gRPC call was made
-        client._workflow_stub.StartWorkflowExecution.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_start_workflow_propagates_error(self, mock_client):
-        """Test that start_workflow propagates gRPC errors."""
-        client = Client(domain="test-domain", target="localhost:7933")
-        client._workflow_stub = Mock()
-        client._workflow_stub.StartWorkflowExecution = AsyncMock(side_effect=ValueError("gRPC error"))
-
-        with pytest.raises(Exception, match="Failed to start workflow"):
-            await client.start_workflow(
-                "TestWorkflow",
-                task_list="valid-task-list"
-            )
 
 
 @pytest.mark.asyncio

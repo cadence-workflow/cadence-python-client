@@ -30,16 +30,21 @@ class TestRegistry:
             @reg.workflow
             def test_func():
                 return "test"
-            
-            func = reg.get_workflow("test_func")
+
+            # Registry stores WorkflowDefinition internally
+            func_def = reg.get_workflow(test_func.__name__)
+            # WorkflowDefinition can be called directly
+            assert func_def() == "test"
+            # Verify it's actually a WorkflowDefinition
+            from cadence.workflow import WorkflowDefinition
+            assert isinstance(func_def, WorkflowDefinition)
         else:
             @reg.activity
             def test_func():
                 return "test"
             
             func = reg.get_activity(test_func.name)
-        
-        assert func() == "test"
+            assert func() == "test"
     
     def test_direct_call_behavior(self):
         reg = Registry()

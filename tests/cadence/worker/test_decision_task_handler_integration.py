@@ -35,12 +35,12 @@ class TestDecisionTaskHandlerIntegration:
     def registry(self):
         """Create a registry with a test workflow."""
         reg = Registry()
-        
-        @reg.workflow
+
+        @reg.workflow(name="test_workflow")
         def test_workflow(input_data):
             """Simple test workflow that returns the input."""
             return f"processed: {input_data}"
-        
+
         return reg
 
     @pytest.fixture

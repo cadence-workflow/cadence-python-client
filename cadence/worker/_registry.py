@@ -9,6 +9,7 @@ similar to the Go client's registry.go implementation.
 import logging
 from typing import Callable, Dict, Optional, Unpack, TypedDict, Sequence, overload
 from cadence.activity import ActivityDefinitionOptions, ActivityDefinition, ActivityDecorator, P, T
+from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class Registry:
     
     def __init__(self) -> None:
         """Initialize the registry."""
-        self._workflows: Dict[str, Callable] = {}
+        self._workflows: Dict[str, WorkflowDefinition] = {}
         self._activities: Dict[str, ActivityDefinition] = {}
         self._workflow_aliases: Dict[str, str] = {}  # alias -> name mapping
 
@@ -60,7 +61,10 @@ class Registry:
             if workflow_name in self._workflows:
                 raise KeyError(f"Workflow '{workflow_name}' is already registered")
             
-            self._workflows[workflow_name] = f
+            # Create WorkflowDefinition with type information
+            workflow_opts = WorkflowDefinitionOptions(name=workflow_name)
+            workflow_def = WorkflowDefinition.wrap(f, workflow_opts)
+            self._workflows[workflow_name] = workflow_def
             
             # Register alias if provided
             alias = options.get('alias')
@@ -135,7 +139,7 @@ class Registry:
         self._activities[defn.name] = defn
 
     
-    def get_workflow(self, name: str) -> Callable:
+    def get_workflow(self, name: str) -> WorkflowDefinition:
         """
         Get a registered workflow by name.
         
@@ -143,7 +147,7 @@ class Registry:
             name: Name or alias of the workflow
             
         Returns:
-            The workflow function
+            The workflow definition with type information
             
         Raises:
             KeyError: If workflow is not found

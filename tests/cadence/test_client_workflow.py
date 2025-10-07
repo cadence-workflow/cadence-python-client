@@ -38,8 +38,6 @@ class TestStartWorkflowOptions:
         assert options.task_start_to_close_timeout is None
         assert options.workflow_id_reuse_policy == WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
         assert options.cron_schedule is None
-        assert options.memo is None
-        assert options.search_attributes is None
 
     def test_custom_values(self):
         """Test setting custom values for StartWorkflowOptions."""
@@ -49,9 +47,7 @@ class TestStartWorkflowOptions:
             execution_start_to_close_timeout=timedelta(minutes=30),
             task_start_to_close_timeout=timedelta(seconds=10),
             workflow_id_reuse_policy=WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
-            cron_schedule="0 * * * *",
-            memo={"key": "value"},
-            search_attributes={"attr": "value"}
+            cron_schedule="0 * * * *"
         )
 
         assert options.workflow_id == "custom-id"
@@ -60,8 +56,6 @@ class TestStartWorkflowOptions:
         assert options.task_start_to_close_timeout == timedelta(seconds=10)
         assert options.workflow_id_reuse_policy == WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
         assert options.cron_schedule == "0 * * * *"
-        assert options.memo == {"key": "value"}
-        assert options.search_attributes == {"attr": "value"}
 
 
 

@@ -33,8 +33,6 @@ class StartWorkflowOptions:
     task_start_to_close_timeout: Optional[timedelta] = None
     workflow_id_reuse_policy: int = WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
     cron_schedule: Optional[str] = None
-    memo: Optional[dict[str, Any]] = None
-    search_attributes: Optional[dict[str, Any]] = None
 
 
 class ClientOptions(TypedDict, total=False):

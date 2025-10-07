@@ -4,8 +4,11 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
 from cadence.api.v1.common_pb2 import WorkflowExecution
-from cadence.api.v1.service_workflow_pb2 import StartWorkflowExecutionRequest, StartWorkflowExecutionResponse
-from cadence.client import Client, StartWorkflowOptions
+from cadence.api.v1.service_workflow_pb2 import (
+    StartWorkflowExecutionRequest,
+    StartWorkflowExecutionResponse,
+)
+from cadence.client import Client, StartWorkflowOptions, _validate_and_apply_defaults
 from cadence.data_converter import DefaultDataConverter
 
 
@@ -26,20 +29,20 @@ def mock_client():
 
 
 class TestStartWorkflowOptions:
-    """Test StartWorkflowOptions dataclass."""
+    """Test StartWorkflowOptions TypedDict and validation."""
 
     def test_default_values(self):
         """Test default values for StartWorkflowOptions."""
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
-            task_start_to_close_timeout=timedelta(seconds=30)
+            task_start_to_close_timeout=timedelta(seconds=30),
         )
-        assert options.workflow_id is None
-        assert options.task_list == "test-task-list"
-        assert options.execution_start_to_close_timeout == timedelta(minutes=10)
-        assert options.task_start_to_close_timeout == timedelta(seconds=30)
-        assert options.cron_schedule is None
+        assert options.get("workflow_id") is None
+        assert options["task_list"] == "test-task-list"
+        assert options["execution_start_to_close_timeout"] == timedelta(minutes=10)
+        assert options["task_start_to_close_timeout"] == timedelta(seconds=30)
+        assert options.get("cron_schedule") is None
 
     def test_custom_values(self):
         """Test setting custom values for StartWorkflowOptions."""
@@ -48,16 +51,14 @@ class TestStartWorkflowOptions:
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=30),
             task_start_to_close_timeout=timedelta(seconds=10),
-            cron_schedule="0 * * * *"
+            cron_schedule="0 * * * *",
         )
 
-        assert options.workflow_id == "custom-id"
-        assert options.task_list == "test-task-list"
-        assert options.execution_start_to_close_timeout == timedelta(minutes=30)
-        assert options.task_start_to_close_timeout == timedelta(seconds=10)
-        assert options.cron_schedule == "0 * * * *"
-
-
+        assert options["workflow_id"] == "custom-id"
+        assert options["task_list"] == "test-task-list"
+        assert options["execution_start_to_close_timeout"] == timedelta(minutes=30)
+        assert options["task_start_to_close_timeout"] == timedelta(seconds=10)
+        assert options["cron_schedule"] == "0 * * * *"
 
 
 class TestClientBuildStartWorkflowRequest:
@@ -73,10 +74,12 @@ class TestClientBuildStartWorkflowRequest:
             workflow_id="test-workflow-id",
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=30),
-            task_start_to_close_timeout=timedelta(seconds=10)
+            task_start_to_close_timeout=timedelta(seconds=10),
         )
 
-        request = await client._build_start_workflow_request("TestWorkflow", ("arg1", "arg2"), options)
+        request = await client._build_start_workflow_request(
+            "TestWorkflow", ("arg1", "arg2"), options
+        )
 
         assert isinstance(request, StartWorkflowExecutionRequest)
         assert request.domain == "test-domain"
@@ -84,7 +87,9 @@ class TestClientBuildStartWorkflowRequest:
         assert request.workflow_type.name == "TestWorkflow"
         assert request.task_list.name == "test-task-list"
         assert request.identity == client.identity
-        assert request.workflow_id_reuse_policy == 0  # Default protobuf value when not set
+        assert (
+            request.workflow_id_reuse_policy == 0
+        )  # Default protobuf value when not set
         assert request.request_id != ""  # Should be a UUID
 
         # Verify UUID format
@@ -93,6 +98,7 @@ class TestClientBuildStartWorkflowRequest:
     @pytest.mark.asyncio
     async def test_build_request_with_callable_workflow(self, mock_client):
         """Test building request with callable workflow."""
+
         def test_workflow():
             pass
 
@@ -101,7 +107,7 @@ class TestClientBuildStartWorkflowRequest:
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
-            task_start_to_close_timeout=timedelta(seconds=30)
+            task_start_to_close_timeout=timedelta(seconds=30),
         )
 
         request = await client._build_start_workflow_request(test_workflow, (), options)
@@ -116,43 +122,64 @@ class TestClientBuildStartWorkflowRequest:
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
-            task_start_to_close_timeout=timedelta(seconds=30)
+            task_start_to_close_timeout=timedelta(seconds=30),
         )
 
-        request = await client._build_start_workflow_request("TestWorkflow", (), options)
+        request = await client._build_start_workflow_request(
+            "TestWorkflow", (), options
+        )
 
         assert request.workflow_id != ""
         # Verify it's a valid UUID
         uuid.UUID(request.workflow_id)
 
-    @pytest.mark.asyncio
-    async def test_build_request_missing_task_list(self, mock_client):
+    def test_missing_task_list_raises_error(self):
         """Test that missing task_list raises ValueError."""
-        with pytest.raises(TypeError):  # task_list is now required positional argument
-            StartWorkflowOptions()  # No task_list
+        options = StartWorkflowOptions()
+        with pytest.raises(ValueError, match="task_list is required"):
+            _validate_and_apply_defaults(options)
 
-    def test_missing_timeout_raises_error(self):
-        """Test that missing both timeouts raises ValueError."""
-        with pytest.raises(ValueError, match="either execution_start_to_close_timeout or task_start_to_close_timeout is required"):
-            StartWorkflowOptions(task_list="test-task-list")
+    def test_missing_execution_timeout_raises_error(self):
+        """Test that missing execution_start_to_close_timeout raises ValueError."""
+        options = StartWorkflowOptions(task_list="test-task-list")
+        with pytest.raises(
+            ValueError, match="execution_start_to_close_timeout is required"
+        ):
+            _validate_and_apply_defaults(options)
 
     def test_only_execution_timeout(self):
-        """Test that only execution_start_to_close_timeout is valid."""
+        """Test that only execution_start_to_close_timeout works with default task timeout."""
         options = StartWorkflowOptions(
             task_list="test-task-list",
-            execution_start_to_close_timeout=timedelta(minutes=10)
+            execution_start_to_close_timeout=timedelta(minutes=10),
         )
-        assert options.execution_start_to_close_timeout == timedelta(minutes=10)
-        assert options.task_start_to_close_timeout is None
+        validated_options = _validate_and_apply_defaults(options)
+        assert validated_options["execution_start_to_close_timeout"] == timedelta(
+            minutes=10
+        )
+        assert validated_options["task_start_to_close_timeout"] == timedelta(
+            seconds=10
+        )  # Default applied
+
+    def test_default_task_timeout(self):
+        """Test that task_start_to_close_timeout defaults to 10 seconds when not provided."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=5),
+        )
+        validated_options = _validate_and_apply_defaults(options)
+        assert validated_options["task_start_to_close_timeout"] == timedelta(seconds=10)
 
     def test_only_task_timeout(self):
-        """Test that only task_start_to_close_timeout is valid."""
+        """Test that only task_start_to_close_timeout raises ValueError (execution timeout required)."""
         options = StartWorkflowOptions(
             task_list="test-task-list",
-            task_start_to_close_timeout=timedelta(seconds=30)
+            task_start_to_close_timeout=timedelta(seconds=30),
         )
-        assert options.execution_start_to_close_timeout is None
-        assert options.task_start_to_close_timeout == timedelta(seconds=30)
+        with pytest.raises(
+            ValueError, match="execution_start_to_close_timeout is required"
+        ):
+            _validate_and_apply_defaults(options)
 
     @pytest.mark.asyncio
     async def test_build_request_with_input_args(self, mock_client):
@@ -162,10 +189,12 @@ class TestClientBuildStartWorkflowRequest:
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
-            task_start_to_close_timeout=timedelta(seconds=30)
+            task_start_to_close_timeout=timedelta(seconds=30),
         )
 
-        request = await client._build_start_workflow_request("TestWorkflow", ("arg1", 42, {"key": "value"}), options)
+        request = await client._build_start_workflow_request(
+            "TestWorkflow", ("arg1", 42, {"key": "value"}), options
+        )
 
         # Should have input payload
         assert request.HasField("input")
@@ -179,10 +208,12 @@ class TestClientBuildStartWorkflowRequest:
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=30),
-            task_start_to_close_timeout=timedelta(seconds=10)
+            task_start_to_close_timeout=timedelta(seconds=10),
         )
 
-        request = await client._build_start_workflow_request("TestWorkflow", (), options)
+        request = await client._build_start_workflow_request(
+            "TestWorkflow", (), options
+        )
 
         assert request.HasField("execution_start_to_close_timeout")
         assert request.HasField("task_start_to_close_timeout")
@@ -200,10 +231,12 @@ class TestClientBuildStartWorkflowRequest:
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
             task_start_to_close_timeout=timedelta(seconds=30),
-            cron_schedule="0 * * * *"
+            cron_schedule="0 * * * *",
         )
 
-        request = await client._build_start_workflow_request("TestWorkflow", (), options)
+        request = await client._build_start_workflow_request(
+            "TestWorkflow", (), options
+        )
 
         assert request.cron_schedule == "0 * * * *"
 
@@ -218,7 +251,9 @@ class TestClientStartWorkflow:
         response = StartWorkflowExecutionResponse()
         response.run_id = "test-run-id"
 
-        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(return_value=response)
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
 
         # Create a real client but replace the workflow_stub
         client = Client(domain="test-domain", target="localhost:7933")
@@ -235,11 +270,12 @@ class TestClientStartWorkflow:
 
         execution = await client.start_workflow(
             "TestWorkflow",
-            "arg1", "arg2",
+            "arg1",
+            "arg2",
             task_list="test-task-list",
             workflow_id="test-workflow-id",
             execution_start_to_close_timeout=timedelta(minutes=10),
-            task_start_to_close_timeout=timedelta(seconds=30)
+            task_start_to_close_timeout=timedelta(seconds=30),
         )
 
         assert isinstance(execution, WorkflowExecution)
@@ -253,20 +289,24 @@ class TestClientStartWorkflow:
     async def test_start_workflow_grpc_error(self, mock_client):
         """Test workflow start with gRPC error."""
         # Setup mock to raise exception
-        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(side_effect=Exception("gRPC error"))
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            side_effect=Exception("gRPC error")
+        )
 
         client = Client(domain="test-domain", target="localhost:7933")
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method
-        client._build_start_workflow_request = AsyncMock(return_value=StartWorkflowExecutionRequest())
+        client._build_start_workflow_request = AsyncMock(
+            return_value=StartWorkflowExecutionRequest()
+        )
 
-        with pytest.raises(Exception, match="Failed to start workflow: gRPC error"):
+        with pytest.raises(Exception, match="gRPC error"):
             await client.start_workflow(
                 "TestWorkflow",
                 task_list="test-task-list",
                 execution_start_to_close_timeout=timedelta(minutes=10),
-            task_start_to_close_timeout=timedelta(seconds=30)
+                task_start_to_close_timeout=timedelta(seconds=30),
             )
 
     @pytest.mark.asyncio
@@ -275,13 +315,16 @@ class TestClientStartWorkflow:
         response = StartWorkflowExecutionResponse()
         response.run_id = "test-run-id"
 
-        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(return_value=response)
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
 
         client = Client(domain="test-domain", target="localhost:7933")
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method to capture options
         captured_options = None
+
         async def mock_build_request(workflow, args, options):
             nonlocal captured_options
             captured_options = options
@@ -297,15 +340,50 @@ class TestClientStartWorkflow:
             task_list="test-task-list",
             workflow_id="custom-id",
             execution_start_to_close_timeout=timedelta(minutes=30),
-            task_start_to_close_timeout=timedelta(seconds=30)
+            task_start_to_close_timeout=timedelta(seconds=30),
         )
 
         # Verify options were properly constructed
-        assert captured_options.task_list == "test-task-list"
-        assert captured_options.workflow_id == "custom-id"
-        assert captured_options.execution_start_to_close_timeout == timedelta(minutes=30)
+        assert captured_options["task_list"] == "test-task-list"
+        assert captured_options["workflow_id"] == "custom-id"
+        assert captured_options["execution_start_to_close_timeout"] == timedelta(
+            minutes=30
+        )
 
+    @pytest.mark.asyncio
+    async def test_start_workflow_with_default_task_timeout(self, mock_client):
+        """Test start_workflow uses default task timeout when not provided."""
+        response = StartWorkflowExecutionResponse()
+        response.run_id = "test-run-id"
 
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = mock_client.workflow_stub
+
+        # Mock the internal method to capture options
+        captured_options = None
+
+        async def mock_build_request(workflow, args, options):
+            nonlocal captured_options
+            captured_options = options
+            request = StartWorkflowExecutionRequest()
+            request.workflow_id = "test-workflow-id"
+            return request
+
+        client._build_start_workflow_request = AsyncMock(side_effect=mock_build_request)
+
+        await client.start_workflow(
+            "TestWorkflow",
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            # No task_start_to_close_timeout provided - should use default
+        )
+
+        # Verify default was applied
+        assert captured_options["task_start_to_close_timeout"] == timedelta(seconds=10)
 
 
 @pytest.mark.asyncio
@@ -329,7 +407,7 @@ async def test_integration_workflow_invocation():
         task_list="integration-task-list",
         workflow_id="integration-workflow-id",
         execution_start_to_close_timeout=timedelta(minutes=10),
-        task_start_to_close_timeout=timedelta(seconds=30)
+        task_start_to_close_timeout=timedelta(seconds=30),
     )
 
     # Verify result

@@ -18,7 +18,6 @@ from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.api.v1.service_workflow_pb2 import StartWorkflowExecutionRequest, StartWorkflowExecutionResponse
 from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
 from cadence.api.v1.tasklist_pb2 import TaskList
-from cadence.api.v1.workflow_pb2 import WorkflowIdReusePolicy
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 
@@ -27,12 +26,18 @@ from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 @dataclass
 class StartWorkflowOptions:
     """Options for starting a workflow execution."""
-    workflow_id: Optional[str] = None
-    task_list: str = ""
+    task_list: str
     execution_start_to_close_timeout: Optional[timedelta] = None
     task_start_to_close_timeout: Optional[timedelta] = None
-    workflow_id_reuse_policy: int = WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
+    workflow_id: Optional[str] = None
     cron_schedule: Optional[str] = None
+
+    def __post_init__(self):
+        """Validate required fields after initialization."""
+        if not self.task_list:
+            raise ValueError("task_list is required")
+        if not self.execution_start_to_close_timeout and not self.task_start_to_close_timeout:
+            raise ValueError("either execution_start_to_close_timeout or task_start_to_close_timeout is required")
 
 
 class ClientOptions(TypedDict, total=False):
@@ -118,10 +123,6 @@ class Client:
         # Generate workflow ID if not provided
         workflow_id = options.workflow_id or str(uuid.uuid4())
 
-        # Validate required fields
-        if not options.task_list:
-            raise ValueError("task_list is required")
-
         # Determine workflow type name
         if isinstance(workflow, str):
             workflow_type_name = workflow
@@ -157,9 +158,6 @@ class Client:
             identity=self.identity,
             request_id=str(uuid.uuid4())
         )
-
-        # Set workflow_id_reuse_policy separately to avoid type issues
-        request.workflow_id_reuse_policy = options.workflow_id_reuse_policy  # type: ignore[assignment]
 
         # Set optional fields
         if input_payload:

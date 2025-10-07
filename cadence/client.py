@@ -1,9 +1,8 @@
 import os
 import socket
 import uuid
-from dataclasses import dataclass
 from datetime import timedelta
-from typing import TypedDict, Unpack, Any, cast, Union, Optional, Callable
+from typing import TypedDict, Unpack, Any, cast, Union, Callable
 
 from grpc import ChannelCredentials, Compression
 from google.protobuf.duration_pb2 import Duration
@@ -207,7 +206,7 @@ class Client:
             Exception: If the gRPC call fails
         """
         # Convert kwargs to StartWorkflowOptions and validate
-        options = _validate_and_apply_defaults(StartWorkflowOptions(options_kwargs))
+        options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
 
         # Build the gRPC request
         request = await self._build_start_workflow_request(workflow, args, options)

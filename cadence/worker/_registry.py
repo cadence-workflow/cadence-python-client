@@ -7,7 +7,7 @@ similar to the Go client's registry.go implementation.
 """
 
 import logging
-from typing import Callable, Dict, Optional, Unpack, TypedDict, Sequence, overload, Type
+from typing import Callable, Dict, Optional, Unpack, TypedDict, Sequence, overload, Type, Union
 from cadence.activity import ActivityDefinitionOptions, ActivityDefinition, ActivityDecorator, P, T
 from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
@@ -37,7 +37,7 @@ class Registry:
         self,
         cls: Optional[Type] = None,
         **kwargs: Unpack[RegisterWorkflowOptions]
-    ) -> Type:
+    ) -> Union[Type, Callable[[Type], Type]]:
         """
         Register a workflow class.
 

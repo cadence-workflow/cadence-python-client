@@ -7,6 +7,7 @@ import pytest
 
 from cadence import activity
 from cadence.worker import Registry
+from cadence.workflow import workflow, WorkflowDefinition
 from tests.cadence import common_activities
 
 
@@ -21,30 +22,33 @@ class TestRegistry:
         with pytest.raises(KeyError):
             reg.get_activity("nonexistent")
     
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_basic_registration_and_retrieval(self, registration_type):
-        """Test basic registration and retrieval for both workflows and activities."""
+    def test_basic_workflow_registration_and_retrieval(self):
+        """Test basic registration and retrieval for class-based workflows."""
         reg = Registry()
-        
-        if registration_type == "workflow":
-            @reg.workflow
-            def test_func():
+
+        @reg.workflow
+        class TestWorkflow:
+            @workflow.run
+            async def run(self):
                 return "test"
 
-            # Registry stores WorkflowDefinition internally
-            func_def = reg.get_workflow(test_func.__name__)
-            # WorkflowDefinition can be called directly
-            assert func_def() == "test"
-            # Verify it's actually a WorkflowDefinition
-            from cadence.workflow import WorkflowDefinition
-            assert isinstance(func_def, WorkflowDefinition)
-        else:
-            @reg.activity
-            def test_func():
-                return "test"
-            
-            func = reg.get_activity(test_func.name)
-            assert func() == "test"
+        # Registry stores WorkflowDefinition internally
+        workflow_def = reg.get_workflow("TestWorkflow")
+        # Verify it's actually a WorkflowDefinition
+        assert isinstance(workflow_def, WorkflowDefinition)
+        assert workflow_def.name == "TestWorkflow"
+        assert workflow_def.cls == TestWorkflow
+
+    def test_basic_activity_registration_and_retrieval(self):
+        """Test basic registration and retrieval for activities."""
+        reg = Registry()
+
+        @reg.activity
+        def test_func():
+            return "test"
+
+        func = reg.get_activity(test_func.name)
+        assert func() == "test"
     
     def test_direct_call_behavior(self):
         reg = Registry()
@@ -58,41 +62,47 @@ class TestRegistry:
         
         assert func() == "direct_call"
     
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_not_found_error(self, registration_type):
-        """Test KeyError is raised when function not found."""
+    def test_workflow_not_found_error(self):
+        """Test KeyError is raised when workflow not found."""
         reg = Registry()
-        
-        if registration_type == "workflow":
-            with pytest.raises(KeyError):
-                reg.get_workflow("nonexistent")
-        else:
-            with pytest.raises(KeyError):
-                reg.get_activity("nonexistent")
-    
-    @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
-    def test_duplicate_registration_error(self, registration_type):
-        """Test KeyError is raised for duplicate registrations."""
+        with pytest.raises(KeyError):
+            reg.get_workflow("nonexistent")
+
+    def test_activity_not_found_error(self):
+        """Test KeyError is raised when activity not found."""
         reg = Registry()
-        
-        if registration_type == "workflow":
-            @reg.workflow
-            def test_func():
-                return "test"
-            
-            with pytest.raises(KeyError):
-                @reg.workflow
-                def test_func():
-                    return "duplicate"
-        else:
-            @reg.activity(name="test_func")
-            def test_func():
+        with pytest.raises(KeyError):
+            reg.get_activity("nonexistent")
+
+    def test_duplicate_workflow_registration_error(self):
+        """Test KeyError is raised for duplicate workflow registrations."""
+        reg = Registry()
+
+        @reg.workflow(name="duplicate_test")
+        class TestWorkflow:
+            @workflow.run
+            async def run(self):
                 return "test"
 
-            with pytest.raises(KeyError):
-                @reg.activity(name="test_func")
-                def test_func():
+        with pytest.raises(KeyError):
+            @reg.workflow(name="duplicate_test")
+            class TestWorkflow2:
+                @workflow.run
+                async def run(self):
                     return "duplicate"
+
+    def test_duplicate_activity_registration_error(self):
+        """Test KeyError is raised for duplicate activity registrations."""
+        reg = Registry()
+
+        @reg.activity(name="test_func")
+        def test_func():
+            return "test"
+
+        with pytest.raises(KeyError):
+            @reg.activity(name="test_func")
+            def test_func():
+                return "duplicate"
 
     def test_register_activities_instance(self):
         reg = Registry()
@@ -155,3 +165,40 @@ class TestRegistry:
         assert result.get_activity("simple_fn") is not None
         assert result.get_activity("echo") is not None
         assert result.get_activity("async_fn") is not None
+
+    def test_class_workflow_validation_errors(self):
+        """Test validation errors for class-based workflows."""
+        reg = Registry()
+
+        # Test missing run method
+        with pytest.raises(ValueError, match="No @workflow.run method found"):
+            @reg.workflow
+            class MissingRunWorkflow:
+                def some_method(self):
+                    pass
+
+        # Test duplicate run methods
+        with pytest.raises(ValueError, match="Multiple @workflow.run methods found"):
+            @reg.workflow
+            class DuplicateRunWorkflow:
+                @workflow.run
+                async def run1(self):
+                    pass
+
+                @workflow.run
+                async def run2(self):
+                    pass
+
+    def test_class_workflow_with_custom_name(self):
+        """Test class-based workflow with custom name."""
+        reg = Registry()
+
+        @reg.workflow(name="custom_workflow_name")
+        class CustomWorkflow:
+            @workflow.run
+            async def run(self, input: str) -> str:
+                return f"processed: {input}"
+
+        workflow_def = reg.get_workflow("custom_workflow_name")
+        assert workflow_def.name == "custom_workflow_name"
+        assert workflow_def.cls == CustomWorkflow

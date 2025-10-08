@@ -2,19 +2,12 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from functools import update_wrapper
-from inspect import signature, Parameter
-from typing import Iterator, Callable, TypeVar, ParamSpec, Generic, TypedDict, Unpack, overload, get_type_hints, Type, Any
+from typing import Iterator, Callable, TypeVar, TypedDict, Type
+from functools import wraps
 
 from cadence.client import Client
 
-
-@dataclass(frozen=True)
-class WorkflowParameter:
-    """Parameter information for a workflow function."""
-    name: str
-    type_hint: Type | None
-    default_value: Any | None
+T = TypeVar('T')
 
 
 class WorkflowDefinitionOptions(TypedDict, total=False):
@@ -22,26 +15,17 @@ class WorkflowDefinitionOptions(TypedDict, total=False):
     name: str
 
 
-P = ParamSpec('P')
-T = TypeVar('T')
-
-
-class WorkflowDefinition(Generic[P, T]):
+class WorkflowDefinition:
     """
-    Definition of a workflow function with metadata.
+    Definition of a workflow class with metadata.
 
-    Similar to ActivityDefinition but for workflows.
-    Provides type safety and metadata for workflow functions.
+    Similar to ActivityDefinition but for workflow classes.
+    Provides type safety and metadata for workflow classes.
     """
 
-    def __init__(self, wrapped: Callable[P, T], name: str, params: list[WorkflowParameter]):
-        self._wrapped = wrapped
+    def __init__(self, cls: Type, name: str):
+        self._cls = cls
         self._name = name
-        self._params = params
-        update_wrapper(self, wrapped)
-
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
-        return self._wrapped(*args, **kwargs)
 
     @property
     def name(self) -> str:
@@ -49,98 +33,75 @@ class WorkflowDefinition(Generic[P, T]):
         return self._name
 
     @property
-    def params(self) -> list[WorkflowParameter]:
-        """Get the workflow parameters."""
-        return self._params
+    def cls(self) -> Type:
+        """Get the workflow class."""
+        return self._cls
 
-    @property
-    def fn(self) -> Callable[P, T]:
-        """Get the underlying workflow function."""
-        return self._wrapped
-
-    @classmethod
-    def wrap(cls, fn: Callable[P, T], opts: WorkflowDefinitionOptions) -> 'WorkflowDefinition[P, T]':
+    @staticmethod
+    def wrap(cls: Type, opts: WorkflowDefinitionOptions) -> 'WorkflowDefinition':
         """
-        Wrap a function as a WorkflowDefinition.
+        Wrap a class as a WorkflowDefinition.
 
         Args:
-            fn: The workflow function to wrap
+            cls: The workflow class to wrap
             opts: Options for the workflow definition
 
         Returns:
             A WorkflowDefinition instance
+
+        Raises:
+            ValueError: If no run method is found or multiple run methods exist
         """
-        name = fn.__qualname__
+        name = cls.__name__
         if "name" in opts and opts["name"]:
             name = opts["name"]
 
-        params = _get_workflow_params(fn)
-        return cls(fn, name, params)
+        # Validate that the class has exactly one run method
+        run_method_count = 0
+        for attr_name in dir(cls):
+            if attr_name.startswith('_'):
+                continue
+
+            attr = getattr(cls, attr_name)
+            if not callable(attr):
+                continue
+
+            # Check for workflow run method
+            if hasattr(attr, '_workflow_run'):
+                run_method_count += 1
+
+        if run_method_count == 0:
+            raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
+        elif run_method_count > 1:
+            raise ValueError(f"Multiple @workflow.run methods found in class {cls.__name__}")
+
+        return WorkflowDefinition(cls, name)
 
 
-WorkflowDecorator = Callable[[Callable[P, T]], WorkflowDefinition[P, T]]
-
-
-@overload
-def defn(fn: Callable[P, T]) -> WorkflowDefinition[P, T]:
-    ...
-
-
-@overload
-def defn(**kwargs: Unpack[WorkflowDefinitionOptions]) -> WorkflowDecorator:
-    ...
-
-
-def defn(fn: Callable[P, T] | None = None, **kwargs: Unpack[WorkflowDefinitionOptions]) -> WorkflowDecorator | WorkflowDefinition[P, T]:
+def run(func: Callable[..., T]) -> Callable[..., T]:
     """
-    Decorator to define a workflow function.
-
-    Usage:
-        @defn
-        def my_workflow(input_data: str) -> str:
-            return f"processed: {input_data}"
-
-        @defn(name="custom_workflow_name")
-        def my_other_workflow(input_data: str) -> str:
-            return f"custom: {input_data}"
+    Decorator to mark a method as the main workflow run method.
 
     Args:
-        fn: The workflow function (when used without parentheses)
-        **kwargs: Workflow definition options
+        func: The method to mark as the workflow run method
 
     Returns:
-        Either a WorkflowDefinition (direct decoration) or a decorator function
+        The decorated method with workflow run metadata
     """
-    opts = WorkflowDefinitionOptions(**kwargs)
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
 
-    def decorator(inner_fn: Callable[P, T]) -> WorkflowDefinition[P, T]:
-        return WorkflowDefinition.wrap(inner_fn, opts)
-
-    if fn is not None:
-        return decorator(fn)
-
-    return decorator
+    # Attach metadata to the function
+    wrapper._workflow_run = True  # type: ignore
+    return wrapper
 
 
-def _get_workflow_params(fn: Callable) -> list[WorkflowParameter]:
-    """Extract parameter information from a workflow function."""
-    args = signature(fn).parameters
-    hints = get_type_hints(fn)
-    result = []
-    for name, param in args.items():
-        # Filter out self parameter
-        if param.name == "self":
-            continue
-        default = None
-        if param.default != Parameter.empty:
-            default = param.default
-        if param.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD):
-            type_hint = hints.get(name, None)
-            result.append(WorkflowParameter(name, type_hint, default))
-        else:
-            raise ValueError(f"Parameters must be positional. {name} is {param.kind}, and not valid")
+# Create a simple namespace object for the workflow decorators
+class _WorkflowNamespace:
+    run = staticmethod(run)
 
-    return result
+workflow = _WorkflowNamespace()
 
 
 @dataclass

@@ -83,12 +83,15 @@ class TestDecisionTaskHandler:
     async def test_handle_task_implementation_success(self, handler, sample_decision_task, mock_registry):
         """Test successful decision task handling."""
         # Create actual workflow definition
-        def mock_workflow_func():
-            return "test_result"
+        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
 
-        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
         workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
-        workflow_definition = WorkflowDefinition.wrap(mock_workflow_func, workflow_opts)
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
         mock_registry.get_workflow.return_value = workflow_definition
         
         # Mock workflow engine
@@ -148,12 +151,15 @@ class TestDecisionTaskHandler:
     async def test_handle_task_implementation_caches_engines(self, handler, sample_decision_task, mock_registry):
         """Test that decision task handler caches workflow engines for same workflow execution."""
         # Create actual workflow definition
-        def mock_workflow_func():
-            return "test_result"
+        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
 
-        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
         workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
-        workflow_definition = WorkflowDefinition.wrap(mock_workflow_func, workflow_opts)
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
         mock_registry.get_workflow.return_value = workflow_definition
         
         # Mock workflow engine
@@ -182,9 +188,17 @@ class TestDecisionTaskHandler:
     @pytest.mark.asyncio
     async def test_handle_task_implementation_different_executions_get_separate_engines(self, handler, mock_registry):
         """Test that different workflow executions get separate engines."""
-        # Mock workflow function
-        mock_workflow_func = Mock()
-        mock_registry.get_workflow.return_value = mock_workflow_func
+        # Create actual workflow definition
+        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
+
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
+        mock_registry.get_workflow.return_value = workflow_definition
         
         # Create two different decision tasks
         task1 = Mock(spec=PollForDecisionTaskResponse)
@@ -333,10 +347,17 @@ class TestDecisionTaskHandler:
     @pytest.mark.asyncio
     async def test_workflow_engine_creation_with_workflow_info(self, handler, sample_decision_task, mock_registry):
         """Test that WorkflowEngine is created with correct WorkflowInfo."""
-        mock_workflow_func = Mock()
-        mock_workflow_definition = Mock()
-        mock_workflow_definition.fn = mock_workflow_func
-        mock_registry.get_workflow.return_value = mock_workflow_definition
+        # Create actual workflow definition
+        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
+
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
+        mock_registry.get_workflow.return_value = workflow_definition
 
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
@@ -363,4 +384,4 @@ class TestDecisionTaskHandler:
                 call_args = mock_workflow_engine_class.call_args
                 assert call_args[1]['info'] is not None
                 assert call_args[1]['client'] == handler._client
-                assert call_args[1]['workflow_func'] == mock_workflow_func
+                assert call_args[1]['workflow_definition'] == workflow_definition

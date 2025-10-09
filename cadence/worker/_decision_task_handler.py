@@ -103,9 +103,9 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_engine = self._workflow_engines.get(cache_key)
             if workflow_engine is None:
                 workflow_engine = WorkflowEngine(
-                    info=workflow_info, 
-                    client=self._client, 
-                    workflow_func=workflow_definition.fn
+                    info=workflow_info,
+                    client=self._client,
+                    workflow_definition=workflow_definition
                 )
                 self._workflow_engines[cache_key] = workflow_engine
         

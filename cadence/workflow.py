@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Iterator, Callable, TypeVar, TypedDict, Type
+from typing import Iterator, Callable, TypeVar, TypedDict, Type, cast, Any
 from functools import wraps
 
 from cadence.client import Client
@@ -36,6 +36,16 @@ class WorkflowDefinition:
     def cls(self) -> Type:
         """Get the workflow class."""
         return self._cls
+
+    def get_run_method(self, instance: Any) -> Callable:
+        """Get the workflow run method from an instance of the workflow class."""
+        for attr_name in dir(instance):
+            if attr_name.startswith('_'):
+                continue
+            attr = getattr(instance, attr_name)
+            if callable(attr) and hasattr(attr, '_workflow_run'):
+                return cast(Callable, attr)
+        raise ValueError(f"No @workflow.run method found in class {self._cls.__name__}")
 
     @staticmethod
     def wrap(cls: Type, opts: WorkflowDefinitionOptions) -> 'WorkflowDefinition':

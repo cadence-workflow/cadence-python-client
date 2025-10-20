@@ -122,6 +122,29 @@ uv run python scripts/dev.py clean
 uv run python scripts/dev.py check
 ```
 
+## Community & Contributing
+
+### Get Involved
+
+We'd love your help in making Cadence great! Here's how you can get involved:
+
+- **Join the conversation**: Connect with the Cadence community on [CNCF Slack](https://slack.cncf.io/) in the `#cadence` channel
+- **Contributing Guide**: Please see our [Contributing Guide](https://github.com/cadence-workflow/cadence/blob/master/CONTRIBUTING.md) for details on:
+  - How to contribute
+  - Development workflow
+  - Code review process
+  - Community guidelines
+
+### Resources
+
+- [Cadence Documentation](https://cadenceworkflow.io/docs/)
+- [Main Cadence Repository](https://github.com/uber/cadence)
+- [Cadence Samples](https://github.com/cadence-workflow/cadence-samples)
+
+### Reporting Issues
+
+If you find a bug or have a feature request, please [open an issue](https://github.com/cadence-workflow/cadence-python-client/issues/new) on GitHub.
+
 ## License
 
 Apache 2.0 License, please see [LICENSE](LICENSE) for details.

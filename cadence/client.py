@@ -130,7 +130,7 @@ class Client:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
 
-    async def _build_start_workflow_request(
+    def _build_start_workflow_request(
         self,
         workflow: Union[str, Callable],
         args: tuple[Any, ...],
@@ -151,7 +151,7 @@ class Client:
         input_payload = None
         if args:
             try:
-                input_payload = await self.data_converter.to_data(list(args))
+                input_payload = self.data_converter.to_data(list(args))
             except Exception as e:
                 raise ValueError(f"Failed to encode workflow arguments: {e}")
 
@@ -209,7 +209,7 @@ class Client:
         options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
 
         # Build the gRPC request
-        request = await self._build_start_workflow_request(workflow, args, options)
+        request = self._build_start_workflow_request(workflow, args, options)
 
         # Execute the gRPC call
         try:

@@ -17,7 +17,7 @@ from cadence.api.v1.service_workflow_pb2 import (
     DescribeWorkflowExecutionRequest,
     GetWorkflowExecutionHistoryRequest,
 )
-from cadence.error import CadenceError, FeatureNotEnabledError, EntityNotExistsError
+from cadence.error import CadenceRpcError, FeatureNotEnabledError, EntityNotExistsError
 
 simple_policy = ExponentialRetryPolicy(
     initial_interval=1, backoff_coefficient=2, max_interval=10, max_attempts=6
@@ -145,7 +145,7 @@ TEST_POLICY = ExponentialRetryPolicy(
 )
 @pytest.mark.asyncio
 async def test_retryable_error(
-    fake_service, case: str, expected_calls: int, expected_err: Type[CadenceError]
+    fake_service, case: str, expected_calls: int, expected_err: Type[CadenceRpcError]
 ):
     fake_service.counter = 0
     async with insecure_channel(

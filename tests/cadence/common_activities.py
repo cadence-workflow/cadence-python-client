@@ -28,6 +28,11 @@ async def async_fn() -> None:
     pass
 
 
+@activity.defn()
+async def async_echo(incoming: str) -> str:
+    return incoming
+
+
 class Activities:
     @activity.defn()
     def echo_sync(self, incoming: str) -> str:

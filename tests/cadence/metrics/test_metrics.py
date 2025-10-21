@@ -34,18 +34,13 @@ class TestMetricsEmitter:
 
         # Test gauge
         mock_emitter.gauge("test_gauge", 100.0, {"env": "test"})
-        mock_emitter.gauge.assert_called_once_with(
-            "test_gauge", 100.0, {"env": "test"}
-        )
-
+        mock_emitter.gauge.assert_called_once_with("test_gauge", 100.0, {"env": "test"})
 
         # Test histogram
         mock_emitter.histogram("test_histogram", 2.5, {"env": "prod"})
         mock_emitter.histogram.assert_called_once_with(
             "test_histogram", 2.5, {"env": "prod"}
         )
-
-
 
 
 class TestMetricType:

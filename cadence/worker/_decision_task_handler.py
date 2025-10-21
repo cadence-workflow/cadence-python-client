@@ -94,7 +94,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_type=workflow_type_name,
             workflow_domain=self._client.domain,
             workflow_id=workflow_id,
-            workflow_run_id=run_id
+            workflow_run_id=run_id,
+            workflow_task_list=self.task_list,
         )
         
         # Use thread-safe cache to get or create workflow engine

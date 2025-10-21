@@ -1,9 +1,15 @@
 from typing import Callable, Any, Optional, Generator, TypeVar
 
 import grpc
-from google.rpc.status_pb2 import Status # type: ignore
-from grpc.aio import UnaryUnaryClientInterceptor, ClientCallDetails, AioRpcError, UnaryUnaryCall, Metadata
-from grpc_status.rpc_status import from_call # type: ignore
+from google.rpc.status_pb2 import Status  # type: ignore
+from grpc.aio import (
+    UnaryUnaryClientInterceptor,
+    ClientCallDetails,
+    AioRpcError,
+    UnaryUnaryCall,
+    Metadata,
+)
+from grpc_status.rpc_status import from_call  # type: ignore
 
 from cadence.api.v1 import error_pb2
 from cadence import error
@@ -19,14 +25,13 @@ DoneCallbackType = Callable[[Any], None]
 # It doesn't have any functions to compose operations together, so our only option is to wrap it.
 # If the interceptor directly throws an exception other than AioRpcError it breaks GRPC
 class CadenceErrorUnaryUnaryCall(UnaryUnaryCall[RequestType, ResponseType]):
-
     def __init__(self, wrapped: UnaryUnaryCall[RequestType, ResponseType]):
         super().__init__()
         self._wrapped = wrapped
 
     def __await__(self) -> Generator[Any, None, ResponseType]:
         try:
-            response = yield from self._wrapped.__await__() # type: ResponseType
+            response = yield from self._wrapped.__await__()  # type: ResponseType
             return response
         except AioRpcError as e:
             raise map_error(e)
@@ -47,39 +52,36 @@ class CadenceErrorUnaryUnaryCall(UnaryUnaryCall[RequestType, ResponseType]):
         await self._wrapped.wait_for_connection()
 
     def cancelled(self) -> bool:
-        return self._wrapped.cancelled() # type: ignore
+        return self._wrapped.cancelled()  # type: ignore
 
     def done(self) -> bool:
-        return self._wrapped.done() # type: ignore
+        return self._wrapped.done()  # type: ignore
 
     def time_remaining(self) -> Optional[float]:
-        return self._wrapped.time_remaining() # type: ignore
+        return self._wrapped.time_remaining()  # type: ignore
 
     def cancel(self) -> bool:
-        return self._wrapped.cancel() # type: ignore
+        return self._wrapped.cancel()  # type: ignore
 
     def add_done_callback(self, callback: DoneCallbackType) -> None:
         self._wrapped.add_done_callback(callback)
 
 
 class CadenceErrorInterceptor(UnaryUnaryClientInterceptor):
-
     async def intercept_unary_unary(
         self,
         continuation: Callable[[ClientCallDetails, Any], Any],
         client_call_details: ClientCallDetails,
-        request: Any
+        request: Any,
     ) -> Any:
         rpc_call = await continuation(client_call_details, request)
         return CadenceErrorUnaryUnaryCall(rpc_call)
 
 
-
-
-def map_error(e: AioRpcError) -> error.CadenceError:
+def map_error(e: AioRpcError) -> error.CadenceRpcError:
     status: Status | None = from_call(e)
     if not status or not status.details:
-        return error.CadenceError(e.details(), e.code())
+        return error.CadenceRpcError(e.details(), e.code())
 
     details = status.details[0]
     if details.Is(error_pb2.WorkflowExecutionAlreadyStartedError.DESCRIPTOR):
@@ -117,5 +119,4 @@ def map_error(e: AioRpcError) -> error.CadenceError:
         details.Unpack(service_busy)
         return error.ServiceBusyError(e.details(), e.code(), service_busy.reason)
     else:
-        return error.CadenceError(e.details(), e.code())
-
+        return error.CadenceRpcError(e.details(), e.code())

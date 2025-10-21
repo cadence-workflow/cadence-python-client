@@ -12,7 +12,7 @@ from tests.cadence import common_activities
 
 class TestRegistry:
     """Test registry functionality."""
-    
+
     def test_basic_registry_creation(self):
         """Test basic registry creation."""
         reg = Registry()
@@ -20,27 +20,29 @@ class TestRegistry:
             reg.get_workflow("nonexistent")
         with pytest.raises(KeyError):
             reg.get_activity("nonexistent")
-    
+
     @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
     def test_basic_registration_and_retrieval(self, registration_type):
         """Test basic registration and retrieval for both workflows and activities."""
         reg = Registry()
-        
+
         if registration_type == "workflow":
+
             @reg.workflow
             def test_func():
                 return "test"
-            
+
             func = reg.get_workflow("test_func")
         else:
+
             @reg.activity
             def test_func():
                 return "test"
-            
+
             func = reg.get_activity(test_func.name)
-        
+
         assert func() == "test"
-    
+
     def test_direct_call_behavior(self):
         reg = Registry()
 
@@ -50,41 +52,45 @@ class TestRegistry:
 
         reg.register_activity(test_func)
         func = reg.get_activity("test_func")
-        
+
         assert func() == "direct_call"
-    
+
     @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
     def test_not_found_error(self, registration_type):
         """Test KeyError is raised when function not found."""
         reg = Registry()
-        
+
         if registration_type == "workflow":
             with pytest.raises(KeyError):
                 reg.get_workflow("nonexistent")
         else:
             with pytest.raises(KeyError):
                 reg.get_activity("nonexistent")
-    
+
     @pytest.mark.parametrize("registration_type", ["workflow", "activity"])
     def test_duplicate_registration_error(self, registration_type):
         """Test KeyError is raised for duplicate registrations."""
         reg = Registry()
-        
+
         if registration_type == "workflow":
+
             @reg.workflow
             def test_func():
                 return "test"
-            
+
             with pytest.raises(KeyError):
+
                 @reg.workflow
                 def test_func():
                     return "duplicate"
         else:
+
             @reg.activity(name="test_func")
             def test_func():
                 return "test"
 
             with pytest.raises(KeyError):
+
                 @reg.activity(name="test_func")
                 def test_func():
                     return "duplicate"
@@ -103,9 +109,15 @@ class TestRegistry:
 
         reg.register_activities(impl)
 
-        assert reg.get_activity(common_activities.ActivityInterface.do_something.name) is not None
+        assert (
+            reg.get_activity(common_activities.ActivityInterface.do_something.name)
+            is not None
+        )
         assert reg.get_activity("ActivityInterface.do_something") is not None
-        assert reg.get_activity(common_activities.ActivityInterface.do_something.name)() == "result"
+        assert (
+            reg.get_activity(common_activities.ActivityInterface.do_something.name)()
+            == "result"
+        )
 
     def test_register_activities_invalid_impl(self):
         impl = common_activities.InvalidImpl()
@@ -113,7 +125,6 @@ class TestRegistry:
 
         with pytest.raises(ValueError):
             reg.register_activities(impl)
-
 
     def test_add(self):
         registry = Registry()

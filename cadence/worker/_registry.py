@@ -189,7 +189,7 @@ class Registry:
         return result
 
 def _find_activity_definitions(instance: object) -> Sequence[ActivityDefinition]:
-    attr_to_def = {}
+    attr_to_def: dict[str, ActivityDefinition] = {}
     for t in instance.__class__.__mro__:
         for attr in dir(t):
             if attr.startswith("_"):
@@ -205,7 +205,7 @@ def _find_activity_definitions(instance: object) -> Sequence[ActivityDefinition]
     # function to be overridden
     result = []
     for attr, definition in attr_to_def.items():
-        result.append(ActivityDefinition(getattr(instance, attr), definition.name, definition.strategy, definition.params))
+        result.append(ActivityDefinition(getattr(instance, attr), definition.name, definition.strategy, definition.params, definition.result_type))
 
     return result
 

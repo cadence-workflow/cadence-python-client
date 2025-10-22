@@ -6,20 +6,24 @@ from cadence._internal.workflow.deterministic_event_loop import DeterministicEve
 async def coro_append(results: list, i: int):
     results.append(i)
 
+
 async def coro_await(size: int):
     results = []
     for i in range(size):
         await coro_append(results, i)
     return results
 
+
 async def coro_await_future(future: asyncio.Future):
     return await future
+
 
 async def coro_await_task(size: int):
     results = []
     for i in range(size):
         asyncio.create_task(coro_append(results, i))
     return results
+
 
 class TestDeterministicEventLoop:
     """Test suite for DeterministicEventLoop using table-driven tests."""
@@ -54,8 +58,10 @@ class TestDeterministicEventLoop:
         assert self.loop.is_running() is False
         assert self.loop.is_closed() is False
 
-    @pytest.mark.parametrize("result, exception, expected, expected_exception",
-        [(10000, None, 10000, None), (None, ValueError("test"), None, ValueError)])
+    @pytest.mark.parametrize(
+        "result, exception, expected, expected_exception",
+        [(10000, None, 10000, None), (None, ValueError("test"), None, ValueError)],
+    )
     def test_create_future(self, result, exception, expected, expected_exception):
         future = self.loop.create_future()
         if expected_exception is not None:

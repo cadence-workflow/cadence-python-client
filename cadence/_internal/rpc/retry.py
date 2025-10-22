@@ -5,7 +5,7 @@ from typing import Callable, Any
 from grpc import StatusCode
 from grpc.aio import UnaryUnaryClientInterceptor, ClientCallDetails
 
-from cadence.error import CadenceError, EntityNotExistsError
+from cadence.error import CadenceRpcError, EntityNotExistsError
 
 RETRYABLE_CODES = {
     StatusCode.INTERNAL,
@@ -63,7 +63,7 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
             try:
                 # Return the result directly if success. GRPC will wrap it back into a UnaryUnaryCall
                 return await rpc_call
-            except CadenceError as e:
+            except CadenceRpcError as e:
                 err = e
 
             attempts += 1
@@ -79,7 +79,7 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
 
 
 
-def is_retryable(err: CadenceError, call_details: ClientCallDetails) -> bool:
+def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
     # Handle requests to the passive side, matching the Go and Java Clients
     if call_details.method == GET_WORKFLOW_HISTORY and isinstance(err, EntityNotExistsError):
         return err.active_cluster is not None and err.current_cluster is not None and err.active_cluster != err.current_cluster

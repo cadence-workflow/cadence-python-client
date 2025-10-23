@@ -6,8 +6,9 @@ Tests for the registry functionality.
 import pytest
 
 from cadence import activity
+from cadence import workflow
 from cadence.worker import Registry
-from cadence.workflow import workflow, WorkflowDefinition
+from cadence.workflow import WorkflowDefinition
 from tests.cadence import common_activities
 
 

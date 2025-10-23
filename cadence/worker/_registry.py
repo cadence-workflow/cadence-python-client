@@ -7,11 +7,14 @@ similar to the Go client's registry.go implementation.
 """
 
 import logging
-from typing import Callable, Dict, Optional, Unpack, TypedDict, Sequence, overload, Type, Union
+from typing import Callable, Dict, Optional, Unpack, TypedDict, overload, Type, Union, TypeVar
 from cadence.activity import ActivityDefinitionOptions, ActivityDefinition, ActivityDecorator, P, T
 from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
 logger = logging.getLogger(__name__)
+
+# TypeVar for workflow class types
+W = TypeVar('W')
 
 
 class RegisterWorkflowOptions(TypedDict, total=False):
@@ -35,9 +38,9 @@ class Registry:
 
     def workflow(
         self,
-        cls: Optional[Type] = None,
+        cls: Optional[Type[W]] = None,
         **kwargs: Unpack[RegisterWorkflowOptions]
-    ) -> Union[Type, Callable[[Type], Type]]:
+    ) -> Union[Type[W], Callable[[Type[W]], Type[W]]]:
         """
         Register a workflow class.
 
@@ -57,7 +60,7 @@ class Registry:
         """
         options = RegisterWorkflowOptions(**kwargs)
 
-        def decorator(target: Type) -> Type:
+        def decorator(target: Type[W]) -> Type[W]:
             workflow_name = options.get('name') or target.__name__
 
             if workflow_name in self._workflows:
@@ -194,7 +197,7 @@ class Registry:
 
         return result
 
-def _find_activity_definitions(instance: object) -> Sequence[ActivityDefinition]:
+def _find_activity_definitions(instance: object) -> list[ActivityDefinition]:
     attr_to_def = {}
     for t in instance.__class__.__mro__:
         for attr in dir(t):
@@ -206,10 +209,7 @@ def _find_activity_definitions(instance: object) -> Sequence[ActivityDefinition]
                     raise ValueError(f"'{attr}' was overridden with a duplicate activity definition")
                 attr_to_def[attr] = value
 
-    # Create new definitions, copying the attributes from the declaring type but using the function
-    # from the specific object. This allows for the decorator to be applied to the base class and the
-    # function to be overridden
-    result = []
+    result: list[ActivityDefinition] = []
     for attr, definition in attr_to_def.items():
         result.append(ActivityDefinition(getattr(instance, attr), definition.name, definition.strategy, definition.params))
 

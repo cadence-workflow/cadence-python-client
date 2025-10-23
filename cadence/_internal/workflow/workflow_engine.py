@@ -279,7 +279,7 @@ class WorkflowEngine:
             workflow_input = await self._extract_workflow_input(decision_task)
 
             # Execute workflow function
-            result = self._execute_workflow_function_once(workflow_func, workflow_input)
+            result = await self._execute_workflow_function_once(workflow_func, workflow_input)
 
             # Check if workflow is complete
             if result is not None:
@@ -341,7 +341,7 @@ class WorkflowEngine:
         logger.warning("No WorkflowExecutionStarted event found in history")
         return None
     
-    def _execute_workflow_function_once(self, workflow_func: Callable, workflow_input: Any) -> Any:
+    async def _execute_workflow_function_once(self, workflow_func: Callable, workflow_input: Any) -> Any:
         """
         Execute the workflow function once (not during replay).
 
@@ -355,23 +355,9 @@ class WorkflowEngine:
         logger.debug(f"Executing workflow function with input: {workflow_input}")
         result = workflow_func(workflow_input)
         
-        # If the workflow function is async, we need to handle it properly
+        # If the workflow function is async, await it properly
         if asyncio.iscoroutine(result):
-            # For now, use asyncio.run for async workflow functions
-            # TODO: Implement proper deterministic event loop for workflow execution
-            try:
-                result = asyncio.run(result)
-            except RuntimeError:
-                # If we're already in an event loop, create a new task
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We can't use asyncio.run inside a running loop
-                    # For now, just get the result (this may not be deterministic)
-                    logger.warning("Async workflow function called within running event loop - may not be deterministic")
-                    # This is a workaround - in a real implementation, we'd need proper task scheduling
-                    result = None
-                else:
-                    result = loop.run_until_complete(result)
+            result = await result
         
         return result
     

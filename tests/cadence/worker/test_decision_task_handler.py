@@ -17,6 +17,8 @@ from cadence.client import Client
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
+from cadence import workflow
+from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
 
 class TestDecisionTaskHandler:
@@ -83,8 +85,6 @@ class TestDecisionTaskHandler:
     async def test_handle_task_implementation_success(self, handler, sample_decision_task, mock_registry):
         """Test successful decision task handling."""
         # Create actual workflow definition
-        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
-
         class MockWorkflow:
             @workflow.run
             async def run(self):
@@ -151,8 +151,6 @@ class TestDecisionTaskHandler:
     async def test_handle_task_implementation_caches_engines(self, handler, sample_decision_task, mock_registry):
         """Test that decision task handler caches workflow engines for same workflow execution."""
         # Create actual workflow definition
-        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
-
         class MockWorkflow:
             @workflow.run
             async def run(self):
@@ -189,8 +187,6 @@ class TestDecisionTaskHandler:
     async def test_handle_task_implementation_different_executions_get_separate_engines(self, handler, mock_registry):
         """Test that different workflow executions get separate engines."""
         # Create actual workflow definition
-        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
-
         class MockWorkflow:
             @workflow.run
             async def run(self):
@@ -348,8 +344,6 @@ class TestDecisionTaskHandler:
     async def test_workflow_engine_creation_with_workflow_info(self, handler, sample_decision_task, mock_registry):
         """Test that WorkflowEngine is created with correct WorkflowInfo."""
         # Create actual workflow definition
-        from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions, workflow
-
         class MockWorkflow:
             @workflow.run
             async def run(self):

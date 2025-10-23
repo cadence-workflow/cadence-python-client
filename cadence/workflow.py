@@ -2,12 +2,12 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Iterator, Callable, TypeVar, TypedDict, Type, cast, Any
-from functools import wraps
+from typing import Iterator, Callable, TypeVar, TypedDict, Type, cast, Any, Optional, Union
+import inspect
 
 from cadence.client import Client
 
-T = TypeVar('T')
+T = TypeVar('T', bound=Callable[..., Any])
 
 
 class WorkflowDefinitionOptions(TypedDict, total=False):
@@ -23,9 +23,10 @@ class WorkflowDefinition:
     Provides type safety and metadata for workflow classes.
     """
 
-    def __init__(self, cls: Type, name: str):
+    def __init__(self, cls: Type, name: str, run_method_name: str):
         self._cls = cls
         self._name = name
+        self._run_method_name = run_method_name
 
     @property
     def name(self) -> str:
@@ -39,13 +40,7 @@ class WorkflowDefinition:
 
     def get_run_method(self, instance: Any) -> Callable:
         """Get the workflow run method from an instance of the workflow class."""
-        for attr_name in dir(instance):
-            if attr_name.startswith('_'):
-                continue
-            attr = getattr(instance, attr_name)
-            if callable(attr) and hasattr(attr, '_workflow_run'):
-                return cast(Callable, attr)
-        raise ValueError(f"No @workflow.run method found in class {self._cls.__name__}")
+        return cast(Callable, getattr(instance, self._run_method_name))
 
     @staticmethod
     def wrap(cls: Type, opts: WorkflowDefinitionOptions) -> 'WorkflowDefinition':
@@ -66,8 +61,8 @@ class WorkflowDefinition:
         if "name" in opts and opts["name"]:
             name = opts["name"]
 
-        # Validate that the class has exactly one run method
-        run_method_count = 0
+        # Validate that the class has exactly one run method and find it
+        run_method_name = None
         for attr_name in dir(cls):
             if attr_name.startswith('_'):
                 continue
@@ -78,40 +73,54 @@ class WorkflowDefinition:
 
             # Check for workflow run method
             if hasattr(attr, '_workflow_run'):
-                run_method_count += 1
+                if run_method_name is not None:
+                    raise ValueError(f"Multiple @workflow.run methods found in class {cls.__name__}")
+                run_method_name = attr_name
 
-        if run_method_count == 0:
+        if run_method_name is None:
             raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
-        elif run_method_count > 1:
-            raise ValueError(f"Multiple @workflow.run methods found in class {cls.__name__}")
 
-        return WorkflowDefinition(cls, name)
+        return WorkflowDefinition(cls, name, run_method_name) 
 
 
-def run(func: Callable[..., T]) -> Callable[..., T]:
+def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
     """
     Decorator to mark a method as the main workflow run method.
+
+    Can be used with or without parentheses:
+        @workflow.run
+        async def my_workflow(self):
+            ...
+
+        @workflow.run()
+        async def my_workflow(self):
+            ...
 
     Args:
         func: The method to mark as the workflow run method
 
     Returns:
         The decorated method with workflow run metadata
+    
+    Raises:
+        ValueError: If the function is not async
     """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
+    def decorator(f: T) -> T:
+        # Validate that the function is async
+        if not inspect.iscoroutinefunction(f):
+            raise ValueError(f"Workflow run method '{f.__name__}' must be async")
+        
+        # Attach metadata to the function
+        f._workflow_run = True  # type: ignore
+        return f
 
-    # Attach metadata to the function
-    wrapper._workflow_run = True  # type: ignore
-    return wrapper
-
-
-# Create a simple namespace object for the workflow decorators
-class _WorkflowNamespace:
-    run = staticmethod(run)
-
-workflow = _WorkflowNamespace()
+    # Support both @workflow.run and @workflow.run()
+    if func is None:
+        # Called with parentheses: @workflow.run()
+        return decorator
+    else:
+        # Called without parentheses: @workflow.run
+        return decorator(func)
 
 
 @dataclass

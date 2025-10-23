@@ -11,7 +11,7 @@ from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.api.v1.history_pb2 import History, HistoryEvent, WorkflowExecutionStartedEventAttributes
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._registry import Registry
-from cadence.workflow import workflow
+from cadence import workflow
 from cadence.client import Client
 
 

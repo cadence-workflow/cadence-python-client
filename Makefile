@@ -1,13 +1,18 @@
-.PHONY: pr install lint type-check test integration-test proto-check clean help
+.PHONY: pr install lint type-check test integration-test clean generate help
 
 # Run all PR checks locally
-pr: install proto-check lint type-check test integration-test
+pr: install generate lint type-check test integration-test
 	@echo "All PR checks passed!"
 
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
 	uv sync --extra dev
+
+# Generate idl files
+generate:
+	@echo "Generating type files based on IDL..."
+	uv run python scripts/generate_proto.py
 
 # Run linter
 lint:

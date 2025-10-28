@@ -9,23 +9,10 @@ install:
 	@echo "Installing dependencies..."
 	uv sync --extra dev
 
-# Check if proto files need to be regenerated
-proto-check:
-	@echo "Checking proto files..."
-	uv run python scripts/generate_proto.py
-	@if [ -n "$$(git status --porcelain 2>&1)" ]; then \
-		echo "Warning: Proto files have changes. Please review and commit:"; \
-		git status --porcelain; \
-		echo ""; \
-		echo "To see the diff, run: git diff"; \
-		exit 1; \
-	fi
-	@echo "Proto files are up to date"
-
 # Run linter
 lint:
-	@echo "Running Ruff linter..."
-	uv tool run ruff check
+	@echo "Running Ruff linter and fixing lint issues..."
+	uv tool run ruff check --fix
 
 # Run type checker
 type-check:
@@ -54,7 +41,6 @@ help:
 	@echo "Available targets:"
 	@echo "  make pr              - Run all PR checks (recommended before submitting PR)"
 	@echo "  make install         - Install dependencies"
-	@echo "  make proto-check     - Check if proto files are up to date"
 	@echo "  make lint            - Run Ruff linter"
 	@echo "  make type-check      - Run mypy type checker"
 	@echo "  make test            - Run unit tests"

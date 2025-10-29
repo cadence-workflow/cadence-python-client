@@ -8,21 +8,33 @@ from google.protobuf.timestamp import to_datetime
 from cadence._internal.activity._context import _Context, _SyncContext
 from cadence.activity import ActivityInfo, ActivityDefinition, ExecutionStrategy
 from cadence.api.v1.common_pb2 import Failure
-from cadence.api.v1.service_worker_pb2 import PollForActivityTaskResponse, RespondActivityTaskFailedRequest, \
-    RespondActivityTaskCompletedRequest
+from cadence.api.v1.service_worker_pb2 import (
+    PollForActivityTaskResponse,
+    RespondActivityTaskFailedRequest,
+    RespondActivityTaskCompletedRequest,
+)
 from cadence.client import Client
 
 _logger = getLogger(__name__)
 
+
 class ActivityExecutor:
-    def __init__(self, client: Client, task_list: str, identity: str, max_workers: int, registry: Callable[[str], ActivityDefinition]):
+    def __init__(
+        self,
+        client: Client,
+        task_list: str,
+        identity: str,
+        max_workers: int,
+        registry: Callable[[str], ActivityDefinition],
+    ):
         self._client = client
         self._data_converter = client.data_converter
         self._registry = registry
         self._identity = identity
         self._task_list = task_list
-        self._thread_pool = ThreadPoolExecutor(max_workers=max_workers,
-                                               thread_name_prefix=f'{task_list}-activity-')
+        self._thread_pool = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
+        )
 
     async def execute(self, task: PollForActivityTaskResponse):
         try:
@@ -46,27 +58,33 @@ class ActivityExecutor:
         else:
             return _SyncContext(self._client, info, activity_def, self._thread_pool)
 
-    async def _report_failure(self, task: PollForActivityTaskResponse, error: Exception):
+    async def _report_failure(
+        self, task: PollForActivityTaskResponse, error: Exception
+    ):
         try:
-            await self._client.worker_stub.RespondActivityTaskFailed(RespondActivityTaskFailedRequest(
-                task_token=task.task_token,
-                failure=_to_failure(error),
-                identity=self._identity,
-            ))
+            await self._client.worker_stub.RespondActivityTaskFailed(
+                RespondActivityTaskFailedRequest(
+                    task_token=task.task_token,
+                    failure=_to_failure(error),
+                    identity=self._identity,
+                )
+            )
         except Exception:
-            _logger.exception('Exception reporting activity failure')
+            _logger.exception("Exception reporting activity failure")
 
     async def _report_success(self, task: PollForActivityTaskResponse, result: Any):
         as_payload = await self._data_converter.to_data([result])
 
         try:
-            await self._client.worker_stub.RespondActivityTaskCompleted(RespondActivityTaskCompletedRequest(
-                task_token=task.task_token,
-                result=as_payload,
-                identity=self._identity,
-            ))
+            await self._client.worker_stub.RespondActivityTaskCompleted(
+                RespondActivityTaskCompletedRequest(
+                    task_token=task.task_token,
+                    result=as_payload,
+                    identity=self._identity,
+                )
+            )
         except Exception:
-            _logger.exception('Exception reporting activity complete')
+            _logger.exception("Exception reporting activity complete")
 
     def _create_info(self, task: PollForActivityTaskResponse) -> ActivityInfo:
         return ActivityInfo(

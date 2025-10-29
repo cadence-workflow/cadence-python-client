@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import runpy
 
+
 def get_project_root() -> Path:
     try:
         return Path(
@@ -19,6 +20,7 @@ def get_project_root() -> Path:
         )
     except Exception as e:
         raise RuntimeError("Error: Could not determine project root from git:", e)
+
 
 def generate_init_file(output_dir: Path) -> None:
     """Generate the __init__.py file for cadence/api/v1 with clean imports."""
@@ -60,10 +62,11 @@ def generate_init_file(output_dir: Path) -> None:
     content += "]\n"
 
     # Write the file
-    with open(init_file, 'w') as f:
+    with open(init_file, "w") as f:
         f.write(content)
 
     print(f"  ✓ Generated {init_file} with {len(pb2_files)} modules")
+
 
 def setup_temp_proto_structure(proto_dir: Path, temp_dir: Path) -> None:
     """Create a temporary directory with proto files in the proper structure for cadence.api.v1 imports."""
@@ -78,23 +81,27 @@ def setup_temp_proto_structure(proto_dir: Path, temp_dir: Path) -> None:
     # Copy all proto files from proto_dir to temp_dir
     for proto_file in proto_file_dir.glob("*.proto"):
         # Copy the proto file and update import statements
-        with open(proto_file, 'r') as src_file:
+        with open(proto_file, "r") as src_file:
             content = src_file.read()
 
         # Update import statements to remove 'uber/' prefix
         # Replace "uber/cadence/api/v1/" with "cadence/api/v1/"
-        updated_content = content.replace('import "uber/cadence/api/v1/', 'import "cadence/api/v1/')
+        updated_content = content.replace(
+            'import "uber/cadence/api/v1/', 'import "cadence/api/v1/'
+        )
 
         # Write the updated content to the target file
-        with open(output_dir / proto_file.name, 'w') as dst_file:
+        with open(output_dir / proto_file.name, "w") as dst_file:
             dst_file.write(updated_content)
 
         print(f"  ✓ Copied and updated {proto_file.name}")
+
 
 def delete_temp_dir(temp_dir: Path):
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
         print(f"Deleted temp directory: {temp_dir}")
+
 
 def generate_protobuf_files(temp_dir: Path, gen_dir: Path) -> None:
     # Find all .proto files in the cadence/api/v1 directory
@@ -112,24 +119,33 @@ def generate_protobuf_files(temp_dir: Path, gen_dir: Path) -> None:
     original_argv = sys.argv
     sys.argv = [
         "grpc_tools.protoc",
-        "--proto_path", str(temp_dir),
-        "--python_out", str(gen_dir),
-        "--pyi_out", str(gen_dir),
-        "--grpc_python_out", str(gen_dir)
+        "--proto_path",
+        str(temp_dir),
+        "--python_out",
+        str(gen_dir),
+        "--pyi_out",
+        str(gen_dir),
+        "--grpc_python_out",
+        str(gen_dir),
     ] + proto_file_paths
 
     try:
         runpy.run_module("grpc_tools.protoc", run_name="__main__", alter_sys=True)
-        print(f"Successfully generated protobuf files using runpy for {len(proto_files)} files")
+        print(
+            f"Successfully generated protobuf files using runpy for {len(proto_files)} files"
+        )
     except SystemExit as e:
         if e.code == 0:
-            print(f"Successfully generated protobuf files using runpy for {len(proto_files)} files")
+            print(
+                f"Successfully generated protobuf files using runpy for {len(proto_files)} files"
+            )
         else:
             print("Error running grpc_tools.protoc via runpy {}", e)
             raise e
     finally:
         # Restore original argv
         sys.argv = original_argv
+
 
 def main():
     project_root = get_project_root()
@@ -143,6 +159,7 @@ def main():
     generate_protobuf_files(temp_dir, gen_dir)
     generate_init_file(gen_dir)
     delete_temp_dir(temp_dir)
+
 
 if __name__ == "__main__":
     main()

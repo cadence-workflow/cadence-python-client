@@ -1,1 +1,1 @@
-# Sample directory for cadence protobuf import tests 
+# Sample directory for cadence protobuf import tests

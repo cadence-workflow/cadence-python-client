@@ -30,7 +30,6 @@ class MetricsEmitter(Protocol):
         """Send a gauge metric."""
         ...
 
-
     def histogram(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None
     ) -> None:
@@ -51,10 +50,7 @@ class NoOpMetricsEmitter:
     ) -> None:
         pass
 
-
     def histogram(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None
     ) -> None:
         pass
-
-

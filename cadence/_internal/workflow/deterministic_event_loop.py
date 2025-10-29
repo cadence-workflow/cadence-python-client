@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 _Ts = TypeVarTuple("_Ts")
 
+
 class DeterministicEventLoop(AbstractEventLoop):
     """
     This is a basic FIFO implementation of event loop that does not allow I/O or timer operations.
@@ -20,13 +21,18 @@ class DeterministicEventLoop(AbstractEventLoop):
     """
 
     def __init__(self):
-        self._thread_id = None # indicate if the event loop is running
+        self._thread_id = None  # indicate if the event loop is running
         self._debug = False
-        self._ready  = collections.deque[events.Handle]()
+        self._ready = collections.deque[events.Handle]()
         self._stopping = False
         self._closed = False
 
-    def call_soon(self, callback: Callable[[Unpack[_Ts]], object], *args: Unpack[_Ts], context: Context | None = None) -> Handle:
+    def call_soon(
+        self,
+        callback: Callable[[Unpack[_Ts]], object],
+        *args: Unpack[_Ts],
+        context: Context | None = None,
+    ) -> Handle:
         return self._call_soon(callback, args, context)
 
     def _call_soon(self, callback, args, context) -> Handle:
@@ -81,7 +87,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         finally:
             future.remove_done_callback(_run_until_complete_cb)
         if not future.done():
-            raise RuntimeError('Event loop stopped before Future completed.')
+            raise RuntimeError("Event loop stopped before Future completed.")
 
         return future.result()
 
@@ -94,7 +100,9 @@ class DeterministicEventLoop(AbstractEventLoop):
 
         # NOTE: eager_start is not supported for deterministic event loop
         if kwargs.get("eager_start", False):
-            raise RuntimeError("eager_start in create_task is not supported for deterministic event loop")
+            raise RuntimeError(
+                "eager_start in create_task is not supported for deterministic event loop"
+            )
 
         return tasks.Task(coro, loop=self, **kwargs)
 
@@ -125,17 +133,18 @@ class DeterministicEventLoop(AbstractEventLoop):
 
     def _check_closed(self):
         if self._closed:
-            raise RuntimeError('Event loop is closed')
+            raise RuntimeError("Event loop is closed")
 
     def _check_running(self):
         if self.is_running():
-            raise RuntimeError('This event loop is already running')
+            raise RuntimeError("This event loop is already running")
         if events._get_running_loop() is not None:
             raise RuntimeError(
-                'Cannot run the event loop while another loop is running')
+                "Cannot run the event loop while another loop is running"
+            )
 
     def is_running(self):
-        return (self._thread_id is not None)
+        return self._thread_id is not None
 
     def close(self):
         """Close the event loop.
@@ -153,6 +162,7 @@ class DeterministicEventLoop(AbstractEventLoop):
     def is_closed(self):
         """Returns True if the event loop was closed."""
         return self._closed
+
 
 def _run_until_complete_cb(fut):
     if not fut.cancelled():

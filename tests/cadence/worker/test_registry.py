@@ -14,7 +14,7 @@ from tests.cadence import common_activities
 
 class TestRegistry:
     """Test registry functionality."""
-    
+
     def test_basic_registry_creation(self):
         """Test basic registry creation."""
         reg = Registry()
@@ -22,7 +22,7 @@ class TestRegistry:
             reg.get_workflow("nonexistent")
         with pytest.raises(KeyError):
             reg.get_activity("nonexistent")
-    
+
     def test_basic_workflow_registration_and_retrieval(self):
         """Test basic registration and retrieval for class-based workflows."""
         reg = Registry()
@@ -50,7 +50,7 @@ class TestRegistry:
 
         func = reg.get_activity(test_func.name)
         assert func() == "test"
-    
+
     def test_direct_call_behavior(self):
         reg = Registry()
 
@@ -60,9 +60,9 @@ class TestRegistry:
 
         reg.register_activity(test_func)
         func = reg.get_activity("test_func")
-        
+
         assert func() == "direct_call"
-    
+
     def test_workflow_not_found_error(self):
         """Test KeyError is raised when workflow not found."""
         reg = Registry()
@@ -86,6 +86,7 @@ class TestRegistry:
                 return "test"
 
         with pytest.raises(KeyError):
+
             @reg.workflow(name="duplicate_test")
             class TestWorkflow2:
                 @workflow.run
@@ -101,6 +102,7 @@ class TestRegistry:
             return "test"
 
         with pytest.raises(KeyError):
+
             @reg.activity(name="test_func")
             def test_func():
                 return "duplicate"
@@ -119,9 +121,15 @@ class TestRegistry:
 
         reg.register_activities(impl)
 
-        assert reg.get_activity(common_activities.ActivityInterface.do_something.name) is not None
+        assert (
+            reg.get_activity(common_activities.ActivityInterface.do_something.name)
+            is not None
+        )
         assert reg.get_activity("ActivityInterface.do_something") is not None
-        assert reg.get_activity(common_activities.ActivityInterface.do_something.name)() == "result"
+        assert (
+            reg.get_activity(common_activities.ActivityInterface.do_something.name)()
+            == "result"
+        )
 
     def test_register_activities_invalid_impl(self):
         impl = common_activities.InvalidImpl()
@@ -129,7 +137,6 @@ class TestRegistry:
 
         with pytest.raises(ValueError):
             reg.register_activities(impl)
-
 
     def test_add(self):
         registry = Registry()
@@ -173,6 +180,7 @@ class TestRegistry:
 
         # Test missing run method
         with pytest.raises(ValueError, match="No @workflow.run method found"):
+
             @reg.workflow
             class MissingRunWorkflow:
                 def some_method(self):
@@ -180,6 +188,7 @@ class TestRegistry:
 
         # Test duplicate run methods
         with pytest.raises(ValueError, match="Multiple @workflow.run methods found"):
+
             @reg.workflow
             class DuplicateRunWorkflow:
                 @workflow.run

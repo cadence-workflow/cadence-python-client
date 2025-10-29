@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 class DecisionResult:
     decisions: list[Decision]
 
+
 class WorkflowEngine:
     def __init__(self, info: WorkflowInfo, client: Client, workflow_definition=None):
         self._context = Context(client, info)
@@ -30,7 +31,9 @@ class WorkflowEngine:
         self._decisions_helper = DecisionsHelper(self._decision_manager)
         self._is_workflow_complete = False
 
-    async def process_decision(self, decision_task: PollForDecisionTaskResponse) -> DecisionResult:
+    async def process_decision(
+        self, decision_task: PollForDecisionTaskResponse
+    ) -> DecisionResult:
         """
         Process a decision task and generate decisions using DecisionEventsIterator.
 
@@ -52,14 +55,16 @@ class WorkflowEngine:
                     "workflow_id": self._context.info().workflow_id,
                     "run_id": self._context.info().workflow_run_id,
                     "started_event_id": decision_task.started_event_id,
-                    "attempt": decision_task.attempt
-                }
+                    "attempt": decision_task.attempt,
+                },
             )
 
             # Activate workflow context for the entire decision processing
             with self._context._activate():
                 # Create DecisionEventsIterator for structured event processing
-                events_iterator = DecisionEventsIterator(decision_task, self._context.client())
+                events_iterator = DecisionEventsIterator(
+                    decision_task, self._context.client()
+                )
 
                 # Process decision events using iterator-driven approach
                 await self._process_decision_events(events_iterator, decision_task)
@@ -79,8 +84,8 @@ class WorkflowEngine:
                         "run_id": self._context.info().workflow_run_id,
                         "started_event_id": decision_task.started_event_id,
                         "decisions_count": len(decisions),
-                        "replay_mode": self._context.is_replay_mode()
-                    }
+                        "replay_mode": self._context.is_replay_mode(),
+                    },
                 )
 
                 return DecisionResult(decisions=decisions)
@@ -95,14 +100,18 @@ class WorkflowEngine:
                     "run_id": self._context.info().workflow_run_id,
                     "started_event_id": decision_task.started_event_id,
                     "attempt": decision_task.attempt,
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             # Re-raise the exception so the handler can properly handle the failure
             raise
-    
-    async def _process_decision_events(self, events_iterator: DecisionEventsIterator, decision_task: PollForDecisionTaskResponse) -> None:
+
+    async def _process_decision_events(
+        self,
+        events_iterator: DecisionEventsIterator,
+        decision_task: PollForDecisionTaskResponse,
+    ) -> None:
         """
         Process decision events using the iterator-driven approach similar to Java client.
 
@@ -132,14 +141,16 @@ class WorkflowEngine:
                     "events_count": len(decision_events.get_events()),
                     "markers_count": len(decision_events.get_markers()),
                     "replay_mode": decision_events.is_replay(),
-                    "replay_time": decision_events.replay_current_time_milliseconds
-                }
+                    "replay_time": decision_events.replay_current_time_milliseconds,
+                },
             )
 
             # Update context with replay information
             self._context.set_replay_mode(decision_events.is_replay())
             if decision_events.replay_current_time_milliseconds:
-                self._context.set_replay_current_time_milliseconds(decision_events.replay_current_time_milliseconds)
+                self._context.set_replay_current_time_milliseconds(
+                    decision_events.replay_current_time_milliseconds
+                )
 
             # Phase 1: Process markers first for deterministic replay
             for marker_event in decision_events.get_markers():
@@ -148,10 +159,12 @@ class WorkflowEngine:
                         "Processing marker event",
                         extra={
                             "workflow_id": self._context.info().workflow_id,
-                            "marker_name": getattr(marker_event, 'marker_name', 'unknown'),
-                            "event_id": getattr(marker_event, 'event_id', None),
-                            "replay_mode": self._context.is_replay_mode()
-                        }
+                            "marker_name": getattr(
+                                marker_event, "marker_name", "unknown"
+                            ),
+                            "event_id": getattr(marker_event, "event_id", None),
+                            "replay_mode": self._context.is_replay_mode(),
+                        },
                     )
                     # Process through state machines (DecisionsHelper now delegates to DecisionManager)
                     self._decision_manager.handle_history_event(marker_event)
@@ -161,11 +174,13 @@ class WorkflowEngine:
                         "Unexpected marker event encountered",
                         extra={
                             "workflow_id": self._context.info().workflow_id,
-                            "marker_name": getattr(marker_event, 'marker_name', 'unknown'),
-                            "event_id": getattr(marker_event, 'event_id', None),
-                            "error_type": type(e).__name__
+                            "marker_name": getattr(
+                                marker_event, "marker_name", "unknown"
+                            ),
+                            "event_id": getattr(marker_event, "event_id", None),
+                            "error_type": type(e).__name__,
                         },
-                        exc_info=True
+                        exc_info=True,
                     )
 
             # Phase 2: Process regular events to update workflow state
@@ -175,10 +190,10 @@ class WorkflowEngine:
                         "Processing history event",
                         extra={
                             "workflow_id": self._context.info().workflow_id,
-                            "event_type": getattr(event, 'event_type', 'unknown'),
-                            "event_id": getattr(event, 'event_id', None),
-                            "replay_mode": self._context.is_replay_mode()
-                        }
+                            "event_type": getattr(event, "event_type", "unknown"),
+                            "event_id": getattr(event, "event_id", None),
+                            "replay_mode": self._context.is_replay_mode(),
+                        },
                     )
                     # Process through state machines (DecisionsHelper now delegates to DecisionManager)
                     self._decision_manager.handle_history_event(event)
@@ -187,11 +202,11 @@ class WorkflowEngine:
                         "Error processing history event",
                         extra={
                             "workflow_id": self._context.info().workflow_id,
-                            "event_type": getattr(event, 'event_type', 'unknown'),
-                            "event_id": getattr(event, 'event_id', None),
-                            "error_type": type(e).__name__
+                            "event_type": getattr(event, "event_type", "unknown"),
+                            "event_id": getattr(event, "event_id", None),
+                            "error_type": type(e).__name__,
                         },
-                        exc_info=True
+                        exc_info=True,
                     )
 
             # Phase 3: Execute workflow logic if not in replay mode
@@ -200,18 +215,23 @@ class WorkflowEngine:
 
         # If no decision events were processed but we have history, fall back to direct processing
         # This handles edge cases where the iterator doesn't find decision events
-        if not processed_any_decision_events and decision_task.history and hasattr(decision_task.history, 'events'):
+        if (
+            not processed_any_decision_events
+            and decision_task.history
+            and hasattr(decision_task.history, "events")
+        ):
             logger.debug(
                 "No decision events found by iterator, falling back to direct history processing",
                 extra={
                     "workflow_id": self._context.info().workflow_id,
-                    "history_events_count": len(decision_task.history.events) if decision_task.history else 0
-                }
+                    "history_events_count": len(decision_task.history.events)
+                    if decision_task.history
+                    else 0,
+                },
             )
             self._fallback_process_workflow_history(decision_task.history)
             if not self._is_workflow_complete:
                 await self._execute_workflow_function(decision_task)
-
 
     def _fallback_process_workflow_history(self, history) -> None:
         """
@@ -223,15 +243,15 @@ class WorkflowEngine:
         Args:
             history: The workflow history from the decision task
         """
-        if not history or not hasattr(history, 'events'):
+        if not history or not hasattr(history, "events"):
             return
 
         logger.debug(
             "Processing history events in fallback mode",
             extra={
                 "workflow_id": self._context.info().workflow_id,
-                "events_count": len(history.events)
-            }
+                "events_count": len(history.events),
+            },
         )
 
         for event in history.events:
@@ -243,14 +263,16 @@ class WorkflowEngine:
                     "Error processing history event in fallback mode",
                     extra={
                         "workflow_id": self._context.info().workflow_id,
-                        "event_type": getattr(event, 'event_type', 'unknown'),
-                        "event_id": getattr(event, 'event_id', None),
-                        "error_type": type(e).__name__
+                        "event_type": getattr(event, "event_type", "unknown"),
+                        "event_id": getattr(event, "event_id", None),
+                        "error_type": type(e).__name__,
                     },
-                    exc_info=True
+                    exc_info=True,
                 )
-    
-    async def _execute_workflow_function(self, decision_task: PollForDecisionTaskResponse) -> None:
+
+    async def _execute_workflow_function(
+        self, decision_task: PollForDecisionTaskResponse
+    ) -> None:
         """
         Execute the workflow function to generate new decisions.
 
@@ -267,19 +289,23 @@ class WorkflowEngine:
                     extra={
                         "workflow_type": self._context.info().workflow_type,
                         "workflow_id": self._context.info().workflow_id,
-                        "run_id": self._context.info().workflow_run_id
-                    }
+                        "run_id": self._context.info().workflow_run_id,
+                    },
                 )
                 return
 
             # Get the workflow run method from the instance
-            workflow_func = self._workflow_definition.get_run_method(self._workflow_instance)
+            workflow_func = self._workflow_definition.get_run_method(
+                self._workflow_instance
+            )
 
             # Extract workflow input from history
             workflow_input = await self._extract_workflow_input(decision_task)
 
             # Execute workflow function
-            result = await self._execute_workflow_function_once(workflow_func, workflow_input)
+            result = await self._execute_workflow_function_once(
+                workflow_func, workflow_input
+            )
 
             # Check if workflow is complete
             if result is not None:
@@ -291,8 +317,8 @@ class WorkflowEngine:
                         "workflow_type": self._context.info().workflow_type,
                         "workflow_id": self._context.info().workflow_id,
                         "run_id": self._context.info().workflow_run_id,
-                        "completion_type": "success"
-                    }
+                        "completion_type": "success",
+                    },
                 )
 
         except Exception as e:
@@ -302,46 +328,54 @@ class WorkflowEngine:
                     "workflow_type": self._context.info().workflow_type,
                     "workflow_id": self._context.info().workflow_id,
                     "run_id": self._context.info().workflow_run_id,
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             raise
-    
-    async def _extract_workflow_input(self, decision_task: PollForDecisionTaskResponse) -> Any:
+
+    async def _extract_workflow_input(
+        self, decision_task: PollForDecisionTaskResponse
+    ) -> Any:
         """
         Extract workflow input from the decision task history.
-        
+
         Args:
             decision_task: The decision task containing workflow history
-            
+
         Returns:
             The workflow input data, or None if not found
         """
-        if not decision_task.history or not hasattr(decision_task.history, 'events'):
+        if not decision_task.history or not hasattr(decision_task.history, "events"):
             logger.warning("No history events found in decision task")
             return None
-            
+
         # Look for WorkflowExecutionStarted event
         for event in decision_task.history.events:
-            if hasattr(event, 'workflow_execution_started_event_attributes'):
+            if hasattr(event, "workflow_execution_started_event_attributes"):
                 started_attrs = event.workflow_execution_started_event_attributes
-                if started_attrs and hasattr(started_attrs, 'input'):
+                if started_attrs and hasattr(started_attrs, "input"):
                     # Deserialize the input using the client's data converter
                     try:
                         # Use from_data method with a single type hint of None (no type conversion)
-                        input_data_list = await self._context.client().data_converter.from_data(started_attrs.input, [None])
+                        input_data_list = (
+                            await self._context.client().data_converter.from_data(
+                                started_attrs.input, [None]
+                            )
+                        )
                         input_data = input_data_list[0] if input_data_list else None
                         logger.debug(f"Extracted workflow input: {input_data}")
                         return input_data
                     except Exception as e:
                         logger.warning(f"Failed to deserialize workflow input: {e}")
                         return None
-        
+
         logger.warning("No WorkflowExecutionStarted event found in history")
         return None
-    
-    async def _execute_workflow_function_once(self, workflow_func: Callable, workflow_input: Any) -> Any:
+
+    async def _execute_workflow_function_once(
+        self, workflow_func: Callable, workflow_input: Any
+    ) -> Any:
         """
         Execute the workflow function once (not during replay).
 
@@ -354,13 +388,13 @@ class WorkflowEngine:
         """
         logger.debug(f"Executing workflow function with input: {workflow_input}")
         result = workflow_func(workflow_input)
-        
+
         # If the workflow function is async, await it properly
         if asyncio.iscoroutine(result):
             result = await result
-        
+
         return result
-    
+
     def _close_event_loop(self) -> None:
         """
         Close the decider's event loop.

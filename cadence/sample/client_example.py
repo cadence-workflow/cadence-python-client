@@ -10,5 +10,6 @@ async def main():
         worker = Worker(client, "task_list", Registry())
         await worker.run()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     asyncio.run(main())

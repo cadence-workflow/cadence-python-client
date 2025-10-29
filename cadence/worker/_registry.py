@@ -7,29 +7,47 @@ similar to the Go client's registry.go implementation.
 """
 
 import logging
-from typing import Callable, Dict, Optional, Unpack, TypedDict, overload, Type, Union, TypeVar
-from cadence.activity import ActivityDefinitionOptions, ActivityDefinition, ActivityDecorator, P, T
+from typing import (
+    Callable,
+    Dict,
+    Optional,
+    Unpack,
+    TypedDict,
+    overload,
+    Type,
+    Union,
+    TypeVar,
+)
+from cadence.activity import (
+    ActivityDefinitionOptions,
+    ActivityDefinition,
+    ActivityDecorator,
+    P,
+    T,
+)
 from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
 logger = logging.getLogger(__name__)
 
 # TypeVar for workflow class types
-W = TypeVar('W')
+W = TypeVar("W")
 
 
 class RegisterWorkflowOptions(TypedDict, total=False):
     """Options for registering a workflow."""
+
     name: Optional[str]
     alias: Optional[str]
+
 
 class Registry:
     """
     Registry for managing workflows and activities.
-    
+
     This class provides functionality to register, retrieve, and manage
     workflows and activities in a Cadence application.
     """
-    
+
     def __init__(self) -> None:
         """Initialize the registry."""
         self._workflows: Dict[str, WorkflowDefinition] = {}
@@ -37,9 +55,7 @@ class Registry:
         self._workflow_aliases: Dict[str, str] = {}  # alias -> name mapping
 
     def workflow(
-        self,
-        cls: Optional[Type[W]] = None,
-        **kwargs: Unpack[RegisterWorkflowOptions]
+        self, cls: Optional[Type[W]] = None, **kwargs: Unpack[RegisterWorkflowOptions]
     ) -> Union[Type[W], Callable[[Type[W]], Type[W]]]:
         """
         Register a workflow class.
@@ -61,7 +77,7 @@ class Registry:
         options = RegisterWorkflowOptions(**kwargs)
 
         def decorator(target: Type[W]) -> Type[W]:
-            workflow_name = options.get('name') or target.__name__
+            workflow_name = options.get("name") or target.__name__
 
             if workflow_name in self._workflows:
                 raise KeyError(f"Workflow '{workflow_name}' is already registered")
@@ -72,7 +88,7 @@ class Registry:
             self._workflows[workflow_name] = workflow_def
 
             # Register alias if provided
-            alias = options.get('alias')
+            alias = options.get("alias")
             if alias:
                 if alias in self._workflow_aliases:
                     raise KeyError(f"Workflow alias '{alias}' is already registered")
@@ -86,26 +102,30 @@ class Registry:
         return decorator(cls)
 
     @overload
-    def activity(self, func: Callable[P, T]) -> ActivityDefinition[P, T]:
-        ...
+    def activity(self, func: Callable[P, T]) -> ActivityDefinition[P, T]: ...
 
     @overload
-    def activity(self, **kwargs: Unpack[ActivityDefinitionOptions]) -> ActivityDecorator:
-        ...
-    
-    def activity(self, func: Callable[P, T] | None = None, **kwargs: Unpack[ActivityDefinitionOptions]) -> ActivityDecorator | ActivityDefinition[P, T]:
+    def activity(
+        self, **kwargs: Unpack[ActivityDefinitionOptions]
+    ) -> ActivityDecorator: ...
+
+    def activity(
+        self,
+        func: Callable[P, T] | None = None,
+        **kwargs: Unpack[ActivityDefinitionOptions],
+    ) -> ActivityDecorator | ActivityDefinition[P, T]:
         """
         Register an activity function.
-        
+
         This method can be used as a decorator or called directly.
-        
+
         Args:
             func: The activity function to register
             **kwargs: Options for registration (name, alias)
-            
+
         Returns:
             The decorated function or the function itself
-            
+
         Raises:
             KeyError: If activity name already exists
         """
@@ -131,7 +151,6 @@ class Registry:
         for defn in activities:
             self._register_activity(defn)
 
-
     def register_activity(self, defn: Callable) -> None:
         if not isinstance(defn, ActivityDefinition):
             raise ValueError(f"{defn.__qualname__} must have @activity.defn decorator")
@@ -143,7 +162,6 @@ class Registry:
 
         self._activities[defn.name] = defn
 
-    
     def get_workflow(self, name: str) -> WorkflowDefinition:
         """
         Get a registered workflow by name.
@@ -164,23 +182,23 @@ class Registry:
             raise KeyError(f"Workflow '{name}' not found in registry")
 
         return self._workflows[actual_name]
-    
+
     def get_activity(self, name: str) -> ActivityDefinition:
         """
         Get a registered activity by name.
-        
+
         Args:
             name: Name or alias of the activity
-            
+
         Returns:
             The activity function
-            
+
         Raises:
             KeyError: If activity is not found
         """
         return self._activities[name]
 
-    def __add__(self, other: 'Registry') -> 'Registry':
+    def __add__(self, other: "Registry") -> "Registry":
         result = Registry()
         for name, fn in self._activities.items():
             result._register_activity(fn)
@@ -190,12 +208,13 @@ class Registry:
         return result
 
     @staticmethod
-    def of(*args: 'Registry') -> 'Registry':
+    def of(*args: "Registry") -> "Registry":
         result = Registry()
         for other in args:
             result += other
 
         return result
+
 
 def _find_activity_definitions(instance: object) -> list[ActivityDefinition]:
     attr_to_def = {}
@@ -206,14 +225,20 @@ def _find_activity_definitions(instance: object) -> list[ActivityDefinition]:
             value = getattr(t, attr)
             if isinstance(value, ActivityDefinition):
                 if attr in attr_to_def:
-                    raise ValueError(f"'{attr}' was overridden with a duplicate activity definition")
+                    raise ValueError(
+                        f"'{attr}' was overridden with a duplicate activity definition"
+                    )
                 attr_to_def[attr] = value
 
     result: list[ActivityDefinition] = []
     for attr, definition in attr_to_def.items():
-        result.append(ActivityDefinition(getattr(instance, attr), definition.name, definition.strategy, definition.params))
+        result.append(
+            ActivityDefinition(
+                getattr(instance, attr),
+                definition.name,
+                definition.strategy,
+                definition.params,
+            )
+        )
 
     return result
-
-
-    

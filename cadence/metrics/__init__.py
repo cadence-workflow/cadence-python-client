@@ -7,6 +7,6 @@ __all__ = [
     "MetricsEmitter",
     "NoOpMetricsEmitter",
     "MetricType",
-    "PrometheusMetrics", 
+    "PrometheusMetrics",
     "PrometheusConfig",
 ]

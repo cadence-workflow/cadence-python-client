@@ -12,6 +12,7 @@ class WorkerOptions(TypedDict, total=False):
     disable_activity_worker: bool
     identity: str
 
+
 _DEFAULT_WORKER_OPTIONS: WorkerOptions = {
     "max_concurrent_activity_execution_size": 1000,
     "max_concurrent_decision_task_execution_size": 1000,

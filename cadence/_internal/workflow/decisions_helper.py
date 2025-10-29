@@ -9,7 +9,11 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from cadence._internal.decision_state_machine import DecisionId, DecisionType, DecisionManager
+from cadence._internal.decision_state_machine import (
+    DecisionId,
+    DecisionType,
+    DecisionManager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +235,6 @@ class DecisionsHelper:
             logger.debug(f"Marked decision {decision_key} as completed")
         else:
             logger.warning(f"No tracker found for decision key: {decision_key}")
-
 
     def _find_decision_by_scheduled_event_id(
         self, scheduled_event_id: int

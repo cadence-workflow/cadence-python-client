@@ -107,7 +107,6 @@ class PrometheusMetrics(MetricsEmitter):
 
         return self._histograms[metric_name]
 
-
     def counter(
         self, key: str, n: int = 1, tags: Optional[Dict[str, str]] = None
     ) -> None:
@@ -139,7 +138,6 @@ class PrometheusMetrics(MetricsEmitter):
 
         except Exception as e:
             logger.error(f"Failed to send gauge {key}: {e}")
-
 
     def histogram(
         self, key: str, value: float, tags: Optional[Dict[str, str]] = None

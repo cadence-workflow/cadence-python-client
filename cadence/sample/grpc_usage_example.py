@@ -8,14 +8,16 @@ import grpc
 from cadence.api.v1 import service_workflow_grpc, service_workflow, common
 
 
-def create_grpc_channel(server_address: str = "localhost:7833", use_ssl: bool = False) -> grpc.Channel:
+def create_grpc_channel(
+    server_address: str = "localhost:7833", use_ssl: bool = False
+) -> grpc.Channel:
     """
     Create a gRPC channel to connect to Cadence server.
-    
+
     Args:
         server_address: The address of the Cadence server (host:port)
         use_ssl: Whether to use SSL/TLS for the connection
-    
+
     Returns:
         grpc.Channel: The gRPC channel
     """
@@ -28,23 +30,27 @@ def create_grpc_channel(server_address: str = "localhost:7833", use_ssl: bool = 
         return grpc.insecure_channel(server_address)
 
 
-def create_workflow_client(channel: grpc.Channel) -> service_workflow_grpc.WorkflowAPIStub:
+def create_workflow_client(
+    channel: grpc.Channel,
+) -> service_workflow_grpc.WorkflowAPIStub:
     """
     Create a gRPC client for the WorkflowAPI service.
-    
+
     Args:
         channel: The gRPC channel
-        
+
     Returns:
         WorkflowAPIStub: The gRPC client stub
     """
     return service_workflow_grpc.WorkflowAPIStub(channel)
 
 
-def example_start_workflow(client: service_workflow_grpc.WorkflowAPIStub, domain: str, workflow_id: str):
+def example_start_workflow(
+    client: service_workflow_grpc.WorkflowAPIStub, domain: str, workflow_id: str
+):
     """
     Example of starting a workflow execution using gRPC.
-    
+
     Args:
         client: The gRPC client
         domain: The Cadence domain
@@ -60,7 +66,7 @@ def example_start_workflow(client: service_workflow_grpc.WorkflowAPIStub, domain
     request.execution_start_to_close_timeout.seconds = 3600  # 1 hour
     request.task_start_to_close_timeout.seconds = 60  # 1 minute
     request.identity = "python-client"
-    
+
     try:
         # Make the gRPC call
         response = client.StartWorkflowExecution(request)
@@ -71,11 +77,15 @@ def example_start_workflow(client: service_workflow_grpc.WorkflowAPIStub, domain
         return None
 
 
-def example_describe_workflow(client: service_workflow_grpc.WorkflowAPIStub, domain: str, workflow_id: str,
- run_id: str):
+def example_describe_workflow(
+    client: service_workflow_grpc.WorkflowAPIStub,
+    domain: str,
+    workflow_id: str,
+    run_id: str,
+):
     """
     Example of describing a workflow execution using gRPC.
-    
+
     Args:
         client: The gRPC client
         domain: The Cadence domain
@@ -89,7 +99,7 @@ def example_describe_workflow(client: service_workflow_grpc.WorkflowAPIStub, dom
     execution.workflow_id = workflow_id
     execution.run_id = run_id
     request.workflow_execution.CopyFrom(execution)
-    
+
     try:
         # Make the gRPC call
         response = client.DescribeWorkflowExecution(request)
@@ -100,10 +110,15 @@ def example_describe_workflow(client: service_workflow_grpc.WorkflowAPIStub, dom
         return None
 
 
-def example_get_workflow_history(client: service_workflow_grpc.WorkflowAPIStub, domain: str, workflow_id: str, run_id: str):
+def example_get_workflow_history(
+    client: service_workflow_grpc.WorkflowAPIStub,
+    domain: str,
+    workflow_id: str,
+    run_id: str,
+):
     """
     Example of getting workflow execution history using gRPC.
-    
+
     Args:
         client: The gRPC client
         domain: The Cadence domain
@@ -118,7 +133,7 @@ def example_get_workflow_history(client: service_workflow_grpc.WorkflowAPIStub, 
     execution.run_id = run_id
     request.workflow_execution.CopyFrom(execution)
     request.page_size = 100
-    
+
     try:
         # Make the gRPC call
         response = client.GetWorkflowExecutionHistory(request)
@@ -129,10 +144,16 @@ def example_get_workflow_history(client: service_workflow_grpc.WorkflowAPIStub, 
         return None
 
 
-def example_query_workflow(client: service_workflow_grpc.WorkflowAPIStub, domain: str, workflow_id: str, run_id: str, query_type: str):
+def example_query_workflow(
+    client: service_workflow_grpc.WorkflowAPIStub,
+    domain: str,
+    workflow_id: str,
+    run_id: str,
+    query_type: str,
+):
     """
     Example of querying a workflow using gRPC.
-    
+
     Args:
         client: The gRPC client
         domain: The Cadence domain
@@ -149,7 +170,7 @@ def example_query_workflow(client: service_workflow_grpc.WorkflowAPIStub, domain
     request.workflow_execution.CopyFrom(execution)
     request.query.query_type = query_type
     request.query.query_args.data = b"query arguments"  # Serialized query arguments
-    
+
     try:
         # Make the gRPC call
         response = client.QueryWorkflow(request)
@@ -164,46 +185,46 @@ def main():
     """Main example function."""
     print("Cadence gRPC Client Example")
     print("=" * 40)
-    
+
     # Configuration
     server_address = "localhost:7833"  # Default Cadence gRPC port
     domain = "test-domain"
     workflow_id = "example-workflow-123"
     run_id = "example-run-456"
-    
+
     try:
         # Create gRPC channel
         print(f"Connecting to Cadence server at {server_address}...")
         channel = create_grpc_channel(server_address)
-        
+
         # Create gRPC client
         client = create_workflow_client(channel)
         print("✓ gRPC client created successfully")
-        
+
         # Example 1: Start a workflow
         print("\n1. Starting a workflow...")
         example_start_workflow(client, domain, workflow_id)
-        
+
         # Example 2: Describe a workflow
         print("\n2. Describing a workflow...")
         example_describe_workflow(client, domain, workflow_id, run_id)
-        
+
         # Example 3: Get workflow history
         print("\n3. Getting workflow history...")
         example_get_workflow_history(client, domain, workflow_id, run_id)
-        
+
         # Example 4: Query a workflow
         print("\n4. Querying a workflow...")
         example_query_workflow(client, domain, workflow_id, run_id, "status")
-        
+
     except Exception as e:
         print(f"✗ Error: {e}")
     finally:
         # Close the channel
-        if 'channel' in locals():
+        if "channel" in locals():
             channel.close()
             print("\n✓ gRPC channel closed")
 
 
 if __name__ == "__main__":
-    main() 
+    main()

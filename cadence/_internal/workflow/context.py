@@ -4,7 +4,6 @@ from cadence.workflow import WorkflowContext, WorkflowInfo
 
 
 class Context(WorkflowContext):
-
     def __init__(self, client: Client, info: WorkflowInfo):
         self._client = client
         self._info = info

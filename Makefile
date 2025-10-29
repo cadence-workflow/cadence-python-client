@@ -18,6 +18,7 @@ generate:
 lint:
 	@echo "Running Ruff linter and fixing lint issues..."
 	uv tool run ruff check --fix
+	uv tool run ruff format
 
 # Run type checker
 type-check:
@@ -52,4 +53,3 @@ help:
 	@echo "  make integration-test - Run integration tests"
 	@echo "  make clean           - Remove generated files and caches"
 	@echo "  make help            - Show this help message"
-

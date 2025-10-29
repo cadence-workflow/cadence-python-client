@@ -29,7 +29,9 @@ def install():
 
 def install_dev():
     """Install the package with development dependencies."""
-    return run_command("uv pip install -e '.[dev]'", "Installing package with dev dependencies")
+    return run_command(
+        "uv pip install -e '.[dev]'", "Installing package with dev dependencies"
+    )
 
 
 def test():
@@ -39,7 +41,10 @@ def test():
 
 def test_cov():
     """Run tests with coverage."""
-    return run_command("uv run pytest --cov=cadence --cov-report=html --cov-report=term-missing", "Running tests with coverage")
+    return run_command(
+        "uv run pytest --cov=cadence --cov-report=html --cov-report=term-missing",
+        "Running tests with coverage",
+    )
 
 
 def lint():
@@ -93,7 +98,9 @@ def clean():
         run_command(f"rm -rf {dir_pattern}", f"Removing {dir_pattern}")
 
     # Remove Python cache files
-    run_command("find . -type d -name __pycache__ -delete", "Removing __pycache__ directories")
+    run_command(
+        "find . -type d -name __pycache__ -delete", "Removing __pycache__ directories"
+    )
     run_command("find . -type f -name '*.pyc' -delete", "Removing .pyc files")
 
     print("✓ Clean completed")
@@ -112,7 +119,10 @@ def protobuf():
 
 def docs():
     """Build documentation."""
-    return run_command("uv run sphinx-build -b html docs/source docs/build/html", "Building documentation")
+    return run_command(
+        "uv run sphinx-build -b html docs/source docs/build/html",
+        "Building documentation",
+    )
 
 
 def check():
@@ -128,11 +138,26 @@ def check():
 
 def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description="Development script for Cadence Python client")
-    parser.add_argument("command", choices=[
-        "install", "install-dev", "test", "test-cov", "lint", "format",
-        "clean", "build", "protobuf", "docs", "check"
-    ], help="Command to run")
+    parser = argparse.ArgumentParser(
+        description="Development script for Cadence Python client"
+    )
+    parser.add_argument(
+        "command",
+        choices=[
+            "install",
+            "install-dev",
+            "test",
+            "test-cov",
+            "lint",
+            "format",
+            "clean",
+            "build",
+            "protobuf",
+            "docs",
+            "check",
+        ],
+        help="Command to run",
+    )
 
     args = parser.parse_args()
 

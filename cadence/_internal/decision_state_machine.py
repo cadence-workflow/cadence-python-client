@@ -44,7 +44,7 @@ class DecisionState(Enum):
 
 class DecisionType(Enum):
     """Types of decisions that can be made by state machines."""
-    
+
     ACTIVITY = 0
     CHILD_WORKFLOW = 1
     CANCELLATION = 2
@@ -81,13 +81,26 @@ class DecisionId:
 @dataclass
 class StateTransition:
     """Represents a state transition with associated actions."""
+
     next_state: Optional[DecisionState]
-    action: Optional[Callable[['BaseDecisionStateMachine', history.HistoryEvent], None]] = None
-    condition: Optional[Callable[['BaseDecisionStateMachine', history.HistoryEvent], bool]] = None
+    action: Optional[
+        Callable[["BaseDecisionStateMachine", history.HistoryEvent], None]
+    ] = None
+    condition: Optional[
+        Callable[["BaseDecisionStateMachine", history.HistoryEvent], bool]
+    ] = None
 
 
 class TransitionInfo(TypedDict):
-    type: Literal["initiated", "started", "completion", "canceled", "cancel_initiated", "cancel_failed", "initiation_failed"]
+    type: Literal[
+        "initiated",
+        "started",
+        "completion",
+        "canceled",
+        "cancel_initiated",
+        "cancel_failed",
+        "initiation_failed",
+    ]
     decision_type: DecisionType
     transition: StateTransition
 
@@ -96,153 +109,143 @@ decision_state_transition_map: Dict[str, TransitionInfo] = {
     "activity_task_scheduled_event_attributes": {
         "type": "initiated",
         "decision_type": DecisionType.ACTIVITY,
-        "transition": StateTransition(
-            next_state=DecisionState.INITIATED
-        )
+        "transition": StateTransition(next_state=DecisionState.INITIATED),
     },
     "activity_task_started_event_attributes": {
         "type": "started",
         "decision_type": DecisionType.ACTIVITY,
-        "transition": StateTransition(
-            next_state=DecisionState.STARTED
-        )
+        "transition": StateTransition(next_state=DecisionState.STARTED),
     },
     "activity_task_completed_event_attributes": {
         "type": "completion",
         "decision_type": DecisionType.ACTIVITY,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
     "activity_task_failed_event_attributes": {
         "type": "completion",
         "decision_type": DecisionType.ACTIVITY,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
     "activity_task_timed_out_event_attributes": {
         "type": "completion",
         "decision_type": DecisionType.ACTIVITY,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
-        "activity_task_cancel_requested_event_attributes": {
-            "type": "cancel_initiated",
-            "decision_type": DecisionType.CANCELLATION,
-            "transition": StateTransition(
-                next_state=None,
-                action=lambda self, event: setattr(self, '_cancel_requested', True)
-            )
-        },
-        "activity_task_canceled_event_attributes": {
-            "type": "canceled",
-            "decision_type": DecisionType.ACTIVITY,
-            "transition": StateTransition(
-                next_state=DecisionState.CANCELED_AFTER_INITIATED
-            )
-        },
-        "request_cancel_activity_task_failed_event_attributes": {
-            "type": "cancel_failed",
-            "decision_type": DecisionType.CANCELLATION,
-            "transition": StateTransition(
-                next_state=None,
-                action=lambda self, event: setattr(self, '_cancel_emitted', False)
-            )
-        },
+    "activity_task_cancel_requested_event_attributes": {
+        "type": "cancel_initiated",
+        "decision_type": DecisionType.CANCELLATION,
+        "transition": StateTransition(
+            next_state=None,
+            action=lambda self, event: setattr(self, "_cancel_requested", True),
+        ),
+    },
+    "activity_task_canceled_event_attributes": {
+        "type": "canceled",
+        "decision_type": DecisionType.ACTIVITY,
+        "transition": StateTransition(
+            next_state=DecisionState.CANCELED_AFTER_INITIATED
+        ),
+    },
+    "request_cancel_activity_task_failed_event_attributes": {
+        "type": "cancel_failed",
+        "decision_type": DecisionType.CANCELLATION,
+        "transition": StateTransition(
+            next_state=None,
+            action=lambda self, event: setattr(self, "_cancel_emitted", False),
+        ),
+    },
     "timer_started_event_attributes": {
         "type": "initiated",
         "decision_type": DecisionType.TIMER,
-        "transition": StateTransition(
-            next_state=DecisionState.INITIATED
-        )
+        "transition": StateTransition(next_state=DecisionState.INITIATED),
     },
     "timer_fired_event_attributes": {
         "type": "completion",
         "decision_type": DecisionType.TIMER,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
     "timer_canceled_event_attributes": {
         "type": "canceled",
         "decision_type": DecisionType.TIMER,
         "transition": StateTransition(
             next_state=DecisionState.CANCELED_AFTER_INITIATED
-        )
+        ),
     },
-        "cancel_timer_failed_event_attributes": {
-            "type": "cancel_failed",
-            "decision_type": DecisionType.CANCELLATION,
-            "transition": StateTransition(
-                next_state=None,
-                action=lambda self, event: setattr(self, '_cancel_emitted', False)
-            )
-        },
+    "cancel_timer_failed_event_attributes": {
+        "type": "cancel_failed",
+        "decision_type": DecisionType.CANCELLATION,
+        "transition": StateTransition(
+            next_state=None,
+            action=lambda self, event: setattr(self, "_cancel_emitted", False),
+        ),
+    },
     "start_child_workflow_execution_initiated_event_attributes": {
         "type": "initiated",
         "decision_type": DecisionType.CHILD_WORKFLOW,
-        "transition": StateTransition(
-            next_state=DecisionState.INITIATED
-        )
+        "transition": StateTransition(next_state=DecisionState.INITIATED),
     },
     "child_workflow_execution_started_event_attributes": {
         "type": "started",
         "decision_type": DecisionType.CHILD_WORKFLOW,
-        "transition": StateTransition(
-            next_state=DecisionState.STARTED
-        )
+        "transition": StateTransition(next_state=DecisionState.STARTED),
     },
     "child_workflow_execution_completed_event_attributes": {
         "type": "completion",
         "decision_type": DecisionType.CHILD_WORKFLOW,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
     "child_workflow_execution_failed_event_attributes": {
         "type": "completion",
         "decision_type": DecisionType.CHILD_WORKFLOW,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
     "child_workflow_execution_timed_out_event_attributes": {
         "type": "completion",
         "decision_type": DecisionType.CHILD_WORKFLOW,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
     "child_workflow_execution_canceled_event_attributes": {
         "type": "canceled",
         "decision_type": DecisionType.CHILD_WORKFLOW,
         "transition": StateTransition(
             next_state=DecisionState.CANCELED_AFTER_INITIATED
-        )
+        ),
     },
     "child_workflow_execution_terminated_event_attributes": {
         "type": "canceled",
         "decision_type": DecisionType.CHILD_WORKFLOW,
         "transition": StateTransition(
             next_state=DecisionState.CANCELED_AFTER_INITIATED
-        )
+        ),
     },
     "start_child_workflow_execution_failed_event_attributes": {
         "type": "initiation_failed",
         "decision_type": DecisionType.CHILD_WORKFLOW,
         "transition": StateTransition(
             next_state=DecisionState.COMPLETED,
-            action=lambda self, event: setattr(self, 'status', DecisionState.COMPLETED)
-        )
+            action=lambda self, event: setattr(self, "status", DecisionState.COMPLETED),
+        ),
     },
 }
 
@@ -253,7 +256,7 @@ class BaseDecisionStateMachine:
     Subclasses are responsible for mapping workflow history events into state
     transitions and producing the next set of decisions when queried.
     """
-    
+
     # Common fields that subclasses may use
     scheduled_event_id: Optional[int] = None
     started_event_id: Optional[int] = None
@@ -317,7 +320,7 @@ class BaseDecisionStateMachine:
         # Check if the event ID matches our tracked event ID
         event_id = getattr(attr, event_id_field, None)
         tracked_event_id = getattr(self, self._get_event_id_field_name(), None)
-        
+
         return event_id == tracked_event_id
 
     def _default_initiated_action(self, event: history.HistoryEvent) -> None:
@@ -332,7 +335,9 @@ class BaseDecisionStateMachine:
         if hasattr(self, "started_event_id"):
             self.started_event_id = event.event_id
 
-    def _default_completion_action(self, event: history.HistoryEvent, attr_name: str) -> None:
+    def _default_completion_action(
+        self, event: history.HistoryEvent, attr_name: str
+    ) -> None:
         """Default action for completion events."""
         self.status = DecisionState.COMPLETED
 
@@ -357,7 +362,7 @@ class BaseDecisionStateMachine:
 
     def handle_event(self, event: history.HistoryEvent, event_type: str) -> None:
         """Generic event handler that uses the global transition map to determine state changes.
-        
+
         Args:
             event: The history event to process
             event_type: The type of event (e.g., 'initiated', 'started', 'completion', etc.)
@@ -381,7 +386,7 @@ class BaseDecisionStateMachine:
         """Handle initiated events using the global transition map."""
         attr_name = self._get_initiated_event_attr_name()
         id_field = self._get_id_field_name()
-        
+
         if not self._should_handle_event(event, attr_name, id_field):
             return
 
@@ -410,8 +415,10 @@ class BaseDecisionStateMachine:
                 event_id_field = "initiated_event_id"
             else:
                 event_id_field = self._get_event_id_field_name()
-            
-            if not self._should_handle_event_by_event_id(event, attr_name, event_id_field):
+
+            if not self._should_handle_event_by_event_id(
+                event, attr_name, event_id_field
+            ):
                 return
 
             transition_info = decision_state_transition_map.get(attr_name)
@@ -433,18 +440,28 @@ class BaseDecisionStateMachine:
                 if attr_name == "timer_fired_event_attributes":
                     # Timer completion events use started_event_id
                     event_id_field = "started_event_id"
-                elif attr_name in ["activity_task_completed_event_attributes", "activity_task_failed_event_attributes", "activity_task_timed_out_event_attributes"]:
+                elif attr_name in [
+                    "activity_task_completed_event_attributes",
+                    "activity_task_failed_event_attributes",
+                    "activity_task_timed_out_event_attributes",
+                ]:
                     # Activity completion events use scheduled_event_id
                     event_id_field = "scheduled_event_id"
-                elif attr_name in ["child_workflow_execution_completed_event_attributes", "child_workflow_execution_failed_event_attributes", "child_workflow_execution_timed_out_event_attributes"]:
+                elif attr_name in [
+                    "child_workflow_execution_completed_event_attributes",
+                    "child_workflow_execution_failed_event_attributes",
+                    "child_workflow_execution_timed_out_event_attributes",
+                ]:
                     # Child workflow completion events use initiated_event_id
                     event_id_field = "initiated_event_id"
                 else:
                     # Default case
                     event_id_field = self._get_event_id_field_name()
-                
+
                 # Check if this event should be handled by this machine
-                if self._should_handle_event_by_event_id(event, attr_name, event_id_field):
+                if self._should_handle_event_by_event_id(
+                    event, attr_name, event_id_field
+                ):
                     transition_info = decision_state_transition_map.get(attr_name)
                     if transition_info and transition_info["type"] == "completion":
                         transition = transition_info["transition"]
@@ -504,15 +521,20 @@ class BaseDecisionStateMachine:
                 elif attr_name == "activity_task_canceled_event_attributes":
                     # Activity canceled events use scheduled_event_id
                     event_id_field = "scheduled_event_id"
-                elif attr_name in ["child_workflow_execution_canceled_event_attributes", "child_workflow_execution_terminated_event_attributes"]:
+                elif attr_name in [
+                    "child_workflow_execution_canceled_event_attributes",
+                    "child_workflow_execution_terminated_event_attributes",
+                ]:
                     # Child workflow canceled events use initiated_event_id
                     event_id_field = "initiated_event_id"
                 else:
                     # Default case
                     event_id_field = self._get_event_id_field_name()
-                
+
                 # Check if this event should be handled by this machine
-                if self._should_handle_event_by_event_id(event, attr_name, event_id_field):
+                if self._should_handle_event_by_event_id(
+                    event, attr_name, event_id_field
+                ):
                     transition_info = decision_state_transition_map.get(attr_name)
                     if transition_info and transition_info["type"] == "canceled":
                         transition = transition_info["transition"]
@@ -538,6 +560,7 @@ class BaseDecisionStateMachine:
 
 
 # Activity
+
 
 @dataclass
 class ActivityDecisionMachine(BaseDecisionStateMachine):

@@ -10,8 +10,13 @@ from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
 
 
 class Worker:
-
-    def __init__(self, client: Client, task_list: str, registry: Registry, **kwargs: Unpack[WorkerOptions]) -> None:
+    def __init__(
+        self,
+        client: Client,
+        task_list: str,
+        registry: Registry,
+        **kwargs: Unpack[WorkerOptions],
+    ) -> None:
         self._client = client
         self._task_list = task_list
 
@@ -21,7 +26,6 @@ class Worker:
         self._activity_worker = ActivityWorker(client, task_list, registry, options)
         self._decision_worker = DecisionWorker(client, task_list, registry, options)
 
-
     async def run(self) -> None:
         async with asyncio.TaskGroup() as tg:
             if not self._options["disable_workflow_worker"]:
@@ -30,8 +34,9 @@ class Worker:
                 tg.create_task(self._activity_worker.run())
 
 
-
-def _validate_and_copy_defaults(client: Client, task_list: str, options: WorkerOptions) -> None:
+def _validate_and_copy_defaults(
+    client: Client, task_list: str, options: WorkerOptions
+) -> None:
     if "identity" not in options:
         options["identity"] = f"{client.identity}@{task_list}@{uuid.uuid4()}"
 

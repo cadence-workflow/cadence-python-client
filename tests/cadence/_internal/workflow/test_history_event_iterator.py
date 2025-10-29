@@ -21,34 +21,31 @@ def mock_client():
 @pytest.fixture
 def mock_workflow_execution():
     """Create a mock workflow execution."""
-    return WorkflowExecution(
-        workflow_id="test-workflow-id",
-        run_id="test-run-id"
-    )
+    return WorkflowExecution(workflow_id="test-workflow-id", run_id="test-run-id")
 
 
 def create_history_event(event_id: int) -> HistoryEvent:
     return HistoryEvent(event_id=event_id)
 
 
-async def test_iterate_history_events_single_page_no_next_token(mock_client, mock_workflow_execution):
+async def test_iterate_history_events_single_page_no_next_token(
+    mock_client, mock_workflow_execution
+):
     """Test iterating over a single page of events with no next page token."""
     # Create test events
-    events = [
-        create_history_event(1),
-        create_history_event(2),
-        create_history_event(3)
-    ]
+    events = [create_history_event(1), create_history_event(2), create_history_event(3)]
 
     # Create decision task response with events but no next page token
     decision_task = PollForDecisionTaskResponse(
         history=History(events=events),
         next_page_token=b"",  # Empty token means no more pages
-        workflow_execution=mock_workflow_execution
+        workflow_execution=mock_workflow_execution,
     )
 
     # Iterate and collect events
-    result_events = [e async for e in iterate_history_events(decision_task, mock_client)]
+    result_events = [
+        e async for e in iterate_history_events(decision_task, mock_client)
+    ]
 
     # Verify all events were returned
     assert len(result_events) == 3
@@ -60,17 +57,21 @@ async def test_iterate_history_events_single_page_no_next_token(mock_client, moc
     mock_client.workflow_stub.GetWorkflowExecutionHistory.assert_not_called()
 
 
-async def test_iterate_history_events_empty_events(mock_client, mock_workflow_execution):
+async def test_iterate_history_events_empty_events(
+    mock_client, mock_workflow_execution
+):
     """Test iterating over empty events list."""
     # Create decision task response with no events
     decision_task = PollForDecisionTaskResponse(
         history=History(events=[]),
         next_page_token=b"",
-        workflow_execution=mock_workflow_execution
+        workflow_execution=mock_workflow_execution,
     )
 
     # Iterate and collect events
-    result_events = [e async for e in iterate_history_events(decision_task, mock_client)]
+    result_events = [
+        e async for e in iterate_history_events(decision_task, mock_client)
+    ]
 
     # Verify no events were returned
     assert len(result_events) == 0
@@ -78,43 +79,40 @@ async def test_iterate_history_events_empty_events(mock_client, mock_workflow_ex
     # Verify no additional API calls were made
     mock_client.workflow_stub.GetWorkflowExecutionHistory.assert_not_called()
 
-async def test_iterate_history_events_multiple_pages(mock_client, mock_workflow_execution):
+
+async def test_iterate_history_events_multiple_pages(
+    mock_client, mock_workflow_execution
+):
     """Test iterating over multiple pages of events."""
 
     # Create decision task response with first page and next page token
     decision_task = PollForDecisionTaskResponse(
-        history=History(events=[
-            create_history_event(1),
-            create_history_event(2)
-        ]),
+        history=History(events=[create_history_event(1), create_history_event(2)]),
         next_page_token=b"page2_token",
-        workflow_execution=mock_workflow_execution
+        workflow_execution=mock_workflow_execution,
     )
 
     # Mock the subsequent API calls
     second_response = GetWorkflowExecutionHistoryResponse(
-        history=History(events=[
-            create_history_event(3),
-            create_history_event(4)
-        ]),
-        next_page_token=b"page3_token"
+        history=History(events=[create_history_event(3), create_history_event(4)]),
+        next_page_token=b"page3_token",
     )
 
     third_response = GetWorkflowExecutionHistoryResponse(
-        history=History(events=[
-            create_history_event(5)
-        ]),
-        next_page_token=b""  # No more pages
+        history=History(events=[create_history_event(5)]),
+        next_page_token=b"",  # No more pages
     )
 
     # Configure mock to return responses in sequence
     mock_client.workflow_stub.GetWorkflowExecutionHistory.side_effect = [
         second_response,
-        third_response
+        third_response,
     ]
 
     # Iterate and collect events
-    result_events = [e async for e in iterate_history_events(decision_task, mock_client)]
+    result_events = [
+        e async for e in iterate_history_events(decision_task, mock_client)
+    ]
 
     # Verify all events from all pages were returned
     assert len(result_events) == 5
@@ -136,38 +134,42 @@ async def test_iterate_history_events_multiple_pages(mock_client, mock_workflow_
     assert first_request.page_size == 1000
 
     # Verify second API call
-    second_call = mock_client.workflow_stub.GetWorkflowExecutionHistory.call_args_list[1]
+    second_call = mock_client.workflow_stub.GetWorkflowExecutionHistory.call_args_list[
+        1
+    ]
     second_request = second_call[0][0]
     assert second_request.domain == "test-domain"
     assert second_request.workflow_execution == mock_workflow_execution
     assert second_request.next_page_token == b"page3_token"
     assert second_request.page_size == 1000
 
-async def test_iterate_history_events_single_page_with_next_token_then_empty(mock_client, mock_workflow_execution):
+
+async def test_iterate_history_events_single_page_with_next_token_then_empty(
+    mock_client, mock_workflow_execution
+):
     """Test case where first page has next token but second page is empty."""
     # Create first page of events
-    first_page_events = [
-        create_history_event(1),
-        create_history_event(2)
-    ]
+    first_page_events = [create_history_event(1), create_history_event(2)]
 
     # Create decision task response with first page and next page token
     decision_task = PollForDecisionTaskResponse(
         history=History(events=first_page_events),
         next_page_token=b"page2_token",
-        workflow_execution=mock_workflow_execution
+        workflow_execution=mock_workflow_execution,
     )
 
     # Mock the second API call to return empty page
     second_response = GetWorkflowExecutionHistoryResponse(
         history=History(events=[]),
-        next_page_token=b""  # No more pages
+        next_page_token=b"",  # No more pages
     )
 
     mock_client.workflow_stub.GetWorkflowExecutionHistory.return_value = second_response
 
     # Iterate and collect events
-    result_events = [e async for e in iterate_history_events(decision_task, mock_client)]
+    result_events = [
+        e async for e in iterate_history_events(decision_task, mock_client)
+    ]
 
     # Verify only first page events were returned
     assert len(result_events) == 2

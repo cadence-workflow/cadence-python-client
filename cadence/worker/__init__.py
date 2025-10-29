@@ -1,9 +1,4 @@
-
-
-from ._worker import (
-    Worker,
-    WorkerOptions
-)
+from ._worker import Worker, WorkerOptions
 
 from ._registry import (
     Registry,
@@ -13,6 +8,6 @@ from ._registry import (
 __all__ = [
     "Worker",
     "WorkerOptions",
-    'Registry',
-    'RegisterWorkflowOptions',
+    "Registry",
+    "RegisterWorkflowOptions",
 ]

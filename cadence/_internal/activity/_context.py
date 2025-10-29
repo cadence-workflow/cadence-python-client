@@ -8,7 +8,12 @@ from cadence.api.v1.common_pb2 import Payload
 
 
 class _Context(ActivityContext):
-    def __init__(self, client: Client, info: ActivityInfo, activity_fn: ActivityDefinition[[Any], Any]):
+    def __init__(
+        self,
+        client: Client,
+        info: ActivityInfo,
+        activity_fn: ActivityDefinition[[Any], Any],
+    ):
         self._client = client
         self._info = info
         self._activity_fn = activity_fn
@@ -28,8 +33,15 @@ class _Context(ActivityContext):
     def info(self) -> ActivityInfo:
         return self._info
 
+
 class _SyncContext(_Context):
-    def __init__(self, client: Client, info: ActivityInfo, activity_fn: ActivityDefinition[[Any], Any], executor: ThreadPoolExecutor):
+    def __init__(
+        self,
+        client: Client,
+        info: ActivityInfo,
+        activity_fn: ActivityDefinition[[Any], Any],
+        executor: ThreadPoolExecutor,
+    ):
         super().__init__(client, info, activity_fn)
         self._executor = executor
 
@@ -44,4 +56,3 @@ class _SyncContext(_Context):
 
     def client(self) -> Client:
         raise RuntimeError("client is only supported in async activities")
-

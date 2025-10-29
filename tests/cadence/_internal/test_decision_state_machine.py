@@ -38,7 +38,7 @@ def test_timer_state_machine_cancel_after_initiated():
                 timer_id="t-cai"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.request_cancel()
     d = m.collect_pending_decisions()
@@ -57,7 +57,7 @@ def test_timer_state_machine_completed_after_cancel():
                 timer_id="t-cac"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.request_cancel()
     _ = m.collect_pending_decisions()
@@ -68,7 +68,7 @@ def test_timer_state_machine_completed_after_cancel():
                 timer_id="t-cac", started_event_id=2
             ),
         ),
-        "completion"
+        "completion",
     )
     assert m.status is DecisionState.COMPLETED
 
@@ -85,7 +85,7 @@ def test_timer_state_machine_complete_without_cancel():
                 timer_id="t-cwc"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.handle_event(
         history.HistoryEvent(
@@ -94,12 +94,9 @@ def test_timer_state_machine_complete_without_cancel():
                 timer_id="t-cwc", started_event_id=4
             ),
         ),
-        "completion"
+        "completion",
     )
     assert m.status is DecisionState.COMPLETED
-
-
-
 
 
 @pytest.mark.unit
@@ -114,7 +111,7 @@ def test_timer_cancel_event_ordering():
                 timer_id="t-ord"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.request_cancel()
     d1 = m.collect_pending_decisions()
@@ -127,7 +124,7 @@ def test_timer_cancel_event_ordering():
                 timer_id="t-ord"
             ),
         ),
-        "cancel_failed"
+        "cancel_failed",
     )
     d2 = m.collect_pending_decisions()
     assert len(d2) == 1 and d2[0].HasField("cancel_timer_decision_attributes")
@@ -146,7 +143,7 @@ def test_activity_state_machine_complete_without_cancel():
                 activity_id="act-1"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.handle_event(
         history.HistoryEvent(
@@ -155,7 +152,7 @@ def test_activity_state_machine_complete_without_cancel():
                 scheduled_event_id=20
             ),
         ),
-        "started"
+        "started",
     )
     m.handle_event(
         history.HistoryEvent(
@@ -164,7 +161,7 @@ def test_activity_state_machine_complete_without_cancel():
                 scheduled_event_id=20, started_event_id=21
             ),
         ),
-        "completion"
+        "completion",
     )
     assert m.status is DecisionState.COMPLETED
 
@@ -205,7 +202,7 @@ def test_activity_state_machine_completed_after_cancel():
                 activity_id="act-cac"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.handle_event(
         history.HistoryEvent(
@@ -214,7 +211,7 @@ def test_activity_state_machine_completed_after_cancel():
                 scheduled_event_id=30
             ),
         ),
-        "started"
+        "started",
     )
     m.request_cancel()
     _ = m.collect_pending_decisions()
@@ -225,12 +222,9 @@ def test_activity_state_machine_completed_after_cancel():
                 scheduled_event_id=30, started_event_id=31
             ),
         ),
-        "completion"
+        "completion",
     )
     assert m.status is DecisionState.COMPLETED
-
-
-
 
 
 @pytest.mark.unit
@@ -250,7 +244,7 @@ def test_child_workflow_state_machine_basic():
                 domain="d1", workflow_id="wf-1"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.handle_event(
         history.HistoryEvent(
@@ -259,7 +253,7 @@ def test_child_workflow_state_machine_basic():
                 initiated_event_id=40
             ),
         ),
-        "started"
+        "started",
     )
     m.handle_event(
         history.HistoryEvent(
@@ -268,7 +262,7 @@ def test_child_workflow_state_machine_basic():
                 initiated_event_id=40
             ),
         ),
-        "completion"
+        "completion",
     )
     assert m.status is DecisionState.COMPLETED
 
@@ -287,7 +281,7 @@ def test_child_workflow_state_machine_cancel_succeed():
                 domain="d2", workflow_id="wf-2"
             ),
         ),
-        "initiated"
+        "initiated",
     )
     m.request_cancel()
     d = m.collect_pending_decisions()
@@ -301,12 +295,9 @@ def test_child_workflow_state_machine_cancel_succeed():
                 initiated_event_id=50
             ),
         ),
-        "canceled"
+        "canceled",
     )
     assert m.status is DecisionState.CANCELED_AFTER_INITIATED
-
-
-
 
 
 @pytest.mark.unit

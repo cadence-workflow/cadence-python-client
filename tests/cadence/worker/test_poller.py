@@ -21,6 +21,7 @@ async def test_poller():
     assert incoming.empty() is True
     assert outgoing.empty() is True
 
+
 @pytest.mark.asyncio
 async def test_poller_empty_task():
     permits = asyncio.Semaphore(1)
@@ -35,6 +36,7 @@ async def test_poller_empty_task():
 
     assert result == "foo"
     task.cancel()
+
 
 @pytest.mark.asyncio
 async def test_poller_num_tasks():
@@ -64,6 +66,7 @@ async def test_poller_num_tasks():
     assert outgoing.empty() is True
 
     task.cancel()
+
 
 @pytest.mark.asyncio
 async def test_poller_concurrency():
@@ -106,6 +109,7 @@ async def test_poller_poll_error():
 
     done = asyncio.Event()
     call_count = 0
+
     async def poll_func():
         nonlocal call_count
         call_count += 1
@@ -127,12 +131,14 @@ async def test_poller_poll_error():
     task.cancel()
     done.set()
 
+
 @pytest.mark.asyncio
 async def test_poller_execute_error():
     permits = asyncio.Semaphore(1)
 
     outgoing = asyncio.Queue()
     call_count = 0
+
     async def execute(item: str):
         nonlocal call_count
         call_count += 1
@@ -150,5 +156,3 @@ async def test_poller_execute_error():
 
     assert result == "second"
     task.cancel()
-
-

@@ -13,6 +13,7 @@ from cadence.api.v1.history_pb2 import History, HistoryEvent, WorkflowExecutionS
 from cadence.api.v1.decision_pb2 import Decision
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
+from cadence import workflow
 from cadence.client import Client
 
 
@@ -35,12 +36,14 @@ class TestDecisionTaskHandlerIntegration:
     def registry(self):
         """Create a registry with a test workflow."""
         reg = Registry()
-        
-        @reg.workflow
-        def test_workflow(input_data):
-            """Simple test workflow that returns the input."""
-            return f"processed: {input_data}"
-        
+
+        @reg.workflow(name="test_workflow")
+        class TestWorkflow:
+            @workflow.run
+            async def run(self, input_data):
+                """Simple test workflow that returns the input."""
+                return f"processed: {input_data}"
+
         return reg
 
     @pytest.fixture

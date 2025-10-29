@@ -11,6 +11,7 @@ from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.api.v1.history_pb2 import History, HistoryEvent, WorkflowExecutionStartedEventAttributes
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._registry import Registry
+from cadence import workflow
 from cadence.client import Client
 
 
@@ -34,12 +35,14 @@ class TestDecisionWorkerIntegration:
     def registry(self):
         """Create a registry with a test workflow."""
         reg = Registry()
-        
+
         @reg.workflow
-        def test_workflow(input_data):
-            """Simple test workflow that returns the input."""
-            return f"processed: {input_data}"
-        
+        class TestWorkflow:
+            @workflow.run
+            async def run(self, input_data):
+                """Simple test workflow that returns the input."""
+                return f"processed: {input_data}"
+
         return reg
 
     @pytest.fixture
@@ -236,8 +239,10 @@ class TestDecisionWorkerIntegration:
         """Test decision worker with different workflow types."""
         # Add another workflow to the registry
         @registry.workflow
-        def another_workflow(input_data):
-            return f"another-processed: {input_data}"
+        class AnotherWorkflow:
+            @workflow.run
+            async def run(self, input_data):
+                return f"another-processed: {input_data}"
         
         # Create decision tasks for different workflow types
         task1 = self.create_mock_decision_task(workflow_type="test_workflow")

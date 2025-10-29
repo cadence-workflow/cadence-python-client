@@ -17,6 +17,8 @@ from cadence.client import Client
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
+from cadence import workflow
+from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
 
 class TestDecisionTaskHandler:
@@ -82,9 +84,15 @@ class TestDecisionTaskHandler:
     @pytest.mark.asyncio
     async def test_handle_task_implementation_success(self, handler, sample_decision_task, mock_registry):
         """Test successful decision task handling."""
-        # Mock workflow function
-        mock_workflow_func = Mock()
-        mock_registry.get_workflow.return_value = mock_workflow_func
+        # Create actual workflow definition
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
+        mock_registry.get_workflow.return_value = workflow_definition
         
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
@@ -142,9 +150,15 @@ class TestDecisionTaskHandler:
     @pytest.mark.asyncio
     async def test_handle_task_implementation_caches_engines(self, handler, sample_decision_task, mock_registry):
         """Test that decision task handler caches workflow engines for same workflow execution."""
-        # Mock workflow function
-        mock_workflow_func = Mock()
-        mock_registry.get_workflow.return_value = mock_workflow_func
+        # Create actual workflow definition
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
+        mock_registry.get_workflow.return_value = workflow_definition
         
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
@@ -172,9 +186,15 @@ class TestDecisionTaskHandler:
     @pytest.mark.asyncio
     async def test_handle_task_implementation_different_executions_get_separate_engines(self, handler, mock_registry):
         """Test that different workflow executions get separate engines."""
-        # Mock workflow function
-        mock_workflow_func = Mock()
-        mock_registry.get_workflow.return_value = mock_workflow_func
+        # Create actual workflow definition
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
+        mock_registry.get_workflow.return_value = workflow_definition
         
         # Create two different decision tasks
         task1 = Mock(spec=PollForDecisionTaskResponse)
@@ -323,19 +343,26 @@ class TestDecisionTaskHandler:
     @pytest.mark.asyncio
     async def test_workflow_engine_creation_with_workflow_info(self, handler, sample_decision_task, mock_registry):
         """Test that WorkflowEngine is created with correct WorkflowInfo."""
-        mock_workflow_func = Mock()
-        mock_registry.get_workflow.return_value = mock_workflow_func
-        
+        # Create actual workflow definition
+        class MockWorkflow:
+            @workflow.run
+            async def run(self):
+                return "test_result"
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        workflow_definition = WorkflowDefinition.wrap(MockWorkflow, workflow_opts)
+        mock_registry.get_workflow.return_value = workflow_definition
+
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
         mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
-        
+
         with patch('cadence.worker._decision_task_handler.WorkflowEngine', return_value=mock_engine) as mock_workflow_engine_class:
             with patch('cadence.worker._decision_task_handler.WorkflowInfo') as mock_workflow_info_class:
                 await handler._handle_task_implementation(sample_decision_task)
-                
+
                 # Verify WorkflowInfo was created with correct parameters (called once for engine)
                 assert mock_workflow_info_class.call_count == 1
                 for call in mock_workflow_info_class.call_args_list:
@@ -345,10 +372,10 @@ class TestDecisionTaskHandler:
                         'workflow_id': "test_workflow_id",
                         'workflow_run_id': "test_run_id"
                     }
-                
+
                 # Verify WorkflowEngine was created with correct parameters
                 mock_workflow_engine_class.assert_called_once()
                 call_args = mock_workflow_engine_class.call_args
                 assert call_args[1]['info'] is not None
                 assert call_args[1]['client'] == handler._client
-                assert call_args[1]['workflow_func'] == mock_workflow_func
+                assert call_args[1]['workflow_definition'] == workflow_definition

@@ -9,7 +9,8 @@ from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.api.v1.history_pb2 import History, HistoryEvent, WorkflowExecutionStartedEventAttributes
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
-from cadence.workflow import WorkflowInfo
+from cadence import workflow
+from cadence.workflow import WorkflowInfo, WorkflowDefinition, WorkflowDefinitionOptions
 from cadence.client import Client
 
 
@@ -36,19 +37,23 @@ class TestWorkflowEngineIntegration:
         )
 
     @pytest.fixture
-    def mock_workflow_func(self):
-        """Create a mock workflow function."""
-        def workflow_func(input_data):
-            return f"processed: {input_data}"
-        return workflow_func
+    def mock_workflow_definition(self):
+        """Create a mock workflow definition."""
+        class TestWorkflow:
+            @workflow.run
+            async def weird_name(self, input_data):
+                return f"processed: {input_data}"
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        return WorkflowDefinition.wrap(TestWorkflow, workflow_opts)
 
     @pytest.fixture
-    def workflow_engine(self, mock_client, workflow_info, mock_workflow_func):
+    def workflow_engine(self, mock_client, workflow_info, mock_workflow_definition):
         """Create a WorkflowEngine instance."""
         return WorkflowEngine(
             info=workflow_info,
             client=mock_client,
-            workflow_func=mock_workflow_func
+            workflow_definition=mock_workflow_definition
         )
 
     def create_mock_decision_task(self, workflow_id="test-workflow", run_id="test-run", workflow_type="test_workflow"):
@@ -208,17 +213,22 @@ class TestWorkflowEngineIntegration:
         # Verify no input was extracted due to error
         assert input_data is None
 
-    def test_execute_workflow_function_sync(self, workflow_engine):
+    @pytest.mark.asyncio
+    async def test_execute_workflow_function_sync(self, workflow_engine):
         """Test synchronous workflow function execution."""
         input_data = "test-input"
-        
+
+        # Get the workflow function from the instance
+        workflow_func = workflow_engine._workflow_definition.get_run_method(workflow_engine._workflow_instance)
+
         # Execute the workflow function
-        result = workflow_engine._execute_workflow_function_once(workflow_engine._workflow_func, input_data)
-        
+        result = await workflow_engine._execute_workflow_function_once(workflow_func, input_data)
+
         # Verify the result
         assert result == "processed: test-input"
 
-    def test_execute_workflow_function_async(self, workflow_engine):
+    @pytest.mark.asyncio
+    async def test_execute_workflow_function_async(self, workflow_engine):
         """Test asynchronous workflow function execution."""
         async def async_workflow_func(input_data):
             return f"async-processed: {input_data}"
@@ -226,33 +236,35 @@ class TestWorkflowEngineIntegration:
         input_data = "test-input"
         
         # Execute the async workflow function
-        result = workflow_engine._execute_workflow_function_once(async_workflow_func, input_data)
+        result = await workflow_engine._execute_workflow_function_once(async_workflow_func, input_data)
         
         # Verify the result
         assert result == "async-processed: test-input"
 
-    def test_execute_workflow_function_none(self, workflow_engine):
+    @pytest.mark.asyncio
+    async def test_execute_workflow_function_none(self, workflow_engine):
         """Test workflow function execution with None function."""
         input_data = "test-input"
         
         # Execute with None workflow function - should raise TypeError
         with pytest.raises(TypeError, match="'NoneType' object is not callable"):
-            workflow_engine._execute_workflow_function_once(None, input_data)
+            await workflow_engine._execute_workflow_function_once(None, input_data)
 
-    def test_workflow_engine_initialization(self, workflow_engine, workflow_info, mock_client, mock_workflow_func):
+    def test_workflow_engine_initialization(self, workflow_engine, workflow_info, mock_client, mock_workflow_definition):
         """Test WorkflowEngine initialization."""
         assert workflow_engine._context is not None
-        assert workflow_engine._workflow_func == mock_workflow_func
+        assert workflow_engine._workflow_definition == mock_workflow_definition
+        assert workflow_engine._workflow_instance is not None
         assert workflow_engine._decision_manager is not None
         assert workflow_engine._is_workflow_complete is False
 
     @pytest.mark.asyncio
-    async def test_workflow_engine_without_workflow_func(self, mock_client, workflow_info):
-        """Test WorkflowEngine without workflow function."""
+    async def test_workflow_engine_without_workflow_definition(self, mock_client, workflow_info):
+        """Test WorkflowEngine without workflow definition."""
         engine = WorkflowEngine(
             info=workflow_info,
             client=mock_client,
-            workflow_func=None
+            workflow_definition=None
         )
         
         decision_task = self.create_mock_decision_task()
@@ -269,12 +281,19 @@ class TestWorkflowEngineIntegration:
     async def test_workflow_engine_workflow_completion(self, workflow_engine, mock_client):
         """Test workflow completion detection."""
         decision_task = self.create_mock_decision_task()
-        
-        # Mock workflow function to return a result (indicating completion)
-        def completing_workflow_func(input_data):
-            return "workflow-completed"
-        
-        workflow_engine._workflow_func = completing_workflow_func
+
+        # Create a workflow definition that returns a result (indicating completion)
+        class CompletingWorkflow:
+            @workflow.run
+            async def run(self, input_data):
+                return "workflow-completed"
+
+        workflow_opts = WorkflowDefinitionOptions(name="completing_workflow")
+        completing_definition = WorkflowDefinition.wrap(CompletingWorkflow, workflow_opts)
+
+        # Replace the workflow definition and instance
+        workflow_engine._workflow_definition = completing_definition
+        workflow_engine._workflow_instance = completing_definition.cls()
         
         with patch.object(workflow_engine._decision_manager, 'collect_pending_decisions', return_value=[]):
             # Process the decision

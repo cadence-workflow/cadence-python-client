@@ -34,6 +34,7 @@ jobs:
       - name: Run Ruff linter
         run: |
           uv tool run ruff check
+          uv tool run ruff format --check
 
   type-check:
     name: Type Safety Check

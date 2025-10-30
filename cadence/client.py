@@ -17,6 +17,8 @@ from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
+    SignalWithStartWorkflowExecutionRequest,
+    SignalWithStartWorkflowExecutionResponse,
 )
 from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
 from cadence.api.v1.tasklist_pb2 import TaskList
@@ -224,6 +226,72 @@ class Client:
 
             execution = WorkflowExecution()
             execution.workflow_id = request.workflow_id
+            execution.run_id = response.run_id
+            return execution
+        except Exception:
+            raise
+
+    async def signal_with_start_workflow(
+        self,
+        workflow: Union[str, Callable],
+        signal_name: str,
+        signal_input: Any = None,
+        *args,
+        **options_kwargs: Unpack[StartWorkflowOptions],
+    ) -> WorkflowExecution:
+        """
+        Signal a workflow execution, starting it if it is not already running.
+
+        Args:
+            workflow: Workflow function or workflow type name string
+            signal_name: Name of the signal
+            signal_input: Input data for the signal
+            *args: Arguments to pass to the workflow if it needs to be started
+            **options_kwargs: StartWorkflowOptions as keyword arguments
+
+        Returns:
+            WorkflowExecution with workflow_id and run_id
+
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            Exception: If the gRPC call fails
+        """
+        # Convert kwargs to StartWorkflowOptions and validate
+        options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
+
+        # Build the start workflow request
+        start_request = await self._build_start_workflow_request(workflow, args, options)
+
+        # Encode signal input
+        signal_payload = None
+        if signal_input is not None:
+            try:
+                signal_payload = await self.data_converter.to_data(signal_input)
+            except Exception as e:
+                raise ValueError(f"Failed to encode signal input: {e}")
+
+        # Build the SignalWithStartWorkflowExecution request
+        request = SignalWithStartWorkflowExecutionRequest(
+            start_request=start_request,
+            signal_name=signal_name,
+        )
+
+        if signal_payload:
+            request.signal_input.CopyFrom(signal_payload)
+
+        # Execute the gRPC call
+        try:
+            response: SignalWithStartWorkflowExecutionResponse = (
+                await self.workflow_stub.SignalWithStartWorkflowExecution(request)
+            )
+
+            # Emit metrics if available
+            if self.metrics_emitter:
+                # TODO: Add metrics similar to Go client
+                pass
+
+            execution = WorkflowExecution()
+            execution.workflow_id = start_request.workflow_id
             execution.run_id = response.run_id
             return execution
         except Exception:

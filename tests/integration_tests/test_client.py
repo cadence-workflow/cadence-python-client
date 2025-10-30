@@ -136,3 +136,86 @@ async def test_workflow_stub_start_and_describe(helper: CadenceHelper):
         assert task_timeout_seconds == task_timeout.total_seconds(), (
             f"task_start_to_close_timeout mismatch: expected {task_timeout.total_seconds()}s, got {task_timeout_seconds}s"
         )
+
+# trying parametrized test for table test
+@pytest.mark.parametrize(
+    "test_case,workflow_id,start_first,expected_same_run",
+    [
+        (
+            "new_workflow",
+            "test-workflow-signal-with-start-123",
+            False,
+            False,
+        ),
+        (
+            "existing_workflow",
+            "test-workflow-signal-existing-456",
+            True,
+            True,
+        ),
+    ],
+)
+@pytest.mark.usefixtures("helper")
+async def test_signal_with_start_workflow(
+    helper: CadenceHelper,
+    test_case: str,
+    workflow_id: str,
+    start_first: bool,
+    expected_same_run: bool,
+):
+    """Test signal_with_start_workflow method.
+
+    Test cases:
+    1. new_workflow: SignalWithStartWorkflow starts a new workflow if it doesn't exist
+    2. existing_workflow: SignalWithStartWorkflow signals existing workflow without restart
+    """
+    async with helper.client() as client:
+        workflow_type = f"test-workflow-signal-{test_case}"
+        task_list_name = f"test-task-list-signal-{test_case}"
+        execution_timeout = timedelta(minutes=5)
+        signal_name = "test-signal"
+        signal_input = {"data": "test-signal-data"}
+
+        first_run_id = None
+        if start_first:
+            first_execution = await client.start_workflow(
+                workflow_type,
+                task_list=task_list_name,
+                execution_start_to_close_timeout=execution_timeout,
+                workflow_id=workflow_id,
+            )
+            first_run_id = first_execution.run_id
+
+        execution = await client.signal_with_start_workflow(
+            workflow_type,
+            signal_name,
+            signal_input,
+            "arg1",
+            "arg2",
+            task_list=task_list_name,
+            execution_start_to_close_timeout=execution_timeout,
+            workflow_id=workflow_id,
+        )
+
+        assert execution is not None
+        assert execution.workflow_id == workflow_id
+        assert execution.run_id is not None
+        assert execution.run_id != ""
+
+        if expected_same_run:
+            assert execution.run_id == first_run_id
+
+        describe_request = DescribeWorkflowExecutionRequest(
+            domain=DOMAIN_NAME,
+            workflow_execution=WorkflowExecution(
+                workflow_id=execution.workflow_id,
+                run_id=execution.run_id,
+            ),
+        )
+
+        response = await client.workflow_stub.DescribeWorkflowExecution(
+            describe_request
+        )
+
+        assert response.workflow_execution_info.type.name == workflow_type
+        assert response.workflow_execution_info.task_list == task_list_name

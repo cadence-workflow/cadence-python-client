@@ -260,7 +260,9 @@ class Client:
         options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
 
         # Build the start workflow request
-        start_request = await self._build_start_workflow_request(workflow, args, options)
+        start_request = await self._build_start_workflow_request(
+            workflow, args, options
+        )
 
         # Encode signal input
         signal_payload = None

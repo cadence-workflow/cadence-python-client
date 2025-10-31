@@ -6,11 +6,11 @@ from typing import Callable, Any
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decisions_helper import DecisionsHelper
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
+from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1.decision_pb2 import Decision
 from cadence.client import Client
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.workflow import WorkflowInfo
-from cadence._internal.decision_state_machine import DecisionManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,15 @@ class DecisionResult:
 
 class WorkflowEngine:
     def __init__(self, info: WorkflowInfo, client: Client, workflow_definition=None):
-        self._context = Context(client, info)
         self._workflow_definition = workflow_definition
         self._workflow_instance = None
         if workflow_definition:
             self._workflow_instance = workflow_definition.cls()
         self._decision_manager = DecisionManager()
-        self._decisions_helper = DecisionsHelper(self._decision_manager)
+        self._decisions_helper = DecisionsHelper()
+        self._context = Context(
+            client, info, self._decisions_helper, self._decision_manager
+        )
         self._is_workflow_complete = False
 
     async def process_decision(
@@ -300,7 +302,7 @@ class WorkflowEngine:
             )
 
             # Extract workflow input from history
-            workflow_input = await self._extract_workflow_input(decision_task)
+            workflow_input = self._extract_workflow_input(decision_task)
 
             # Execute workflow function
             result = await self._execute_workflow_function_once(
@@ -334,7 +336,7 @@ class WorkflowEngine:
             )
             raise
 
-    async def _extract_workflow_input(
+    def _extract_workflow_input(
         self, decision_task: PollForDecisionTaskResponse
     ) -> Any:
         """
@@ -359,7 +361,7 @@ class WorkflowEngine:
                     try:
                         # Use from_data method with a single type hint of None (no type conversion)
                         input_data_list = (
-                            await self._context.client().data_converter.from_data(
+                            self._context.client().data_converter.from_data(
                                 started_attrs.input, [None]
                             )
                         )

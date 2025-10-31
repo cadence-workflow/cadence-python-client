@@ -78,10 +78,10 @@ class CadenceErrorInterceptor(UnaryUnaryClientInterceptor):
         return CadenceErrorUnaryUnaryCall(rpc_call)
 
 
-def map_error(e: AioRpcError) -> error.CadenceError:
+def map_error(e: AioRpcError) -> error.CadenceRpcError:
     status: Status | None = from_call(e)
     if not status or not status.details:
-        return error.CadenceError(e.details(), e.code())
+        return error.CadenceRpcError(e.details(), e.code())
 
     details = status.details[0]
     if details.Is(error_pb2.WorkflowExecutionAlreadyStartedError.DESCRIPTOR):
@@ -145,4 +145,4 @@ def map_error(e: AioRpcError) -> error.CadenceError:
         details.Unpack(service_busy)
         return error.ServiceBusyError(e.details(), e.code(), service_busy.reason)
     else:
-        return error.CadenceError(e.details(), e.code())
+        return error.CadenceRpcError(e.details(), e.code())

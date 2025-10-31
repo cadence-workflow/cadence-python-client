@@ -48,7 +48,7 @@ class TestBaseTaskHandler:
         )
 
         assert handler._client == client
-        assert handler._task_list == "test_task_list"
+        assert handler.task_list == "test_task_list"
         assert handler._identity == "test_identity"
         assert handler._options == {"option1": "value1", "option2": "value2"}
 

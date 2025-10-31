@@ -13,7 +13,7 @@ from cadence import error
 from google.protobuf.message import Message
 
 from cadence.api.v1.service_meta_pb2 import HealthRequest, HealthResponse
-from cadence.error import CadenceError
+from cadence.error import CadenceRpcError
 
 
 class FakeService(service_meta_pb2_grpc.MetaAPIServicer):
@@ -159,7 +159,7 @@ def fake_service():
                     code=code_pb2.PERMISSION_DENIED, message="no permission"
                 )
             ),
-            error.CadenceError(
+            error.CadenceRpcError(
                 message="no permission", code=StatusCode.PERMISSION_DENIED
             ),
             id="unknown error type",
@@ -167,7 +167,9 @@ def fake_service():
     ],
 )
 @pytest.mark.asyncio
-async def test_map_error(fake_service, err: Message | Status, expected: CadenceError):
+async def test_map_error(
+    fake_service, err: Message | Status, expected: CadenceRpcError
+):
     async with insecure_channel(
         f"[::]:{fake_service.port}", interceptors=[CadenceErrorInterceptor()]
     ) as channel:

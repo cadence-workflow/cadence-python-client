@@ -26,7 +26,7 @@ class BaseTaskHandler(ABC, Generic[T]):
             **options: Additional options for the handler
         """
         self._client = client
-        self._task_list = task_list
+        self.task_list = task_list
         self._identity = identity
         self._options = options
 

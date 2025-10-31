@@ -9,10 +9,9 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from cadence._internal.decision_state_machine import (
+from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionId,
     DecisionType,
-    DecisionManager,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,17 +36,13 @@ class DecisionsHelper:
     state machines for proper decision lifecycle tracking.
     """
 
-    def __init__(self, decision_manager: DecisionManager):
+    def __init__(self):
         """
         Initialize the DecisionsHelper with a DecisionManager reference.
-
-        Args:
-            decision_manager: The DecisionManager containing the state machines
         """
         self._next_decision_counters: Dict[DecisionType, int] = {}
         self._tracked_decisions: Dict[str, DecisionTracker] = {}
         self._decision_id_to_key: Dict[str, str] = {}
-        self._decision_manager = decision_manager
         logger.debug("DecisionsHelper initialized with DecisionManager integration")
 
     def _get_next_counter(self, decision_type: DecisionType) -> int:

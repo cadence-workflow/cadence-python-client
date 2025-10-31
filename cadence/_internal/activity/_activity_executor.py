@@ -73,7 +73,7 @@ class ActivityExecutor:
             _logger.exception("Exception reporting activity failure")
 
     async def _report_success(self, task: PollForActivityTaskResponse, result: Any):
-        as_payload = await self._data_converter.to_data([result])
+        as_payload = self._data_converter.to_data([result])
 
         try:
             await self._client.worker_stub.RespondActivityTaskCompleted(

@@ -1,15 +1,18 @@
 import grpc
 
 
-class CadenceError(Exception):
+class ActivityFailure(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class CadenceRpcError(Exception):
     def __init__(self, message: str, code: grpc.StatusCode, *args):
         super().__init__(message, code, *args)
         self.code = code
 
-    pass
 
-
-class WorkflowExecutionAlreadyStartedError(CadenceError):
+class WorkflowExecutionAlreadyStartedError(CadenceRpcError):
     def __init__(
         self, message: str, code: grpc.StatusCode, start_request_id: str, run_id: str
     ) -> None:
@@ -18,7 +21,7 @@ class WorkflowExecutionAlreadyStartedError(CadenceError):
         self.run_id = run_id
 
 
-class EntityNotExistsError(CadenceError):
+class EntityNotExistsError(CadenceRpcError):
     def __init__(
         self,
         message: str,
@@ -35,11 +38,11 @@ class EntityNotExistsError(CadenceError):
         self.active_clusters = active_clusters
 
 
-class WorkflowExecutionAlreadyCompletedError(CadenceError):
+class WorkflowExecutionAlreadyCompletedError(CadenceRpcError):
     pass
 
 
-class DomainNotActiveError(CadenceError):
+class DomainNotActiveError(CadenceRpcError):
     def __init__(
         self,
         message: str,
@@ -58,7 +61,7 @@ class DomainNotActiveError(CadenceError):
         self.active_clusters = active_clusters
 
 
-class ClientVersionNotSupportedError(CadenceError):
+class ClientVersionNotSupportedError(CadenceRpcError):
     def __init__(
         self,
         message: str,
@@ -75,29 +78,29 @@ class ClientVersionNotSupportedError(CadenceError):
         self.supported_versions = supported_versions
 
 
-class FeatureNotEnabledError(CadenceError):
+class FeatureNotEnabledError(CadenceRpcError):
     def __init__(self, message: str, code: grpc.StatusCode, feature_flag: str) -> None:
         super().__init__(message, code, feature_flag)
         self.feature_flag = feature_flag
 
 
-class CancellationAlreadyRequestedError(CadenceError):
+class CancellationAlreadyRequestedError(CadenceRpcError):
     pass
 
 
-class DomainAlreadyExistsError(CadenceError):
+class DomainAlreadyExistsError(CadenceRpcError):
     pass
 
 
-class LimitExceededError(CadenceError):
+class LimitExceededError(CadenceRpcError):
     pass
 
 
-class QueryFailedError(CadenceError):
+class QueryFailedError(CadenceRpcError):
     pass
 
 
-class ServiceBusyError(CadenceError):
+class ServiceBusyError(CadenceRpcError):
     def __init__(self, message: str, code: grpc.StatusCode, reason: str) -> None:
         super().__init__(message, code, reason)
         self.reason = reason

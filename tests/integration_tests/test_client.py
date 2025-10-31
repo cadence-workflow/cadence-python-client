@@ -136,3 +136,52 @@ async def test_workflow_stub_start_and_describe(helper: CadenceHelper):
         assert task_timeout_seconds == task_timeout.total_seconds(), (
             f"task_start_to_close_timeout mismatch: expected {task_timeout.total_seconds()}s, got {task_timeout_seconds}s"
         )
+
+
+@pytest.mark.usefixtures("helper")
+async def test_signal_workflow(helper: CadenceHelper):
+    """Test signal_workflow method.
+
+    This integration test verifies:
+    1. Starting a workflow execution
+    2. Sending a signal to the running workflow
+    3. Signal is accepted (no errors thrown)
+    """
+    async with helper.client() as client:
+        workflow_type = "test-workflow-signal"
+        task_list_name = "test-task-list-signal"
+        workflow_id = "test-workflow-signal-789"
+        execution_timeout = timedelta(minutes=5)
+        signal_name = "test-signal"
+        signal_input = {"action": "update", "value": 42}
+
+        execution = await client.start_workflow(
+            workflow_type,
+            task_list=task_list_name,
+            execution_start_to_close_timeout=execution_timeout,
+            workflow_id=workflow_id,
+        )
+
+        await client.signal_workflow(
+            workflow_id=execution.workflow_id,
+            run_id=execution.run_id,
+            signal_name=signal_name,
+            signal_input=signal_input,
+        )
+
+        describe_request = DescribeWorkflowExecutionRequest(
+            domain=DOMAIN_NAME,
+            workflow_execution=WorkflowExecution(
+                workflow_id=execution.workflow_id,
+                run_id=execution.run_id,
+            ),
+        )
+
+        response = await client.workflow_stub.DescribeWorkflowExecution(
+            describe_request
+        )
+
+        assert (
+            response.workflow_execution_info.workflow_execution.workflow_id
+            == workflow_id
+        )

@@ -10,13 +10,11 @@ _SPACE = " ".encode()
 
 class DataConverter(Protocol):
     @abstractmethod
-    async def from_data(
-        self, payload: Payload, type_hints: List[Type | None]
-    ) -> List[Any]:
+    def from_data(self, payload: Payload, type_hints: List[Type | None]) -> List[Any]:
         raise NotImplementedError()
 
     @abstractmethod
-    async def to_data(self, values: List[Any]) -> Payload:
+    def to_data(self, values: List[Any]) -> Payload:
         raise NotImplementedError()
 
 
@@ -26,9 +24,7 @@ class DefaultDataConverter(DataConverter):
         # Need to use std lib decoder in order to decode the custom whitespace delimited data format
         self._decoder = JSONDecoder(strict=False)
 
-    async def from_data(
-        self, payload: Payload, type_hints: List[Type | None]
-    ) -> List[Any]:
+    def from_data(self, payload: Payload, type_hints: List[Type | None]) -> List[Any]:
         if not payload.data:
             return DefaultDataConverter._convert_into([], type_hints)
 
@@ -72,7 +68,7 @@ class DefaultDataConverter(DataConverter):
             return False
         return None
 
-    async def to_data(self, values: List[Any]) -> Payload:
+    def to_data(self, values: List[Any]) -> Payload:
         result = bytearray()
         for index, value in enumerate(values):
             self._encoder.encode_into(value, result, -1)

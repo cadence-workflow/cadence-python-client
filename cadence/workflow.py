@@ -2,20 +2,45 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import (
-    Iterator,
     Callable,
-    TypeVar,
-    TypedDict,
-    Type,
     cast,
-    Any,
     Optional,
     Union,
+    Iterator,
+    TypedDict,
+    TypeVar,
+    Type,
+    Unpack,
+    Any,
 )
 import inspect
 
 from cadence.client import Client
+from cadence.data_converter import DataConverter
+
+ResultType = TypeVar("ResultType")
+
+
+class ActivityOptions(TypedDict, total=False):
+    task_list: str
+    schedule_to_close_timeout: timedelta
+    schedule_to_start_timeout: timedelta
+    start_to_close_timeout: timedelta
+    heartbeat_timeout: timedelta
+
+
+async def execute_activity(
+    activity: str,
+    result_type: Type[ResultType],
+    *args: Any,
+    **kwargs: Unpack[ActivityOptions],
+) -> ResultType:
+    return await WorkflowContext.get().execute_activity(
+        activity, result_type, *args, **kwargs
+    )
+
 
 T = TypeVar("T", bound=Callable[..., Any])
 
@@ -143,6 +168,7 @@ class WorkflowInfo:
     workflow_domain: str
     workflow_id: str
     workflow_run_id: str
+    workflow_task_list: str
 
 
 class WorkflowContext(ABC):
@@ -153,6 +179,18 @@ class WorkflowContext(ABC):
 
     @abstractmethod
     def client(self) -> Client: ...
+
+    @abstractmethod
+    def data_converter(self) -> DataConverter: ...
+
+    @abstractmethod
+    async def execute_activity(
+        self,
+        activity: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ActivityOptions],
+    ) -> ResultType: ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:
@@ -166,4 +204,7 @@ class WorkflowContext(ABC):
 
     @staticmethod
     def get() -> "WorkflowContext":
-        return WorkflowContext._var.get()
+        res = WorkflowContext._var.get(None)
+        if res is None:
+            raise RuntimeError("Workflow function used outside of workflow context")
+        return res

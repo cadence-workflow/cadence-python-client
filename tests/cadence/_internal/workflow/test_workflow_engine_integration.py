@@ -27,7 +27,7 @@ class TestWorkflowEngineIntegration:
         client = Mock(spec=Client)
         client.domain = "test-domain"
         client.data_converter = Mock()
-        client.data_converter.from_data = AsyncMock(return_value=["test-input"])
+        client.data_converter.from_data = Mock(return_value=["test-input"])
         return client
 
     @pytest.fixture
@@ -38,6 +38,7 @@ class TestWorkflowEngineIntegration:
             workflow_domain="test-domain",
             workflow_id="test-workflow-id",
             workflow_run_id="test-run-id",
+            workflow_task_list="test-task-list",
         )
 
     @pytest.fixture
@@ -184,7 +185,7 @@ class TestWorkflowEngineIntegration:
         decision_task = self.create_mock_decision_task()
 
         # Extract workflow input
-        input_data = await workflow_engine._extract_workflow_input(decision_task)
+        input_data = workflow_engine._extract_workflow_input(decision_task)
 
         # Verify the input was extracted
         assert input_data == "test-input"
@@ -200,7 +201,7 @@ class TestWorkflowEngineIntegration:
         # No history set
 
         # Extract workflow input
-        input_data = await workflow_engine._extract_workflow_input(decision_task)
+        input_data = workflow_engine._extract_workflow_input(decision_task)
 
         # Verify no input was extracted
         assert input_data is None
@@ -230,7 +231,7 @@ class TestWorkflowEngineIntegration:
         decision_task.history.CopyFrom(history)
 
         # Extract workflow input
-        input_data = await workflow_engine._extract_workflow_input(decision_task)
+        input_data = workflow_engine._extract_workflow_input(decision_task)
 
         # Verify no input was extracted
         assert input_data is None
@@ -248,7 +249,7 @@ class TestWorkflowEngineIntegration:
         )
 
         # Extract workflow input
-        input_data = await workflow_engine._extract_workflow_input(decision_task)
+        input_data = workflow_engine._extract_workflow_input(decision_task)
 
         # Verify no input was extracted due to error
         assert input_data is None

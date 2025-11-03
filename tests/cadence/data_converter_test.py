@@ -72,11 +72,11 @@ class _TestDataClass:
         ),
     ],
 )
-async def test_data_converter_from_data(
+def test_data_converter_from_data(
     json: str, types: list[Type], expected: list[Any]
 ) -> None:
     converter = DefaultDataConverter()
-    actual = await converter.from_data(Payload(data=json.encode()), types)
+    actual = converter.from_data(Payload(data=json.encode()), types)
     assert expected == actual
 
 
@@ -97,8 +97,8 @@ async def test_data_converter_from_data(
         ),
     ],
 )
-async def test_data_converter_to_data(values: list[Any], expected: str) -> None:
+def test_data_converter_to_data(values: list[Any], expected: str) -> None:
     converter = DefaultDataConverter()
     converter._encoder = json.Encoder(order="deterministic")
-    actual = await converter.to_data(values)
+    actual = converter.to_data(values)
     assert actual.data.decode() == expected

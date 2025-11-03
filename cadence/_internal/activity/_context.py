@@ -19,13 +19,13 @@ class _Context(ActivityContext):
         self._activity_fn = activity_fn
 
     async def execute(self, payload: Payload) -> Any:
-        params = await self._to_params(payload)
+        params = self._to_params(payload)
         with self._activate():
             return await self._activity_fn(*params)
 
-    async def _to_params(self, payload: Payload) -> list[Any]:
+    def _to_params(self, payload: Payload) -> list[Any]:
         type_hints = [param.type_hint for param in self._activity_fn.params]
-        return await self._client.data_converter.from_data(payload, type_hints)
+        return self._client.data_converter.from_data(payload, type_hints)
 
     def client(self) -> Client:
         return self._client
@@ -46,7 +46,7 @@ class _SyncContext(_Context):
         self._executor = executor
 
     async def execute(self, payload: Payload) -> Any:
-        params = await self._to_params(payload)
+        params = self._to_params(payload)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._run, params)
 

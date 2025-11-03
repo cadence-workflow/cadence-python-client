@@ -1,14 +1,14 @@
-from datetime import timedelta
 import pytest
+from datetime import timedelta
+
 from cadence.api.v1.service_domain_pb2 import (
     DescribeDomainRequest,
     DescribeDomainResponse,
 )
-from cadence.api.v1.service_workflow_pb2 import DescribeWorkflowExecutionRequest
-from cadence.api.v1.common_pb2 import WorkflowExecution
-
 from cadence.error import EntityNotExistsError
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
+from cadence.api.v1.service_workflow_pb2 import DescribeWorkflowExecutionRequest
+from cadence.api.v1.common_pb2 import WorkflowExecution
 
 
 @pytest.mark.usefixtures("helper")
@@ -49,7 +49,6 @@ async def test_worker_stub_accessible(helper: CadenceHelper):
 @pytest.mark.usefixtures("helper")
 async def test_workflow_stub_start_and_describe(helper: CadenceHelper):
     """Comprehensive test for workflow start and describe operations.
-
     This integration test verifies:
     1. Starting a workflow execution via workflow_stub
     2. Describing the workflow execution

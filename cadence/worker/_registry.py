@@ -217,7 +217,7 @@ class Registry:
 
 
 def _find_activity_definitions(instance: object) -> list[ActivityDefinition]:
-    attr_to_def = {}
+    attr_to_def: dict[str, ActivityDefinition] = {}
     for t in instance.__class__.__mro__:
         for attr in dir(t):
             if attr.startswith("_"):
@@ -238,6 +238,7 @@ def _find_activity_definitions(instance: object) -> list[ActivityDefinition]:
                 definition.name,
                 definition.strategy,
                 definition.params,
+                definition.result_type,
             )
         )
 

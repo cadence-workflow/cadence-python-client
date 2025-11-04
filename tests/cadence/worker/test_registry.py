@@ -256,12 +256,19 @@ class TestRegistry:
         assert len(workflow_def.signals) == 2
         assert "handle_approval" in workflow_def.signals
         assert "handle_cancel" in workflow_def.signals
-        assert getattr(workflow_def.signals["handle_approval"], "_workflow_signal") == "approval"
-        assert getattr(workflow_def.signals["handle_cancel"], "_workflow_signal") == "cancel"
+        assert (
+            getattr(workflow_def.signals["handle_approval"], "_workflow_signal")
+            == "approval"
+        )
+        assert (
+            getattr(workflow_def.signals["handle_cancel"], "_workflow_signal")
+            == "cancel"
+        )
 
     def test_signal_decorator_requires_name(self):
         """Test that signal decorator requires name parameter."""
         with pytest.raises(ValueError, match="name is required"):
+
             @workflow.signal()
             async def test_signal(self):
                 pass
@@ -284,7 +291,10 @@ class TestRegistry:
         """Test that duplicate signal names raise ValueError."""
         reg = Registry()
 
-        with pytest.raises(ValueError, match="Multiple.*signal.*found.*with signal name 'approval'"):
+        with pytest.raises(
+            ValueError, match="Multiple.*signal.*found.*with signal name 'approval'"
+        ):
+
             @reg.workflow
             class WorkflowWithDuplicateSignalNames:
                 @workflow.run

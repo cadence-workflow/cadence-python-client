@@ -59,7 +59,13 @@ class WorkflowDefinition:
     Provides type safety and metadata for workflow classes.
     """
 
-    def __init__(self, cls: Type, name: str, run_method_name: str, signals: dict[str, Callable[..., Any]]):
+    def __init__(
+        self,
+        cls: Type,
+        name: str,
+        run_method_name: str,
+        signals: dict[str, Callable[..., Any]],
+    ):
         self._cls = cls
         self._name = name
         self._run_method_name = run_method_name
@@ -106,7 +112,9 @@ class WorkflowDefinition:
         # Validate that the class has exactly one run method and find it
         # Also validate that class does not have multiple signal methods with the same name
         signals: dict[str, Callable[..., Any]] = {}
-        signal_names: dict[str, str] = {}  # Map signal name to method name for duplicate detection
+        signal_names: dict[
+            str, str
+        ] = {}  # Map signal name to method name for duplicate detection
         run_method_name = None
         for attr_name in dir(cls):
             if attr_name.startswith("_"):
@@ -123,7 +131,7 @@ class WorkflowDefinition:
                         f"Multiple @workflow.run methods found in class {cls.__name__}"
                     )
                 run_method_name = attr_name
-            
+
             if hasattr(attr, "_workflow_signal"):
                 signal_name = getattr(attr, "_workflow_signal")
                 if signal_name in signal_names:
@@ -138,7 +146,6 @@ class WorkflowDefinition:
             raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
 
         return WorkflowDefinition(cls, name, run_method_name, signals)
-
 
 
 def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
@@ -181,12 +188,13 @@ def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
         # Called without parentheses: @workflow.run
         return decorator(func)
 
+
 def signal(name: str | None = None) -> Callable[[T], T]:
     """
     Decorator to mark a method as a workflow signal handler.
 
     Example:
-       	@workflow.signal(name="approval_channel")
+        @workflow.signal(name="approval_channel")
         async def approve(self, approved: bool):
             self.approved = approved
 
@@ -205,9 +213,11 @@ def signal(name: str | None = None) -> Callable[[T], T]:
 
     def decorator(f: T) -> T:
         f._workflow_signal = name  # type: ignore
-        return f    
+        return f
+
     # Only allow @workflow.signal(name), require name to be explicitly provided
     return decorator
+
 
 @dataclass
 class WorkflowInfo:

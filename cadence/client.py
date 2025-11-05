@@ -261,15 +261,13 @@ class Client:
         options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
 
         # Build the start workflow request
-        start_request = await self._build_start_workflow_request(
-            workflow, args, options
-        )
+        start_request = self._build_start_workflow_request(workflow, args, options)
 
         # Encode signal input
         signal_payload = None
         if signal_input is not None:
             try:
-                signal_payload = await self.data_converter.to_data(signal_input)
+                signal_payload = self.data_converter.to_data([signal_input])
             except Exception as e:
                 raise ValueError(f"Failed to encode signal input: {e}")
 

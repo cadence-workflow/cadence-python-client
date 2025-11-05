@@ -44,6 +44,7 @@ async def execute_activity(
         activity, result_type, *args, **kwargs
     )
 
+
 T = TypeVar("T", bound=Callable[..., Any])
 
 

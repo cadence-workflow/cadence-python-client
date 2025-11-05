@@ -10,6 +10,7 @@ from cadence.api.v1.service_workflow_pb2 import (
 )
 from cadence.client import Client, StartWorkflowOptions, _validate_and_apply_defaults
 from cadence.data_converter import DefaultDataConverter
+from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
 
 @pytest.fixture
@@ -96,11 +97,17 @@ class TestClientBuildStartWorkflowRequest:
         uuid.UUID(request.request_id)  # This will raise if not valid UUID
 
     @pytest.mark.asyncio
-    async def test_build_request_with_callable_workflow(self, mock_client):
-        """Test building request with callable workflow."""
+    async def test_build_request_with_workflow_definition(self, mock_client):
+        """Test building request with WorkflowDefinition."""
+        from cadence import workflow
 
-        def test_workflow():
-            pass
+        class TestWorkflow:
+            @workflow.run
+            async def run(self):
+                pass
+
+        workflow_opts = WorkflowDefinitionOptions(name="test_workflow")
+        workflow_definition = WorkflowDefinition.wrap(TestWorkflow, workflow_opts)
 
         client = Client(domain="test-domain", target="localhost:7933")
 
@@ -110,7 +117,9 @@ class TestClientBuildStartWorkflowRequest:
             task_start_to_close_timeout=timedelta(seconds=30),
         )
 
-        request = await client._build_start_workflow_request(test_workflow, (), options)
+        request = await client._build_start_workflow_request(
+            workflow_definition, (), options
+        )
 
         assert request.workflow_type.name == "test_workflow"
 

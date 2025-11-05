@@ -12,10 +12,12 @@ from typing import (
     Any,
     Optional,
     Union,
+    TYPE_CHECKING,
 )
 import inspect
 
-from cadence.client import Client
+if TYPE_CHECKING:
+    from cadence.client import Client
 
 T = TypeVar("T", bound=Callable[..., Any])
 
@@ -152,7 +154,7 @@ class WorkflowContext(ABC):
     def info(self) -> WorkflowInfo: ...
 
     @abstractmethod
-    def client(self) -> Client: ...
+    def client(self) -> "Client": ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:

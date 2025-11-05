@@ -4,7 +4,7 @@ Integration tests for WorkflowEngine.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, patch
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.api.v1.history_pb2 import (
@@ -244,7 +244,7 @@ class TestWorkflowEngineIntegration:
         decision_task = self.create_mock_decision_task()
 
         # Mock data converter to raise an exception
-        mock_client.data_converter.from_data = AsyncMock(
+        mock_client.data_converter.from_data = Mock(
             side_effect=Exception("Deserialization error")
         )
 

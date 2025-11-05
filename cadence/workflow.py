@@ -4,20 +4,23 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
+    Iterator,
     Callable,
+    TypeVar,
+    TypedDict,
+    Type,
     cast,
+    Any,
     Optional,
     Union,
-    Iterator,
-    TypedDict,
-    TypeVar,
-    Type,
+    TYPE_CHECKING,
     Unpack,
-    Any,
 )
 import inspect
 
-from cadence.client import Client
+if TYPE_CHECKING:
+    from cadence.client import Client
+
 from cadence.data_converter import DataConverter
 
 ResultType = TypeVar("ResultType")
@@ -178,7 +181,7 @@ class WorkflowContext(ABC):
     def info(self) -> WorkflowInfo: ...
 
     @abstractmethod
-    def client(self) -> Client: ...
+    def client(self) -> "Client": ...
 
     @abstractmethod
     def data_converter(self) -> DataConverter: ...

@@ -11,8 +11,6 @@ from typing import List, Optional
 
 from cadence.api.v1.history_pb2 import HistoryEvent
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
-from cadence.client import Client
-from cadence._internal.workflow.history_event_iterator import iterate_history_events
 
 
 @dataclass
@@ -55,99 +53,36 @@ class DecisionEventsIterator:
     into decision iterations for proper workflow replay and execution.
     """
 
-    def __init__(self, decision_task: PollForDecisionTaskResponse, client: Client):
-        self._client = client
+    def __init__(
+        self, decision_task: PollForDecisionTaskResponse, events: List[HistoryEvent]
+    ):
         self._decision_task = decision_task
-        self._events: List[HistoryEvent] = []
-        self._event_index = 0
+        self._events: List[HistoryEvent] = events
         self._decision_task_started_event: Optional[HistoryEvent] = None
         self._next_decision_event_id = 1
         self._replay = True
         self._replay_current_time_milliseconds: Optional[int] = None
-        self._initialized = False
 
-    @staticmethod
-    def _is_decision_task_started(event: HistoryEvent) -> bool:
-        """Check if event is DecisionTaskStarted."""
-        return hasattr(
-            event, "decision_task_started_event_attributes"
-        ) and event.HasField("decision_task_started_event_attributes")
-
-    @staticmethod
-    def _is_decision_task_completed(event: HistoryEvent) -> bool:
-        """Check if event is DecisionTaskCompleted."""
-        return hasattr(
-            event, "decision_task_completed_event_attributes"
-        ) and event.HasField("decision_task_completed_event_attributes")
-
-    @staticmethod
-    def _is_decision_task_failed(event: HistoryEvent) -> bool:
-        """Check if event is DecisionTaskFailed."""
-        return hasattr(
-            event, "decision_task_failed_event_attributes"
-        ) and event.HasField("decision_task_failed_event_attributes")
-
-    @staticmethod
-    def _is_decision_task_timed_out(event: HistoryEvent) -> bool:
-        """Check if event is DecisionTaskTimedOut."""
-        return hasattr(
-            event, "decision_task_timed_out_event_attributes"
-        ) and event.HasField("decision_task_timed_out_event_attributes")
-
-    @staticmethod
-    def _is_marker_recorded(event: HistoryEvent) -> bool:
-        """Check if event is MarkerRecorded."""
-        return hasattr(event, "marker_recorded_event_attributes") and event.HasField(
-            "marker_recorded_event_attributes"
-        )
-
-    @staticmethod
-    def _is_decision_task_completion(event: HistoryEvent) -> bool:
-        """Check if event is any kind of decision task completion."""
-        return (
-            DecisionEventsIterator._is_decision_task_completed(event)
-            or DecisionEventsIterator._is_decision_task_failed(event)
-            or DecisionEventsIterator._is_decision_task_timed_out(event)
-        )
-
-    async def _ensure_initialized(self):
-        """Initialize events list using the existing iterate_history_events."""
-        if not self._initialized:
-            # Use existing iterate_history_events function
-            events_iterator = iterate_history_events(self._decision_task, self._client)
-            self._events = [event async for event in events_iterator]
-            self._initialized = True
-
-            # Find first decision task started event
-            for i, event in enumerate(self._events):
-                if self._is_decision_task_started(event):
-                    self._event_index = i
-                    break
+        self._event_index = 0
+        # Find first decision task started event
+        for i, event in enumerate(self._events):
+            if _is_decision_task_started(event):
+                self._event_index = i
+                break
 
     async def has_next_decision_events(self) -> bool:
-        """Check if there are more decision events to process."""
-        await self._ensure_initialized()
-
         # Look for the next DecisionTaskStarted event from current position
         for i in range(self._event_index, len(self._events)):
-            if self._is_decision_task_started(self._events[i]):
+            if _is_decision_task_started(self._events[i]):
                 return True
 
         return False
 
     async def next_decision_events(self) -> DecisionEvents:
-        """
-        Get the next set of decision events.
-
-        This method processes events starting from a DecisionTaskStarted event
-        until the corresponding DecisionTaskCompleted/Failed/TimedOut event.
-        """
-        await self._ensure_initialized()
-
         # Find next DecisionTaskStarted event
         start_index = None
         for i in range(self._event_index, len(self._events)):
-            if self._is_decision_task_started(self._events[i]):
+            if _is_decision_task_started(self._events[i]):
                 start_index = i
                 break
 
@@ -182,9 +117,9 @@ class DecisionEventsIterator:
             decision_events.events.append(event)
 
             # Categorize the event
-            if self._is_marker_recorded(event):
+            if _is_marker_recorded(event):
                 decision_events.markers.append(event)
-            elif self._is_decision_task_completion(event):
+            elif _is_decision_task_completion(event):
                 # This marks the end of this decision iteration
                 self._process_decision_completion_event(event, decision_events)
                 current_index += 1  # Move past this event
@@ -206,7 +141,7 @@ class DecisionEventsIterator:
         # Check directly without calling has_next_decision_events to avoid recursion
         has_more = False
         for i in range(self._event_index, len(self._events)):
-            if self._is_decision_task_started(self._events[i]):
+            if _is_decision_task_started(self._events[i]):
                 has_more = True
                 break
 
@@ -261,16 +196,16 @@ class DecisionEventsIterator:
 def is_decision_event(event: HistoryEvent) -> bool:
     """Check if an event is a decision-related event."""
     return (
-        DecisionEventsIterator._is_decision_task_started(event)
-        or DecisionEventsIterator._is_decision_task_completed(event)
-        or DecisionEventsIterator._is_decision_task_failed(event)
-        or DecisionEventsIterator._is_decision_task_timed_out(event)
+        _is_decision_task_started(event)
+        or _is_decision_task_completed(event)
+        or _is_decision_task_failed(event)
+        or _is_decision_task_timed_out(event)
     )
 
 
 def is_marker_event(event: HistoryEvent) -> bool:
     """Check if an event is a marker event."""
-    return DecisionEventsIterator._is_marker_recorded(event)
+    return _is_marker_recorded(event)
 
 
 def extract_event_timestamp_millis(event: HistoryEvent) -> Optional[int]:
@@ -279,3 +214,47 @@ def extract_event_timestamp_millis(event: HistoryEvent) -> Optional[int]:
         seconds = getattr(event.event_time, "seconds", 0)
         return seconds * 1000 if seconds > 0 else None
     return None
+
+
+def _is_decision_task_started(event: HistoryEvent) -> bool:
+    """Check if event is DecisionTaskStarted."""
+    return hasattr(event, "decision_task_started_event_attributes") and event.HasField(
+        "decision_task_started_event_attributes"
+    )
+
+
+def _is_decision_task_completed(event: HistoryEvent) -> bool:
+    """Check if event is DecisionTaskCompleted."""
+    return hasattr(
+        event, "decision_task_completed_event_attributes"
+    ) and event.HasField("decision_task_completed_event_attributes")
+
+
+def _is_decision_task_failed(event: HistoryEvent) -> bool:
+    """Check if event is DecisionTaskFailed."""
+    return hasattr(event, "decision_task_failed_event_attributes") and event.HasField(
+        "decision_task_failed_event_attributes"
+    )
+
+
+def _is_decision_task_timed_out(event: HistoryEvent) -> bool:
+    """Check if event is DecisionTaskTimedOut."""
+    return hasattr(
+        event, "decision_task_timed_out_event_attributes"
+    ) and event.HasField("decision_task_timed_out_event_attributes")
+
+
+def _is_marker_recorded(event: HistoryEvent) -> bool:
+    """Check if event is MarkerRecorded."""
+    return hasattr(event, "marker_recorded_event_attributes") and event.HasField(
+        "marker_recorded_event_attributes"
+    )
+
+
+def _is_decision_task_completion(event: HistoryEvent) -> bool:
+    """Check if event is any kind of decision task completion."""
+    return (
+        _is_decision_task_completed(event)
+        or _is_decision_task_failed(event)
+        or _is_decision_task_timed_out(event)
+    )

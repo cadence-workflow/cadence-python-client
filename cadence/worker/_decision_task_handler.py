@@ -2,6 +2,7 @@ import logging
 import threading
 from typing import Dict, Tuple
 
+from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
@@ -102,6 +103,12 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
             raise KeyError(f"Workflow type '{workflow_type_name}' not found")
 
+        # fetch full workflow history
+        # TODO sticky cache
+        workflow_events = [
+            event async for event in iterate_history_events(task, self._client)
+        ]
+
         # Create workflow info and get or create workflow engine from cache
         workflow_info = WorkflowInfo(
             workflow_type=workflow_type_name,
@@ -109,6 +116,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_id=workflow_id,
             workflow_run_id=run_id,
             workflow_task_list=self.task_list,
+            data_converter=self._client.data_converter,
+            workflow_events=workflow_events,
         )
 
         # Use thread-safe cache to get or create workflow engine
@@ -118,7 +127,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             if workflow_engine is None:
                 workflow_engine = WorkflowEngine(
                     info=workflow_info,
-                    client=self._client,
                     workflow_definition=workflow_definition,
                 )
                 self._workflow_engines[cache_key] = workflow_engine

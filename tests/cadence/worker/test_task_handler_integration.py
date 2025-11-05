@@ -7,6 +7,7 @@ import pytest
 from contextlib import contextmanager
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock
 
+from cadence.api.v1.history_pb2 import History
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.client import Client
 from cadence.worker._decision_task_handler import DecisionTaskHandler
@@ -58,6 +59,8 @@ class TestTaskHandlerIntegration:
         # Add the missing attributes that are now accessed directly
         task.started_event_id = 1
         task.attempt = 1
+        task.history = History()
+        task.next_page_token = b""
         return task
 
     @pytest.mark.asyncio
@@ -205,6 +208,8 @@ class TestTaskHandlerIntegration:
         task1.workflow_type.name = "TestWorkflow"
         task1.started_event_id = 1
         task1.attempt = 1
+        task1.history = History()
+        task1.next_page_token = b""
 
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"task2_token"
@@ -215,7 +220,8 @@ class TestTaskHandlerIntegration:
         task2.workflow_type.name = "TestWorkflow"
         task2.started_event_id = 2
         task2.attempt = 1
-
+        task2.history = History()
+        task2.next_page_token = b""
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
@@ -352,6 +358,8 @@ class TestTaskHandlerIntegration:
             task.started_event_id = i + 1
             task.attempt = 1
             tasks.append(task)
+            task.history = History()
+            task.next_page_token = b""
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)

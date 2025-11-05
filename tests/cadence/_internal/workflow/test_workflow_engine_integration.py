@@ -33,12 +33,16 @@ class TestWorkflowEngineIntegration:
     @pytest.fixture
     def workflow_info(self):
         """Create workflow info."""
+        data_converter = Mock()
+        data_converter.from_data = Mock(return_value=["test-input"])
         return WorkflowInfo(
             workflow_type="test_workflow",
             workflow_domain="test-domain",
             workflow_id="test-workflow-id",
             workflow_run_id="test-run-id",
             workflow_task_list="test-task-list",
+            workflow_events = [],
+            data_converter=data_converter,
         )
 
     @pytest.fixture
@@ -54,11 +58,10 @@ class TestWorkflowEngineIntegration:
         return WorkflowDefinition.wrap(TestWorkflow, workflow_opts)
 
     @pytest.fixture
-    def workflow_engine(self, mock_client, workflow_info, mock_workflow_definition):
+    def workflow_engine(self, workflow_info, mock_workflow_definition):
         """Create a WorkflowEngine instance."""
         return WorkflowEngine(
             info=workflow_info,
-            client=mock_client,
             workflow_definition=mock_workflow_definition,
         )
 

@@ -76,7 +76,7 @@ class TestDecisionTaskHandler:
         )
 
         assert handler._client == mock_client
-        assert handler._task_list == "test_task_list"
+        assert handler.task_list == "test_task_list"
         assert handler._identity == "test_identity"
         assert handler._registry == mock_registry
         assert handler._options == {"option1": "value1"}
@@ -441,6 +441,7 @@ class TestDecisionTaskHandler:
                         "workflow_domain": "test_domain",
                         "workflow_id": "test_workflow_id",
                         "workflow_run_id": "test_run_id",
+                        "workflow_task_list": "test_task_list",
                     }
 
                 # Verify WorkflowEngine was created with correct parameters

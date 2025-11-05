@@ -78,7 +78,7 @@ class TestClientBuildStartWorkflowRequest:
             task_start_to_close_timeout=timedelta(seconds=10),
         )
 
-        request = await client._build_start_workflow_request(
+        request = client._build_start_workflow_request(
             "TestWorkflow", ("arg1", "arg2"), options
         )
 
@@ -117,9 +117,7 @@ class TestClientBuildStartWorkflowRequest:
             task_start_to_close_timeout=timedelta(seconds=30),
         )
 
-        request = await client._build_start_workflow_request(
-            workflow_definition, (), options
-        )
+        request = client._build_start_workflow_request(workflow_definition, (), options)
 
         assert request.workflow_type.name == "test_workflow"
 
@@ -134,9 +132,7 @@ class TestClientBuildStartWorkflowRequest:
             task_start_to_close_timeout=timedelta(seconds=30),
         )
 
-        request = await client._build_start_workflow_request(
-            "TestWorkflow", (), options
-        )
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
 
         assert request.workflow_id != ""
         # Verify it's a valid UUID
@@ -201,7 +197,7 @@ class TestClientBuildStartWorkflowRequest:
             task_start_to_close_timeout=timedelta(seconds=30),
         )
 
-        request = await client._build_start_workflow_request(
+        request = client._build_start_workflow_request(
             "TestWorkflow", ("arg1", 42, {"key": "value"}), options
         )
 
@@ -220,9 +216,7 @@ class TestClientBuildStartWorkflowRequest:
             task_start_to_close_timeout=timedelta(seconds=10),
         )
 
-        request = await client._build_start_workflow_request(
-            "TestWorkflow", (), options
-        )
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
 
         assert request.HasField("execution_start_to_close_timeout")
         assert request.HasField("task_start_to_close_timeout")
@@ -243,9 +237,7 @@ class TestClientBuildStartWorkflowRequest:
             cron_schedule="0 * * * *",
         )
 
-        request = await client._build_start_workflow_request(
-            "TestWorkflow", (), options
-        )
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
 
         assert request.cron_schedule == "0 * * * *"
 
@@ -269,13 +261,13 @@ class TestClientStartWorkflow:
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method to avoid full request building
-        async def mock_build_request(workflow, args, options):
+        def mock_build_request(workflow, args, options):
             request = StartWorkflowExecutionRequest()
             request.workflow_id = "test-workflow-id"
             request.domain = "test-domain"
             return request
 
-        client._build_start_workflow_request = AsyncMock(side_effect=mock_build_request)
+        client._build_start_workflow_request = Mock(side_effect=mock_build_request)
 
         execution = await client.start_workflow(
             "TestWorkflow",
@@ -306,7 +298,7 @@ class TestClientStartWorkflow:
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method
-        client._build_start_workflow_request = AsyncMock(
+        client._build_start_workflow_request = Mock(
             return_value=StartWorkflowExecutionRequest()
         )
 
@@ -334,14 +326,14 @@ class TestClientStartWorkflow:
         # Mock the internal method to capture options
         captured_options = None
 
-        async def mock_build_request(workflow, args, options):
+        def mock_build_request(workflow, args, options):
             nonlocal captured_options
             captured_options = options
             request = StartWorkflowExecutionRequest()
             request.workflow_id = "test-workflow-id"
             return request
 
-        client._build_start_workflow_request = AsyncMock(side_effect=mock_build_request)
+        client._build_start_workflow_request = Mock(side_effect=mock_build_request)
 
         await client.start_workflow(
             "TestWorkflow",
@@ -375,14 +367,14 @@ class TestClientStartWorkflow:
         # Mock the internal method to capture options
         captured_options = None
 
-        async def mock_build_request(workflow, args, options):
+        def mock_build_request(workflow, args, options):
             nonlocal captured_options
             captured_options = options
             request = StartWorkflowExecutionRequest()
             request.workflow_id = "test-workflow-id"
             return request
 
-        client._build_start_workflow_request = AsyncMock(side_effect=mock_build_request)
+        client._build_start_workflow_request = Mock(side_effect=mock_build_request)
 
         await client.start_workflow(
             "TestWorkflow",

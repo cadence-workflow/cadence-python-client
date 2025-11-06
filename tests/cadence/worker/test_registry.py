@@ -9,6 +9,7 @@ from cadence import activity
 from cadence import workflow
 from cadence.worker import Registry
 from cadence.workflow import WorkflowDefinition
+from cadence.signal import SignalDefinition
 from tests.cadence import common_activities
 
 
@@ -230,9 +231,13 @@ class TestRegistry:
         workflow_def = reg.get_workflow("WorkflowWithSignal")
         assert isinstance(workflow_def, WorkflowDefinition)
         assert len(workflow_def.signals) == 1
-        assert "handle_approval" in workflow_def.signals
-        assert hasattr(workflow_def.signals["handle_approval"], "_workflow_signal")
-        assert workflow_def.signals["handle_approval"]._workflow_signal == "approval"
+        assert "approval" in workflow_def.signals
+        signal_def = workflow_def.signals["approval"]
+        assert isinstance(signal_def, SignalDefinition)
+        assert signal_def.name == "approval"
+        assert signal_def.is_async is True
+        assert len(signal_def.params) == 1
+        assert signal_def.params[0].name == "approved"
 
     def test_workflow_with_multiple_signals(self):
         """Test workflow with multiple signal handlers."""
@@ -254,16 +259,12 @@ class TestRegistry:
 
         workflow_def = reg.get_workflow("WorkflowWithMultipleSignals")
         assert len(workflow_def.signals) == 2
-        assert "handle_approval" in workflow_def.signals
-        assert "handle_cancel" in workflow_def.signals
-        assert (
-            getattr(workflow_def.signals["handle_approval"], "_workflow_signal")
-            == "approval"
-        )
-        assert (
-            getattr(workflow_def.signals["handle_cancel"], "_workflow_signal")
-            == "cancel"
-        )
+        assert "approval" in workflow_def.signals
+        assert "cancel" in workflow_def.signals
+        assert isinstance(workflow_def.signals["approval"], SignalDefinition)
+        assert isinstance(workflow_def.signals["cancel"], SignalDefinition)
+        assert workflow_def.signals["approval"].name == "approval"
+        assert workflow_def.signals["cancel"].name == "cancel"
 
     def test_signal_decorator_requires_name(self):
         """Test that signal decorator requires name parameter."""

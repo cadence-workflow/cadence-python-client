@@ -19,6 +19,7 @@ import inspect
 
 from cadence.client import Client
 from cadence.data_converter import DataConverter
+from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
 ResultType = TypeVar("ResultType")
 
@@ -64,7 +65,7 @@ class WorkflowDefinition:
         cls: Type,
         name: str,
         run_method_name: str,
-        signals: dict[str, Callable[..., Any]],
+        signals: dict[str, SignalDefinition[..., Any]],
     ):
         self._cls = cls
         self._name = name
@@ -72,8 +73,8 @@ class WorkflowDefinition:
         self._signals = signals
 
     @property
-    def signals(self) -> dict[str, Callable[..., Any]]:
-        """Get the signals."""
+    def signals(self) -> dict[str, SignalDefinition[..., Any]]:
+        """Get the signal definitions."""
         return self._signals
 
     @property
@@ -111,7 +112,7 @@ class WorkflowDefinition:
 
         # Validate that the class has exactly one run method and find it
         # Also validate that class does not have multiple signal methods with the same name
-        signals: dict[str, Callable[..., Any]] = {}
+        signals: dict[str, SignalDefinition[..., Any]] = {}
         signal_names: dict[
             str, str
         ] = {}  # Map signal name to method name for duplicate detection
@@ -139,7 +140,11 @@ class WorkflowDefinition:
                         f"Multiple @workflow.signal methods found in class {cls.__name__} "
                         f"with signal name '{signal_name}': '{attr_name}' and '{signal_names[signal_name]}'"
                     )
-                signals[attr_name] = attr
+                # Create SignalDefinition from the decorated method
+                signal_def = SignalDefinition.wrap(
+                    attr, SignalDefinitionOptions(name=signal_name)
+                )
+                signals[signal_name] = signal_def
                 signal_names[signal_name] = attr_name
 
         if run_method_name is None:

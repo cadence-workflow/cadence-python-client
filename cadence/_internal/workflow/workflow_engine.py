@@ -8,7 +8,6 @@ from cadence._internal.workflow.decisions_helper import DecisionsHelper
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1.decision_pb2 import Decision
-from cadence.client import Client
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.workflow import WorkflowInfo
 
@@ -21,16 +20,14 @@ class DecisionResult:
 
 
 class WorkflowEngine:
-    def __init__(self, info: WorkflowInfo, client: Client, workflow_definition=None):
+    def __init__(self, info: WorkflowInfo, workflow_definition=None):
         self._workflow_definition = workflow_definition
         self._workflow_instance = None
         if workflow_definition:
             self._workflow_instance = workflow_definition.cls()
         self._decision_manager = DecisionManager()
         self._decisions_helper = DecisionsHelper()
-        self._context = Context(
-            client, info, self._decisions_helper, self._decision_manager
-        )
+        self._context = Context(info, self._decisions_helper, self._decision_manager)
         self._is_workflow_complete = False
 
     async def process_decision(
@@ -65,7 +62,7 @@ class WorkflowEngine:
             with self._context._activate():
                 # Create DecisionEventsIterator for structured event processing
                 events_iterator = DecisionEventsIterator(
-                    decision_task, self._context.client()
+                    decision_task, self._context.info().workflow_events
                 )
 
                 # Process decision events using iterator-driven approach
@@ -360,10 +357,8 @@ class WorkflowEngine:
                     # Deserialize the input using the client's data converter
                     try:
                         # Use from_data method with a single type hint of None (no type conversion)
-                        input_data_list = (
-                            self._context.client().data_converter.from_data(
-                                started_attrs.input, [None]
-                            )
+                        input_data_list = self._context.data_converter().from_data(
+                            started_attrs.input, [None]
                         )
                         input_data = input_data_list[0] if input_data_list else None
                         logger.debug(f"Extracted workflow input: {input_data}")

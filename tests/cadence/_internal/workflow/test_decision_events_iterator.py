@@ -4,14 +4,11 @@ Tests for Decision Events Iterator.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock
 from typing import List
 
 from cadence.api.v1.history_pb2 import HistoryEvent, History
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
-from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryResponse
 from cadence.api.v1.common_pb2 import WorkflowExecution
-from cadence.client import Client
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence._internal.workflow.decision_events_iterator import (
@@ -73,16 +70,6 @@ def create_mock_decision_task(
     return task
 
 
-@pytest.fixture
-def mock_client():
-    """Create a mock Cadence client."""
-    client = Mock(spec=Client)
-    client.domain = "test-domain"
-    client.workflow_stub = Mock()
-    client.workflow_stub.GetWorkflowExecutionHistory = AsyncMock()
-    return client
-
-
 class TestDecisionEvents:
     """Test the DecisionEvents class."""
 
@@ -134,7 +121,7 @@ class TestDecisionEventsIterator:
     """Test the DecisionEventsIterator class."""
 
     @pytest.mark.asyncio
-    async def test_single_decision_iteration(self, mock_client):
+    async def test_single_decision_iteration(self):
         """Test processing a single decision iteration."""
         # Create events for a complete decision iteration
         events = [
@@ -147,8 +134,7 @@ class TestDecisionEventsIterator:
         ]
 
         decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, mock_client)
-        await iterator._ensure_initialized()
+        iterator = DecisionEventsIterator(decision_task, events)
 
         assert await iterator.has_next_decision_events()
 
@@ -164,7 +150,7 @@ class TestDecisionEventsIterator:
         assert decision_events.replay_current_time_milliseconds == 1000 * 1000
 
     @pytest.mark.asyncio
-    async def test_multiple_decision_iterations(self, mock_client):
+    async def test_multiple_decision_iterations(self):
         """Test processing multiple decision iterations."""
         # Create events for two decision iterations
         events = [
@@ -177,8 +163,7 @@ class TestDecisionEventsIterator:
         ]
 
         decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, mock_client)
-        await iterator._ensure_initialized()
+        iterator = DecisionEventsIterator(decision_task, events)
 
         # First iteration
         assert await iterator.has_next_decision_events()
@@ -196,47 +181,7 @@ class TestDecisionEventsIterator:
         assert not await iterator.has_next_decision_events()
 
     @pytest.mark.asyncio
-    async def test_pagination_support(self, mock_client):
-        """Test that pagination is handled correctly."""
-        # First page events
-        first_page_events = [
-            create_mock_history_event(1, "decision_task_started"),
-            create_mock_history_event(2, "decision_task_completed"),
-        ]
-
-        # Second page events
-        second_page_events = [
-            create_mock_history_event(3, "decision_task_started"),
-            create_mock_history_event(4, "decision_task_completed"),
-        ]
-
-        # Mock the pagination response
-        pagination_response = GetWorkflowExecutionHistoryResponse()
-        pagination_history = History()
-        pagination_history.events.extend(second_page_events)
-        pagination_response.history.CopyFrom(pagination_history)
-        pagination_response.next_page_token = b""  # No more pages
-
-        mock_client.workflow_stub.GetWorkflowExecutionHistory.return_value = (
-            pagination_response
-        )
-
-        # Create decision task with next page token
-        decision_task = create_mock_decision_task(first_page_events, b"next-page-token")
-        iterator = DecisionEventsIterator(decision_task, mock_client)
-        await iterator._ensure_initialized()
-
-        # Should process both pages
-        iterations_count = 0
-        while await iterator.has_next_decision_events():
-            await iterator.next_decision_events()
-            iterations_count += 1
-
-        assert iterations_count == 2
-        assert mock_client.workflow_stub.GetWorkflowExecutionHistory.called
-
-    @pytest.mark.asyncio
-    async def test_iterator_protocol(self, mock_client):
+    async def test_iterator_protocol(self):
         """Test that DecisionEventsIterator works with Python iterator protocol."""
         events = [
             create_mock_history_event(1, "decision_task_started"),
@@ -246,8 +191,7 @@ class TestDecisionEventsIterator:
         ]
 
         decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, mock_client)
-        await iterator._ensure_initialized()
+        iterator = DecisionEventsIterator(decision_task, events)
 
         decision_events_list = []
         async for decision_events in iterator:
@@ -293,7 +237,7 @@ class TestIntegrationScenarios:
     """Test real-world integration scenarios."""
 
     @pytest.mark.asyncio
-    async def test_replay_detection(self, mock_client):
+    async def test_replay_detection(self):
         """Test replay mode detection."""
         # Simulate a scenario where we have historical events and current events
         events = [
@@ -306,8 +250,7 @@ class TestIntegrationScenarios:
         # Mock the started_event_id to indicate current decision
         decision_task.started_event_id = 3
 
-        iterator = DecisionEventsIterator(decision_task, mock_client)
-        await iterator._ensure_initialized()
+        iterator = DecisionEventsIterator(decision_task, events)
 
         # First decision should be replay (but gets set to false when no more events)
         await iterator.next_decision_events()
@@ -319,7 +262,7 @@ class TestIntegrationScenarios:
         # (This would need the completion event to trigger the replay mode change)
 
     @pytest.mark.asyncio
-    async def test_complex_workflow_scenario(self, mock_client):
+    async def test_complex_workflow_scenario(self):
         """Test a complex workflow with multiple event types."""
         events = [
             create_mock_history_event(1, "decision_task_started"),
@@ -333,7 +276,7 @@ class TestIntegrationScenarios:
         ]
 
         decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, mock_client)
+        iterator = DecisionEventsIterator(decision_task, events)
 
         all_decisions = []
         async for decision_events in iterator:

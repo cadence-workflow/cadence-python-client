@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
     Callable,
+    List,
     cast,
     Optional,
     Union,
@@ -17,7 +18,7 @@ from typing import (
 )
 import inspect
 
-from cadence.client import Client
+from cadence.api.v1.history_pb2 import HistoryEvent
 from cadence.data_converter import DataConverter
 from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
@@ -231,6 +232,8 @@ class WorkflowInfo:
     workflow_id: str
     workflow_run_id: str
     workflow_task_list: str
+    workflow_events: List[HistoryEvent]
+    data_converter: DataConverter
 
 
 class WorkflowContext(ABC):
@@ -238,9 +241,6 @@ class WorkflowContext(ABC):
 
     @abstractmethod
     def info(self) -> WorkflowInfo: ...
-
-    @abstractmethod
-    def client(self) -> Client: ...
 
     @abstractmethod
     def data_converter(self) -> DataConverter: ...

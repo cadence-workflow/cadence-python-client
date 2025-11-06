@@ -7,7 +7,6 @@ from cadence._internal.workflow.decisions_helper import DecisionsHelper
 from cadence.api.v1.common_pb2 import ActivityType
 from cadence.api.v1.decision_pb2 import ScheduleActivityTaskDecisionAttributes
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
-from cadence.client import Client
 from cadence.data_converter import DataConverter
 from cadence.workflow import WorkflowContext, WorkflowInfo, ResultType, ActivityOptions
 
@@ -15,12 +14,10 @@ from cadence.workflow import WorkflowContext, WorkflowInfo, ResultType, Activity
 class Context(WorkflowContext):
     def __init__(
         self,
-        client: Client,
         info: WorkflowInfo,
         decision_helper: DecisionsHelper,
         decision_manager: DecisionManager,
     ):
-        self._client = client
         self._info = info
         self._replay_mode = True
         self._replay_current_time_milliseconds: Optional[int] = None
@@ -30,11 +27,8 @@ class Context(WorkflowContext):
     def info(self) -> WorkflowInfo:
         return self._info
 
-    def client(self) -> Client:
-        return self._client
-
     def data_converter(self) -> DataConverter:
-        return self._client.data_converter
+        return self.info().data_converter
 
     async def execute_activity(
         self,
@@ -80,7 +74,7 @@ class Context(WorkflowContext):
         schedule_attributes = ScheduleActivityTaskDecisionAttributes(
             activity_id=activity_id,
             activity_type=ActivityType(name=activity),
-            domain=self._client.domain,
+            domain=self.info().workflow_domain,
             task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
             input=activity_input,
             schedule_to_close_timeout=_round_to_nearest_second(schedule_to_close),

@@ -31,7 +31,7 @@ class TestWorkflowEngineIntegration:
         return client
 
     @pytest.fixture
-    def workflow_info(self):
+    def workflow_info(self, mock_client, decision_task):
         """Create workflow info."""
         return WorkflowInfo(
             workflow_type="test_workflow",
@@ -39,7 +39,13 @@ class TestWorkflowEngineIntegration:
             workflow_id="test-workflow-id",
             workflow_run_id="test-run-id",
             workflow_task_list="test-task-list",
+            workflow_events=decision_task.history.events,
+            data_converter=mock_client.data_converter,
         )
+
+    @pytest.fixture
+    def decision_task(self):
+        return self.create_mock_decision_task()
 
     @pytest.fixture
     def mock_workflow_definition(self):
@@ -54,11 +60,10 @@ class TestWorkflowEngineIntegration:
         return WorkflowDefinition.wrap(TestWorkflow, workflow_opts)
 
     @pytest.fixture
-    def workflow_engine(self, mock_client, workflow_info, mock_workflow_definition):
+    def workflow_engine(self, workflow_info, mock_workflow_definition):
         """Create a WorkflowEngine instance."""
         return WorkflowEngine(
             info=workflow_info,
-            client=mock_client,
             workflow_definition=mock_workflow_definition,
         )
 
@@ -102,9 +107,10 @@ class TestWorkflowEngineIntegration:
         return decision_task
 
     @pytest.mark.asyncio
-    async def test_process_decision_success(self, workflow_engine, mock_client):
+    async def test_process_decision_success(
+        self, workflow_engine, mock_client, decision_task
+    ):
         """Test successful decision processing."""
-        decision_task = self.create_mock_decision_task()
 
         # Mock the decision manager to return some decisions
         with patch.object(
@@ -120,9 +126,10 @@ class TestWorkflowEngineIntegration:
             assert len(result.decisions) == 1
 
     @pytest.mark.asyncio
-    async def test_process_decision_with_history(self, workflow_engine, mock_client):
+    async def test_process_decision_with_history(
+        self, workflow_engine, mock_client, decision_task
+    ):
         """Test decision processing with history events."""
-        decision_task = self.create_mock_decision_task()
 
         # Mock the decision manager
         with patch.object(
@@ -141,13 +148,11 @@ class TestWorkflowEngineIntegration:
 
     @pytest.mark.asyncio
     async def test_process_decision_workflow_complete(
-        self, workflow_engine, mock_client
+        self, workflow_engine, mock_client, decision_task
     ):
         """Test decision processing when workflow is already complete."""
         # Mark workflow as complete
         workflow_engine._is_workflow_complete = True
-
-        decision_task = self.create_mock_decision_task()
 
         with patch.object(
             workflow_engine._decision_manager,
@@ -162,9 +167,10 @@ class TestWorkflowEngineIntegration:
             assert len(result.decisions) == 0
 
     @pytest.mark.asyncio
-    async def test_process_decision_error_handling(self, workflow_engine, mock_client):
+    async def test_process_decision_error_handling(
+        self, workflow_engine, mock_client, decision_task
+    ):
         """Test decision processing error handling."""
-        decision_task = self.create_mock_decision_task()
 
         # Mock the decision manager to raise an exception
         with patch.object(
@@ -180,9 +186,10 @@ class TestWorkflowEngineIntegration:
             assert len(result.decisions) == 0
 
     @pytest.mark.asyncio
-    async def test_extract_workflow_input_success(self, workflow_engine, mock_client):
+    async def test_extract_workflow_input_success(
+        self, workflow_engine: "WorkflowEngine", mock_client, decision_task
+    ):
         """Test successful workflow input extraction."""
-        decision_task = self.create_mock_decision_task()
 
         # Extract workflow input
         input_data = workflow_engine._extract_workflow_input(decision_task)
@@ -238,10 +245,9 @@ class TestWorkflowEngineIntegration:
 
     @pytest.mark.asyncio
     async def test_extract_workflow_input_deserialization_error(
-        self, workflow_engine, mock_client
+        self, workflow_engine, mock_client, decision_task
     ):
         """Test workflow input extraction with deserialization error."""
-        decision_task = self.create_mock_decision_task()
 
         # Mock data converter to raise an exception
         mock_client.data_converter.from_data = Mock(
@@ -310,14 +316,13 @@ class TestWorkflowEngineIntegration:
 
     @pytest.mark.asyncio
     async def test_workflow_engine_without_workflow_definition(
-        self, mock_client, workflow_info
+        self, mock_client: Client, workflow_info, decision_task
     ):
         """Test WorkflowEngine without workflow definition."""
         engine = WorkflowEngine(
-            info=workflow_info, client=mock_client, workflow_definition=None
+            info=workflow_info,
+            workflow_definition=None,
         )
-
-        decision_task = self.create_mock_decision_task()
 
         with patch.object(
             engine._decision_manager, "collect_pending_decisions", return_value=[]
@@ -331,10 +336,9 @@ class TestWorkflowEngineIntegration:
 
     @pytest.mark.asyncio
     async def test_workflow_engine_workflow_completion(
-        self, workflow_engine, mock_client
+        self, workflow_engine, mock_client, decision_task
     ):
         """Test workflow completion detection."""
-        decision_task = self.create_mock_decision_task()
 
         # Create a workflow definition that returns a result (indicating completion)
         class CompletingWorkflow:
@@ -369,10 +373,9 @@ class TestWorkflowEngineIntegration:
 
     @pytest.mark.asyncio
     async def test_process_decision_with_query_results(
-        self, workflow_engine, mock_client
+        self, workflow_engine, mock_client, decision_task
     ):
         """Test decision processing with query results."""
-        decision_task = self.create_mock_decision_task()
 
         # Mock the decision manager to return decisions with query results
         mock_decisions = [Mock()]

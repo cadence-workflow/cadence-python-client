@@ -7,6 +7,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock
 
 from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.history_pb2 import History
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
     RespondDecisionTaskCompletedRequest,
@@ -63,6 +64,8 @@ class TestDecisionTaskHandler:
         # Add the missing attributes that are now accessed directly
         task.started_event_id = 1
         task.attempt = 1
+        task.history = History()
+        task.next_page_token = b""
         return task
 
     def test_initialization(self, mock_client, mock_registry):
@@ -83,7 +86,7 @@ class TestDecisionTaskHandler:
 
     @pytest.mark.asyncio
     async def test_handle_task_implementation_success(
-        self, handler, sample_decision_task, mock_registry
+        self, handler: DecisionTaskHandler, sample_decision_task, mock_registry
     ):
         """Test successful decision task handling."""
 
@@ -99,7 +102,6 @@ class TestDecisionTaskHandler:
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
-        mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = [Decision()]
@@ -223,6 +225,8 @@ class TestDecisionTaskHandler:
         task1.workflow_type.name = "TestWorkflow"
         task1.started_event_id = 1
         task1.attempt = 1
+        task1.history = History()
+        task1.next_page_token = b""
 
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"test_task_token_2"
@@ -233,6 +237,8 @@ class TestDecisionTaskHandler:
         task2.workflow_type.name = "TestWorkflow"
         task2.started_event_id = 2
         task2.attempt = 1
+        task2.history = History()
+        task2.next_page_token = b""
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
@@ -442,11 +448,12 @@ class TestDecisionTaskHandler:
                         "workflow_id": "test_workflow_id",
                         "workflow_run_id": "test_run_id",
                         "workflow_task_list": "test_task_list",
+                        "data_converter": handler._client.data_converter,
+                        "workflow_events": [],
                     }
 
                 # Verify WorkflowEngine was created with correct parameters
                 mock_workflow_engine_class.assert_called_once()
                 call_args = mock_workflow_engine_class.call_args
                 assert call_args[1]["info"] is not None
-                assert call_args[1]["client"] == handler._client
                 assert call_args[1]["workflow_definition"] == workflow_definition

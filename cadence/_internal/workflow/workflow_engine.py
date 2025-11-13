@@ -128,8 +128,7 @@ class WorkflowEngine:
         processed_any_decision_events = False
 
         # Check if there are any decision events to process
-        while await events_iterator.has_next_decision_events():
-            decision_events = await events_iterator.next_decision_events()
+        for decision_events in events_iterator:
             processed_any_decision_events = True
 
             # Log decision events batch processing (matches Go client patterns)

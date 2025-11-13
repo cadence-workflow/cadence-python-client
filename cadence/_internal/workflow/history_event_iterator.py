@@ -35,6 +35,7 @@ async def iterate_history_events(
         current_page = response.history.events
         next_page_token = response.next_page_token
 
+
 class HistoryEventsIterator(Iterator[HistoryEvent]):
     def __init__(self, events: List[HistoryEvent]):
         self._iter = iter(events)

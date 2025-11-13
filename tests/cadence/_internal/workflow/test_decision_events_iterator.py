@@ -6,25 +6,28 @@ Tests for Decision Events Iterator.
 import pytest
 from typing import List
 
-from cadence.api.v1.history_pb2 import HistoryEvent, History, WorkflowExecutionStartedEventAttributes
+from cadence.api.v1.history_pb2 import HistoryEvent, History
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.common_pb2 import WorkflowExecution
-from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence._internal.workflow.decision_events_iterator import (
     DecisionEventsIterator,
 )
 
+
 class TestDecisionEventsIterator:
     """Test the DecisionEventsIterator class."""
-
 
     @pytest.mark.parametrize(
         "name, event_types, expected",
         [
             (
                 "workflow_started",
-                ["workflow_execution_started", "decision_task_scheduled", "decision_task_started"],
+                [
+                    "workflow_execution_started",
+                    "decision_task_scheduled",
+                    "decision_task_started",
+                ],
                 [
                     {
                         "input": 2,
@@ -34,7 +37,7 @@ class TestDecisionEventsIterator:
                         "replay_time": 3000,
                         "next_decision_event_id": 5,
                     },
-                ]
+                ],
             ),
             (
                 "workflow_with_activity_scheduled",
@@ -54,7 +57,7 @@ class TestDecisionEventsIterator:
                         "replay_time": 4000,
                         "next_decision_event_id": 5,
                     },
-                ]
+                ],
             ),
             (
                 "workflow_with_activity_completed",
@@ -86,8 +89,8 @@ class TestDecisionEventsIterator:
                         "replay_time": 9000,
                         "next_decision_event_id": 11,
                     },
-                ]
-            )
+                ],
+            ),
         ],
     )
     def test_successful_cases(self, name, event_types, expected):
@@ -106,15 +109,13 @@ class TestDecisionEventsIterator:
             assert batch.replay_current_time_milliseconds == expect["replay_time"]
             assert batch.next_decision_event_id == expect["next_decision_event_id"]
 
-def create_mock_history_event(
-    event_types: List[str]
-) -> List[HistoryEvent]:
 
+def create_mock_history_event(event_types: List[str]) -> List[HistoryEvent]:
     events = []
     for i, event_type in enumerate(event_types):
         event = HistoryEvent()
         event.event_id = i + 1
-        event.event_time.FromMilliseconds((i+1) * 1000)
+        event.event_time.FromMilliseconds((i + 1) * 1000)
 
         # Set the appropriate attribute based on event type
         if event_type == "decision_task_started":

@@ -6,8 +6,8 @@ This module provides functionality to iterate through workflow history events,
 particularly focusing on decision-related events for replay and execution.
 """
 
-from dataclasses import dataclass, field
-from typing import Iterator, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Iterator, List, Optional
 
 from cadence._internal.workflow.history_event_iterator import HistoryEventsIterator
 from cadence.api.v1.history_pb2 import HistoryEvent
@@ -43,7 +43,8 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
     """
 
     def __init__(
-        self, decision_task: PollForDecisionTaskResponse,
+        self,
+        decision_task: PollForDecisionTaskResponse,
         events: List[HistoryEvent],
     ):
         self._decision_task = decision_task
@@ -55,7 +56,6 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
         return self
 
     def __next__(self) -> DecisionEvents:
-
         """
         Process the next decision batch.
         1. Find the next valid decision task started event during replay or last scheduled decision task events for non-replay
@@ -73,12 +73,15 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
                     next_event = self._events.peek()
 
                     # latest event, not replay, assign started event as decision event insteaad
-                    if next_event == None:
+                    if next_event is None:
                         decision_event = event
                         break
 
                     match next_event.WhichOneof("attributes"):
-                        case "decision_task_failed_event_attributes" | "decision_task_timed_out_event_attributes":
+                        case (
+                            "decision_task_failed_event_attributes"
+                            | "decision_task_timed_out_event_attributes"
+                        ):
                             # skip failed / timed out decision tasks and continue searching
                             next(self._events)
                             continue
@@ -87,25 +90,31 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
                             decision_event = next(self._events)
                             break
                         case _:
-                            raise ValueError(f"unexpected event type after decision task started event: {next_event}")
+                            raise ValueError(
+                                f"unexpected event type after decision task started event: {next_event}"
+                            )
 
                 case _:
                     decision_input_events.append(event)
 
         if not decision_event:
-            raise StopIteration(f"no decision event found")
+            raise StopIteration("no decision event found")
 
         # collect decision output events
         while self._events.has_next():
-            if not is_decision_event(self._events.peek()):
+            nxt = self._events.peek() if self._events.has_next() else None
+            if nxt and not is_decision_event(nxt):
                 break
             decision_output_events.append(next(self._events))
 
         replay_current_time_milliseconds = decision_event.event_time.ToMilliseconds()
 
-        replay : bool
-        next_decision_event_id : int
-        if decision_event.WhichOneof("attributes") == "decision_task_completed_event_attributes": # completed decision task
+        replay: bool
+        next_decision_event_id: int
+        if (
+            decision_event.WhichOneof("attributes")
+            == "decision_task_completed_event_attributes"
+        ):  # completed decision task
             replay = True
             next_decision_event_id = decision_event.event_id + 1
         else:
@@ -124,25 +133,32 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
             next_decision_event_id=next_decision_event_id,
         )
 
+
 def is_decision_event(event: HistoryEvent) -> bool:
     """Check if an event is a decision output event."""
-    return event != None and event.WhichOneof("attributes") in set([
-        "activity_task_scheduled_event_attributes",
-        "start_child_workflow_execution_initiated_event_attributes",
-        "timer_started_event_attributes",
-        "workflow_execution_completed_event_attributes",
-        "workflow_execution_failed_event_attributes",
-        "workflow_execution_canceled_event_attributes",
-        "workflow_execution_continued_as_new_event_attributes",
-        "activity_task_cancel_requested_event_attributes",
-        "request_cancel_activity_task_failed_event_attributes",
-        "timer_canceled_event_attributes",
-        "cancel_timer_failed_event_attributes",
-        "request_cancel_external_workflow_execution_initiated_event_attributes",
-        "marker_recorded_event_attributes",
-        "signal_external_workflow_execution_initiated_event_attributes",
-        "upsert_workflow_search_attributes_event_attributes",
-    ])
+    return event is not None and event.WhichOneof("attributes") in set(
+        [
+            "activity_task_scheduled_event_attributes",
+            "start_child_workflow_execution_initiated_event_attributes",
+            "timer_started_event_attributes",
+            "workflow_execution_completed_event_attributes",
+            "workflow_execution_failed_event_attributes",
+            "workflow_execution_canceled_event_attributes",
+            "workflow_execution_continued_as_new_event_attributes",
+            "activity_task_cancel_requested_event_attributes",
+            "request_cancel_activity_task_failed_event_attributes",
+            "timer_canceled_event_attributes",
+            "cancel_timer_failed_event_attributes",
+            "request_cancel_external_workflow_execution_initiated_event_attributes",
+            "marker_recorded_event_attributes",
+            "signal_external_workflow_execution_initiated_event_attributes",
+            "upsert_workflow_search_attributes_event_attributes",
+        ]
+    )
+
 
 def is_marker_event(event: HistoryEvent) -> bool:
-    return event != None and event.WhichOneof("attributes") == "marker_recorded_event_attributes"
+    return bool(
+        event is not None
+        and event.WhichOneof("attributes") == "marker_recorded_event_attributes"
+    )

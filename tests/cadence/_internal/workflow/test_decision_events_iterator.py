@@ -6,45 +6,165 @@ Tests for Decision Events Iterator.
 import pytest
 from typing import List
 
-from cadence.api.v1.history_pb2 import HistoryEvent, History
+from cadence.api.v1.history_pb2 import HistoryEvent, History, WorkflowExecutionStartedEventAttributes
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.common_pb2 import WorkflowExecution
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence._internal.workflow.decision_events_iterator import (
-    DecisionEvents,
     DecisionEventsIterator,
-    is_decision_event,
-    is_marker_event,
-    extract_event_timestamp_millis,
 )
 
+class TestDecisionEventsIterator:
+    """Test the DecisionEventsIterator class."""
+
+
+    @pytest.mark.parametrize(
+        "name, event_types, expected",
+        [
+            (
+                "workflow_started",
+                ["workflow_execution_started", "decision_task_scheduled", "decision_task_started"],
+                [
+                    {
+                        "input": 2,
+                        "output": 0,
+                        "markers": 0,
+                        "replay": False,
+                        "replay_time": 3000,
+                        "next_decision_event_id": 5,
+                    },
+                ]
+            ),
+            (
+                "workflow_with_activity_scheduled",
+                [
+                    "workflow_execution_started",
+                    "decision_task_scheduled",
+                    "decision_task_started",
+                    "decision_task_completed",
+                    "activity_scheduled",
+                ],
+                [
+                    {
+                        "input": 2,
+                        "output": 1,
+                        "markers": 0,
+                        "replay": True,
+                        "replay_time": 4000,
+                        "next_decision_event_id": 5,
+                    },
+                ]
+            ),
+            (
+                "workflow_with_activity_completed",
+                [
+                    "workflow_execution_started",
+                    "decision_task_scheduled",
+                    "decision_task_started",
+                    "decision_task_completed",
+                    "activity_scheduled",
+                    "activity_started",
+                    "activity_completed",
+                    "decision_task_scheduled",
+                    "decision_task_started",
+                ],
+                [
+                    {
+                        "input": 2,
+                        "output": 1,
+                        "markers": 0,
+                        "replay": True,
+                        "replay_time": 4000,
+                        "next_decision_event_id": 5,
+                    },
+                    {
+                        "input": 3,
+                        "output": 0,
+                        "markers": 0,
+                        "replay": False,
+                        "replay_time": 9000,
+                        "next_decision_event_id": 11,
+                    },
+                ]
+            )
+        ],
+    )
+    def test_successful_cases(self, name, event_types, expected):
+        events = create_mock_history_event(event_types)
+        decision_task = create_mock_decision_task(events)
+        iterator = DecisionEventsIterator(decision_task, events)
+
+        batches = [decision_events for decision_events in iterator]
+        assert len(expected) == len(batches)
+
+        for expect, batch in zip(expected, batches):
+            assert len(batch.input) == expect["input"]
+            assert len(batch.output) == expect["output"]
+            assert len(batch.markers) == expect["markers"]
+            assert batch.replay == expect["replay"]
+            assert batch.replay_current_time_milliseconds == expect["replay_time"]
+            assert batch.next_decision_event_id == expect["next_decision_event_id"]
 
 def create_mock_history_event(
-    event_id: int, event_type: str, timestamp_seconds: int = 1000
-) -> HistoryEvent:
-    """Create a mock history event for testing."""
-    event = HistoryEvent()
-    event.event_id = event_id
+    event_types: List[str]
+) -> List[HistoryEvent]:
 
-    # Create proper protobuf timestamp
-    timestamp = Timestamp()
-    timestamp.seconds = timestamp_seconds
-    event.event_time.CopyFrom(timestamp)
+    events = []
+    for i, event_type in enumerate(event_types):
+        event = HistoryEvent()
+        event.event_id = i + 1
+        event.event_time.FromMilliseconds((i+1) * 1000)
 
-    # Set the appropriate attribute based on event type
-    if event_type == "decision_task_started":
-        event.decision_task_started_event_attributes.SetInParent()
-    elif event_type == "decision_task_completed":
-        event.decision_task_completed_event_attributes.SetInParent()
-    elif event_type == "decision_task_failed":
-        event.decision_task_failed_event_attributes.SetInParent()
-    elif event_type == "decision_task_timed_out":
-        event.decision_task_timed_out_event_attributes.SetInParent()
-    elif event_type == "marker_recorded":
-        event.marker_recorded_event_attributes.SetInParent()
+        # Set the appropriate attribute based on event type
+        if event_type == "decision_task_started":
+            event.decision_task_started_event_attributes.SetInParent()
+        elif event_type == "decision_task_completed":
+            event.decision_task_completed_event_attributes.SetInParent()
+        elif event_type == "decision_task_failed":
+            event.decision_task_failed_event_attributes.SetInParent()
+        elif event_type == "decision_task_timed_out":
+            event.decision_task_timed_out_event_attributes.SetInParent()
+        elif event_type == "marker_recorded":
+            event.marker_recorded_event_attributes.SetInParent()
+        elif event_type == "activity_scheduled":
+            event.activity_task_scheduled_event_attributes.SetInParent()
+        elif event_type == "activity_started":
+            event.activity_task_started_event_attributes.SetInParent()
+        elif event_type == "activity_completed":
+            event.activity_task_completed_event_attributes.SetInParent()
+        elif event_type == "activity_failed":
+            event.activity_task_failed_event_attributes.SetInParent()
+        elif event_type == "activity_timed_out":
+            event.activity_task_timed_out_event_attributes.SetInParent()
+        elif event_type == "activity_cancel_requested":
+            event.activity_task_cancel_requested_event_attributes.SetInParent()
+        elif event_type == "request_cancel_activity_task_failed":
+            event.request_cancel_activity_task_failed_event_attributes.SetInParent()
+        elif event_type == "activity_canceled":
+            event.activity_task_canceled_event_attributes.SetInParent()
+        elif event_type == "timer_started":
+            event.timer_started_event_attributes.SetInParent()
+        elif event_type == "timer_fired":
+            event.timer_fired_event_attributes.SetInParent()
+        elif event_type == "timer_canceled":
+            event.timer_canceled_event_attributes.SetInParent()
+        elif event_type == "cancel_timer_failed":
+            event.cancel_timer_failed_event_attributes.SetInParent()
+        elif event_type == "request_cancel_external_workflow_execution_initiated":
+            event.request_cancel_external_workflow_execution_initiated_event_attributes.SetInParent()
+        elif event_type == "request_cancel_external_workflow_execution_failed":
+            event.request_cancel_external_workflow_execution_failed_event_attributes.SetInParent()
+        elif event_type == "external_workflow_execution_cancel_requested":
+            event.external_workflow_execution_cancel_requested_event_attributes.SetInParent()
+        elif event_type == "workflow_execution_started":
+            event.workflow_execution_started_event_attributes.SetInParent()
+        elif event_type == "workflow_execution_completed":
+            event.workflow_execution_completed_event_attributes.SetInParent()
 
-    return event
+        events.append(event)
+
+    return events
 
 
 def create_mock_decision_task(
@@ -68,228 +188,3 @@ def create_mock_decision_task(
         task.next_page_token = next_page_token
 
     return task
-
-
-class TestDecisionEvents:
-    """Test the DecisionEvents class."""
-
-    def test_decision_events_initialization(self):
-        """Test DecisionEvents initialization."""
-        decision_events = DecisionEvents()
-
-        assert decision_events.get_events() == []
-        assert decision_events.get_markers() == []
-        assert not decision_events.is_replay()
-        assert decision_events.replay_current_time_milliseconds is None
-        assert decision_events.next_decision_event_id is None
-
-    def test_decision_events_with_data(self):
-        """Test DecisionEvents with actual data."""
-        events = [
-            create_mock_history_event(1, "decision_task_started"),
-            create_mock_history_event(2, "decision_task_completed"),
-        ]
-        markers = [create_mock_history_event(3, "marker_recorded")]
-
-        decision_events_obj = DecisionEvents(
-            events=events,
-            markers=markers,
-            replay=True,
-            replay_current_time_milliseconds=123456,
-            next_decision_event_id=4,
-        )
-
-        assert decision_events_obj.get_events() == events
-        assert decision_events_obj.get_markers() == markers
-        assert decision_events_obj.is_replay()
-        assert decision_events_obj.replay_current_time_milliseconds == 123456
-        assert decision_events_obj.next_decision_event_id == 4
-
-    def test_get_event_by_id(self):
-        """Test retrieving event by ID."""
-        event1 = create_mock_history_event(1, "decision_task_started")
-        event2 = create_mock_history_event(2, "decision_task_completed")
-
-        decision_events = DecisionEvents(events=[event1, event2])
-
-        assert decision_events.get_event_by_id(1) == event1
-        assert decision_events.get_event_by_id(2) == event2
-        assert decision_events.get_event_by_id(999) is None
-
-
-class TestDecisionEventsIterator:
-    """Test the DecisionEventsIterator class."""
-
-    @pytest.mark.asyncio
-    async def test_single_decision_iteration(self):
-        """Test processing a single decision iteration."""
-        # Create events for a complete decision iteration
-        events = [
-            create_mock_history_event(1, "decision_task_started", 1000),
-            create_mock_history_event(
-                2, "activity_scheduled", 1001
-            ),  # Some workflow event
-            create_mock_history_event(3, "marker_recorded", 1002),
-            create_mock_history_event(4, "decision_task_completed", 1003),
-        ]
-
-        decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, events)
-
-        assert await iterator.has_next_decision_events()
-
-        decision_events = await iterator.next_decision_events()
-
-        assert len(decision_events.get_events()) == 4
-        assert len(decision_events.get_markers()) == 1
-        assert decision_events.get_markers()[0].event_id == 3
-        # In this test scenario with only one decision iteration, replay gets set to false
-        # when we determine there are no more decision events after this one
-        # This matches the Java client behavior where the last decision events have replay=false
-        assert not decision_events.is_replay()
-        assert decision_events.replay_current_time_milliseconds == 1000 * 1000
-
-    @pytest.mark.asyncio
-    async def test_multiple_decision_iterations(self):
-        """Test processing multiple decision iterations."""
-        # Create events for two decision iterations
-        events = [
-            # First iteration
-            create_mock_history_event(1, "decision_task_started", 1000),
-            create_mock_history_event(2, "decision_task_completed", 1001),
-            # Second iteration
-            create_mock_history_event(3, "decision_task_started", 1002),
-            create_mock_history_event(4, "decision_task_completed", 1003),
-        ]
-
-        decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, events)
-
-        # First iteration
-        assert await iterator.has_next_decision_events()
-        first_decision = await iterator.next_decision_events()
-        assert len(first_decision.get_events()) == 2
-        assert first_decision.get_events()[0].event_id == 1
-
-        # Second iteration
-        assert await iterator.has_next_decision_events()
-        second_decision = await iterator.next_decision_events()
-        assert len(second_decision.get_events()) == 2
-        assert second_decision.get_events()[0].event_id == 3
-
-        # No more iterations
-        assert not await iterator.has_next_decision_events()
-
-    @pytest.mark.asyncio
-    async def test_iterator_protocol(self):
-        """Test that DecisionEventsIterator works with Python iterator protocol."""
-        events = [
-            create_mock_history_event(1, "decision_task_started"),
-            create_mock_history_event(2, "decision_task_completed"),
-            create_mock_history_event(3, "decision_task_started"),
-            create_mock_history_event(4, "decision_task_completed"),
-        ]
-
-        decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, events)
-
-        decision_events_list = []
-        async for decision_events in iterator:
-            decision_events_list.append(decision_events)
-
-        assert len(decision_events_list) == 2
-
-
-class TestUtilityFunctions:
-    """Test utility functions."""
-
-    def test_is_decision_event(self):
-        """Test is_decision_event utility function."""
-        decision_event = create_mock_history_event(1, "decision_task_started")
-        non_decision_event = create_mock_history_event(
-            2, "activity_scheduled"
-        )  # Random event type
-
-        assert is_decision_event(decision_event)
-        assert not is_decision_event(non_decision_event)
-
-    def test_is_marker_event(self):
-        """Test is_marker_event utility function."""
-        marker_event = create_mock_history_event(1, "marker_recorded")
-        non_marker_event = create_mock_history_event(2, "decision_task_started")
-
-        assert is_marker_event(marker_event)
-        assert not is_marker_event(non_marker_event)
-
-    def test_extract_event_timestamp_millis(self):
-        """Test extract_event_timestamp_millis utility function."""
-        event = create_mock_history_event(1, "some_event", 1234)
-
-        timestamp_millis = extract_event_timestamp_millis(event)
-        assert timestamp_millis == 1234 * 1000
-
-        # Test event without timestamp
-        event_no_timestamp = HistoryEvent()
-        assert extract_event_timestamp_millis(event_no_timestamp) is None
-
-
-class TestIntegrationScenarios:
-    """Test real-world integration scenarios."""
-
-    @pytest.mark.asyncio
-    async def test_replay_detection(self):
-        """Test replay mode detection."""
-        # Simulate a scenario where we have historical events and current events
-        events = [
-            create_mock_history_event(1, "decision_task_started"),
-            create_mock_history_event(2, "decision_task_completed"),
-            create_mock_history_event(3, "decision_task_started"),  # Current decision
-        ]
-
-        decision_task = create_mock_decision_task(events)
-        # Mock the started_event_id to indicate current decision
-        decision_task.started_event_id = 3
-
-        iterator = DecisionEventsIterator(decision_task, events)
-
-        # First decision should be replay (but gets set to false when no more events)
-        await iterator.next_decision_events()
-        # Since this test has incomplete events (no completion for the third decision),
-        # the replay logic may behave differently
-        # assert first_decision.is_replay()
-
-        # When we get to current decision, replay should be false
-        # (This would need the completion event to trigger the replay mode change)
-
-    @pytest.mark.asyncio
-    async def test_complex_workflow_scenario(self):
-        """Test a complex workflow with multiple event types."""
-        events = [
-            create_mock_history_event(1, "decision_task_started"),
-            create_mock_history_event(2, "activity_scheduled"),  # Activity scheduled
-            create_mock_history_event(3, "activity_started"),  # Activity started
-            create_mock_history_event(4, "marker_recorded"),
-            create_mock_history_event(5, "activity_completed"),  # Activity completed
-            create_mock_history_event(6, "decision_task_completed"),
-            create_mock_history_event(7, "decision_task_started"),
-            create_mock_history_event(8, "decision_task_completed"),
-        ]
-
-        decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, events)
-
-        all_decisions = []
-        async for decision_events in iterator:
-            all_decisions.append(decision_events)
-
-        assert len(all_decisions) == 2
-
-        # First decision should have more events including markers
-        first_decision = all_decisions[0]
-        assert len(first_decision.get_events()) == 6  # Events 1-6
-        assert len(first_decision.get_markers()) == 1  # Event 4
-
-        # Second decision should be simpler
-        second_decision = all_decisions[1]
-        assert len(second_decision.get_events()) == 2  # Events 7-8
-        assert len(second_decision.get_markers()) == 0

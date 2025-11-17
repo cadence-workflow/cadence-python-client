@@ -1,6 +1,8 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import threading
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence.api.v1.common_pb2 import Payload
@@ -33,6 +35,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         task_list: str,
         registry: Registry,
         identity: str = "unknown",
+        executor: Optional[ThreadPoolExecutor] = None,
         **options,
     ):
         """
@@ -50,6 +53,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         # Thread-safe cache to hold workflow engines keyed by (workflow_id, run_id)
         self._workflow_engines: Dict[Tuple[str, str], WorkflowEngine] = {}
         self._cache_lock = threading.RLock()
+        self._executor = executor
 
     async def _handle_task_implementation(
         self, task: PollForDecisionTaskResponse
@@ -131,7 +135,9 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 )
                 self._workflow_engines[cache_key] = workflow_engine
 
-        decision_result = await workflow_engine.process_decision(task)
+        decision_result = await asyncio.get_running_loop().run_in_executor(
+            self._executor, workflow_engine.process_decision, task
+        )
 
         # Clean up completed workflows from cache to prevent memory leaks
         if workflow_engine._is_workflow_complete:

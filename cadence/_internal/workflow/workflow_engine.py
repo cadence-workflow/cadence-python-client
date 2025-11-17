@@ -30,7 +30,12 @@ class WorkflowEngine:
         self._context = Context(info, self._decisions_helper, self._decision_manager)
         self._is_workflow_complete = False
 
-    async def process_decision(
+    def process_decision(
+        self, decision_task: PollForDecisionTaskResponse
+    ) -> DecisionResult:
+        return asyncio.run(self._process_decision(decision_task))
+
+    async def _process_decision(
         self, decision_task: PollForDecisionTaskResponse
     ) -> DecisionResult:
         """

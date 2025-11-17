@@ -99,7 +99,7 @@ class TestDecisionTaskHandlerIntegration:
 
     @pytest.mark.asyncio
     async def test_handle_decision_task_success(
-        self, decision_task_handler, mock_client
+        self, decision_task_handler: DecisionTaskHandler, mock_client
     ):
         """Test successful decision task handling."""
         # Create a mock decision task
@@ -110,7 +110,7 @@ class TestDecisionTaskHandlerIntegration:
         mock_engine = Mock()
         # Create a proper Decision object
         decision = Decision()
-        mock_engine.process_decision = AsyncMock(
+        mock_engine.process_decision = Mock(
             return_value=Mock(
                 decisions=[decision],  # Proper Decision object
             )
@@ -182,7 +182,7 @@ class TestDecisionTaskHandlerIntegration:
             "cadence.worker._decision_task_handler.WorkflowEngine"
         ) as mock_engine_class:
             mock_engine = Mock()
-            mock_engine.process_decision = AsyncMock(
+            mock_engine.process_decision = Mock(
                 return_value=Mock(
                     decisions=[],
                 )
@@ -211,9 +211,7 @@ class TestDecisionTaskHandlerIntegration:
             "cadence.worker._decision_task_handler.WorkflowEngine"
         ) as mock_engine_class:
             mock_engine = Mock()
-            mock_engine.process_decision = AsyncMock(
-                side_effect=Exception("Test error")
-            )
+            mock_engine.process_decision = Mock(side_effect=Exception("Test error"))
             mock_engine_class.return_value = mock_engine
 
             # Handle the decision task - this should catch the exception

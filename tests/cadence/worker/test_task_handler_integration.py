@@ -84,7 +84,7 @@ class TestTaskHandlerIntegration:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",
@@ -117,7 +117,7 @@ class TestTaskHandlerIntegration:
         # Mock workflow engine to raise an error
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
-        mock_engine.process_decision = AsyncMock(
+        mock_engine.process_decision = Mock(
             side_effect=RuntimeError("Workflow processing failed")
         )
 
@@ -157,7 +157,7 @@ class TestTaskHandlerIntegration:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         # Track if context is activated
         context_activated = False
@@ -229,7 +229,7 @@ class TestTaskHandlerIntegration:
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
 
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",
@@ -266,7 +266,7 @@ class TestTaskHandlerIntegration:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",
@@ -298,7 +298,7 @@ class TestTaskHandlerIntegration:
         # Mock workflow engine to raise an error
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
-        mock_engine.process_decision = AsyncMock(
+        mock_engine.process_decision = Mock(
             side_effect=RuntimeError("Workflow processing failed")
         )
 
@@ -366,7 +366,7 @@ class TestTaskHandlerIntegration:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",

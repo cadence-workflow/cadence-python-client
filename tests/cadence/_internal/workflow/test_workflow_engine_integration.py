@@ -106,8 +106,7 @@ class TestWorkflowEngineIntegration:
 
         return decision_task
 
-    @pytest.mark.asyncio
-    async def test_process_decision_success(
+    def test_process_decision_success(
         self, workflow_engine, mock_client, decision_task
     ):
         """Test successful decision processing."""
@@ -119,14 +118,13 @@ class TestWorkflowEngineIntegration:
             return_value=[Mock()],
         ):
             # Process the decision
-            result = await workflow_engine.process_decision(decision_task)
+            result = workflow_engine.process_decision(decision_task)
 
             # Verify the result
             assert isinstance(result, DecisionResult)
             assert len(result.decisions) == 1
 
-    @pytest.mark.asyncio
-    async def test_process_decision_with_history(
+    def test_process_decision_with_history(
         self, workflow_engine, mock_client, decision_task
     ):
         """Test decision processing with history events."""
@@ -141,13 +139,12 @@ class TestWorkflowEngineIntegration:
                 return_value=[],
             ):
                 # Process the decision
-                await workflow_engine.process_decision(decision_task)
+                workflow_engine.process_decision(decision_task)
 
                 # Verify history events were processed
                 mock_handle.assert_called()
 
-    @pytest.mark.asyncio
-    async def test_process_decision_workflow_complete(
+    def test_process_decision_workflow_complete(
         self, workflow_engine, mock_client, decision_task
     ):
         """Test decision processing when workflow is already complete."""
@@ -160,14 +157,13 @@ class TestWorkflowEngineIntegration:
             return_value=[],
         ):
             # Process the decision
-            result = await workflow_engine.process_decision(decision_task)
+            result = workflow_engine.process_decision(decision_task)
 
             # Verify the result
             assert isinstance(result, DecisionResult)
             assert len(result.decisions) == 0
 
-    @pytest.mark.asyncio
-    async def test_process_decision_error_handling(
+    def test_process_decision_error_handling(
         self, workflow_engine, mock_client, decision_task
     ):
         """Test decision processing error handling."""
@@ -179,7 +175,7 @@ class TestWorkflowEngineIntegration:
             side_effect=Exception("Test error"),
         ):
             # Process the decision
-            result = await workflow_engine.process_decision(decision_task)
+            result = workflow_engine.process_decision(decision_task)
 
             # Verify error handling - should return empty decisions
             assert isinstance(result, DecisionResult)
@@ -314,8 +310,7 @@ class TestWorkflowEngineIntegration:
         assert workflow_engine._decision_manager is not None
         assert workflow_engine._is_workflow_complete is False
 
-    @pytest.mark.asyncio
-    async def test_workflow_engine_without_workflow_definition(
+    def test_workflow_engine_without_workflow_definition(
         self, mock_client: Client, workflow_info, decision_task
     ):
         """Test WorkflowEngine without workflow definition."""
@@ -328,14 +323,13 @@ class TestWorkflowEngineIntegration:
             engine._decision_manager, "collect_pending_decisions", return_value=[]
         ):
             # Process the decision
-            result = await engine.process_decision(decision_task)
+            result = engine.process_decision(decision_task)
 
             # Verify the result
             assert isinstance(result, DecisionResult)
             assert len(result.decisions) == 0
 
-    @pytest.mark.asyncio
-    async def test_workflow_engine_workflow_completion(
+    def test_workflow_engine_workflow_completion(
         self, workflow_engine, mock_client, decision_task
     ):
         """Test workflow completion detection."""
@@ -361,7 +355,7 @@ class TestWorkflowEngineIntegration:
             return_value=[],
         ):
             # Process the decision
-            await workflow_engine.process_decision(decision_task)
+            workflow_engine.process_decision(decision_task)
 
             # Verify workflow is marked as complete
             assert workflow_engine._is_workflow_complete is True
@@ -371,8 +365,7 @@ class TestWorkflowEngineIntegration:
         # This should not raise an exception
         workflow_engine._close_event_loop()
 
-    @pytest.mark.asyncio
-    async def test_process_decision_with_query_results(
+    def test_process_decision_with_query_results(
         self, workflow_engine, mock_client, decision_task
     ):
         """Test decision processing with query results."""
@@ -386,7 +379,7 @@ class TestWorkflowEngineIntegration:
             return_value=mock_decisions,
         ):
             # Process the decision
-            result = await workflow_engine.process_decision(decision_task)
+            result = workflow_engine.process_decision(decision_task)
 
             # Verify the result
             assert isinstance(result, DecisionResult)

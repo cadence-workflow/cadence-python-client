@@ -225,10 +225,7 @@ class WorkflowEngine:
                     self._workflow_instance.run(workflow_input)
                 )
 
-                # signal the loop to stop after the first run
-                self._loop.stop()
-                # this starts the loop and runs once then stops with cleanup
-                self._loop.run_forever()
+                self._loop.run_until_yield()
 
         except Exception as e:
             logger.error(

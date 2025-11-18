@@ -27,6 +27,16 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._stopping = False
         self._closed = False
 
+    def run_until_yield(self):
+        """Run until stop() is called."""
+        self._run_forever_setup()
+        try:
+            while self._ready:
+                self._run_once()
+        finally:
+            self._run_forever_cleanup()
+
+    # Event Loop APIs
     def call_soon(
         self,
         callback: Callable[[Unpack[_Ts]], object],

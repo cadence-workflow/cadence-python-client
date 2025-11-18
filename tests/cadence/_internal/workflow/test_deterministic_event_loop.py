@@ -76,3 +76,17 @@ class TestDeterministicEventLoop:
         size = 10000
         results = self.loop.run_until_complete(coro_await_task(size))
         assert results == list(range(size))
+
+    def test_run_once(self):
+        # run once won't clear the read queue
+        self.loop.create_task(coro_await_task(10))
+        self.loop.stop()
+        self.loop.run_forever()
+        assert len(self.loop._ready) == 10
+
+    def test_run_until_yield(self):
+        # run until yield will clear the read queue
+        task = self.loop.create_task(coro_await_task(3))
+        self.loop.run_until_yield()
+        assert len(self.loop._ready) == 0
+        assert task.done() is True

@@ -27,7 +27,7 @@ class WorkflowEngine:
         self._decision_manager = DecisionManager()
         self._decisions_helper = DecisionsHelper()
         self._context = Context(info, self._decisions_helper, self._decision_manager)
-        self._loop = DeterministicEventLoop()  # type: ignore
+        self._loop = DeterministicEventLoop()
         self._task: Optional[asyncio.Task] = None
 
     def process_decision(

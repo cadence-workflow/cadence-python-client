@@ -30,7 +30,12 @@ class WorkflowEngine:
         self._context = Context(info, self._decisions_helper, self._decision_manager)
         self._is_workflow_complete = False
 
-    async def process_decision(
+    def process_decision(
+        self, decision_task: PollForDecisionTaskResponse
+    ) -> DecisionResult:
+        return asyncio.run(self._process_decision(decision_task))
+
+    async def _process_decision(
         self, decision_task: PollForDecisionTaskResponse
     ) -> DecisionResult:
         """
@@ -128,8 +133,7 @@ class WorkflowEngine:
         processed_any_decision_events = False
 
         # Check if there are any decision events to process
-        while await events_iterator.has_next_decision_events():
-            decision_events = await events_iterator.next_decision_events()
+        for decision_events in events_iterator:
             processed_any_decision_events = True
 
             # Log decision events batch processing (matches Go client patterns)

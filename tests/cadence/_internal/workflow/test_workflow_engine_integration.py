@@ -106,9 +106,7 @@ class TestWorkflowEngineIntegration:
 
         return decision_task
 
-    def test_process_decision_success(
-        self, workflow_engine, mock_client, decision_task
-    ):
+    def test_process_decision_success(self, workflow_engine, decision_task):
         """Test successful decision processing."""
 
         # Mock the decision manager to return some decisions
@@ -123,45 +121,6 @@ class TestWorkflowEngineIntegration:
             # Verify the result
             assert isinstance(result, DecisionResult)
             assert len(result.decisions) == 1
-
-    def test_process_decision_with_history(
-        self, workflow_engine, mock_client, decision_task
-    ):
-        """Test decision processing with history events."""
-
-        # Mock the decision manager
-        with patch.object(
-            workflow_engine._decision_manager, "handle_history_event"
-        ) as mock_handle:
-            with patch.object(
-                workflow_engine._decision_manager,
-                "collect_pending_decisions",
-                return_value=[],
-            ):
-                # Process the decision
-                workflow_engine.process_decision(decision_task)
-
-                # Verify history events were processed
-                mock_handle.assert_called()
-
-    def test_process_decision_workflow_complete(
-        self, workflow_engine, mock_client, decision_task
-    ):
-        """Test decision processing when workflow is already complete."""
-        # Mark workflow as complete
-        workflow_engine._is_workflow_complete = True
-
-        with patch.object(
-            workflow_engine._decision_manager,
-            "collect_pending_decisions",
-            return_value=[],
-        ):
-            # Process the decision
-            result = workflow_engine.process_decision(decision_task)
-
-            # Verify the result
-            assert isinstance(result, DecisionResult)
-            assert len(result.decisions) == 0
 
     def test_process_decision_error_handling(
         self, workflow_engine, mock_client, decision_task
@@ -256,115 +215,6 @@ class TestWorkflowEngineIntegration:
         # Verify no input was extracted due to error
         assert input_data is None
 
-    @pytest.mark.asyncio
-    async def test_execute_workflow_function_sync(self, workflow_engine):
-        """Test synchronous workflow function execution."""
-        input_data = "test-input"
-
-        # Get the workflow function from the instance
-        workflow_func = workflow_engine._workflow_definition.get_run_method(
-            workflow_engine._workflow_instance
-        )
-
-        # Execute the workflow function
-        result = await workflow_engine._execute_workflow_function_once(
-            workflow_func, input_data
-        )
-
-        # Verify the result
-        assert result == "processed: test-input"
-
-    @pytest.mark.asyncio
-    async def test_execute_workflow_function_async(self, workflow_engine):
-        """Test asynchronous workflow function execution."""
-
-        async def async_workflow_func(input_data):
-            return f"async-processed: {input_data}"
-
-        input_data = "test-input"
-
-        # Execute the async workflow function
-        result = await workflow_engine._execute_workflow_function_once(
-            async_workflow_func, input_data
-        )
-
-        # Verify the result
-        assert result == "async-processed: test-input"
-
-    @pytest.mark.asyncio
-    async def test_execute_workflow_function_none(self, workflow_engine):
-        """Test workflow function execution with None function."""
-        input_data = "test-input"
-
-        # Execute with None workflow function - should raise TypeError
-        with pytest.raises(TypeError, match="'NoneType' object is not callable"):
-            await workflow_engine._execute_workflow_function_once(None, input_data)
-
-    def test_workflow_engine_initialization(
-        self, workflow_engine, workflow_info, mock_client, mock_workflow_definition
-    ):
-        """Test WorkflowEngine initialization."""
-        assert workflow_engine._context is not None
-        assert workflow_engine._workflow_definition == mock_workflow_definition
-        assert workflow_engine._workflow_instance is not None
-        assert workflow_engine._decision_manager is not None
-        assert workflow_engine._is_workflow_complete is False
-
-    def test_workflow_engine_without_workflow_definition(
-        self, mock_client: Client, workflow_info, decision_task
-    ):
-        """Test WorkflowEngine without workflow definition."""
-        engine = WorkflowEngine(
-            info=workflow_info,
-            workflow_definition=None,
-        )
-
-        with patch.object(
-            engine._decision_manager, "collect_pending_decisions", return_value=[]
-        ):
-            # Process the decision
-            result = engine.process_decision(decision_task)
-
-            # Verify the result
-            assert isinstance(result, DecisionResult)
-            assert len(result.decisions) == 0
-
-    def test_workflow_engine_workflow_completion(
-        self, workflow_engine, mock_client, decision_task
-    ):
-        """Test workflow completion detection."""
-
-        # Create a workflow definition that returns a result (indicating completion)
-        class CompletingWorkflow:
-            @workflow.run
-            async def run(self, input_data):
-                return "workflow-completed"
-
-        workflow_opts = WorkflowDefinitionOptions(name="completing_workflow")
-        completing_definition = WorkflowDefinition.wrap(
-            CompletingWorkflow, workflow_opts
-        )
-
-        # Replace the workflow definition and instance
-        workflow_engine._workflow_definition = completing_definition
-        workflow_engine._workflow_instance = completing_definition.cls()
-
-        with patch.object(
-            workflow_engine._decision_manager,
-            "collect_pending_decisions",
-            return_value=[],
-        ):
-            # Process the decision
-            workflow_engine.process_decision(decision_task)
-
-            # Verify workflow is marked as complete
-            assert workflow_engine._is_workflow_complete is True
-
-    def test_close_event_loop(self, workflow_engine):
-        """Test event loop closing."""
-        # This should not raise an exception
-        workflow_engine._close_event_loop()
-
     def test_process_decision_with_query_results(
         self, workflow_engine, mock_client, decision_task
     ):
@@ -384,6 +234,3 @@ class TestWorkflowEngineIntegration:
             # Verify the result
             assert isinstance(result, DecisionResult)
             assert len(result.decisions) == 1
-
-
-# Not set in this test

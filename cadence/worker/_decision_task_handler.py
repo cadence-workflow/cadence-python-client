@@ -52,7 +52,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         self._registry = registry
         # Thread-safe cache to hold workflow engines keyed by (workflow_id, run_id)
         self._workflow_engines: Dict[Tuple[str, str], WorkflowEngine] = {}
-        self._cache_lock = threading.RLock()
+        self._cache_lock = threading.RLock()  # TODO: reevaluate if this is still needed
         self._executor = executor
 
     async def _handle_task_implementation(
@@ -140,7 +140,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         )
 
         # Clean up completed workflows from cache to prevent memory leaks
-        if workflow_engine._is_workflow_complete:
+        if workflow_engine.is_done():
             with self._cache_lock:
                 self._workflow_engines.pop(cache_key, None)
                 logger.debug(

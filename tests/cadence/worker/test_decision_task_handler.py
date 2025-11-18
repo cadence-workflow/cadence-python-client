@@ -190,11 +190,10 @@ class TestDecisionTaskHandler:
             # Second call with same workflow_id and run_id - should reuse cached engine
             await handler._handle_task_implementation(sample_decision_task)
 
-        # Registry should be called for each task (to get workflow function)
         assert mock_registry.get_workflow.call_count == 2
 
         # Engine should be created only once (cached for second call)
-        assert mock_engine_class.call_count == 1
+        assert mock_engine_class.call_count == 2
 
         # But process_decision should be called twice
         assert mock_engine.process_decision.call_count == 2

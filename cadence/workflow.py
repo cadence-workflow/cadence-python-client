@@ -193,9 +193,9 @@ class WorkflowContext(ABC):
     ) -> ResultType: ...
 
     @contextmanager
-    def _activate(self) -> Iterator[None]:
+    def _activate(self) -> Iterator["WorkflowContext"]:
         token = WorkflowContext._var.set(self)
-        yield None
+        yield self
         WorkflowContext._var.reset(token)
 
     @staticmethod

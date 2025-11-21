@@ -121,7 +121,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_run_id=run_id,
             workflow_task_list=self.task_list,
             data_converter=self._client.data_converter,
-            workflow_events=workflow_events,
         )
 
         # Use thread-safe cache to get or create workflow engine
@@ -136,7 +135,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 self._workflow_engines[cache_key] = workflow_engine
 
         decision_result = await asyncio.get_running_loop().run_in_executor(
-            self._executor, workflow_engine.process_decision, task
+            self._executor, workflow_engine.process_decision, workflow_events
         )
 
         # Clean up completed workflows from cache to prevent memory leaks

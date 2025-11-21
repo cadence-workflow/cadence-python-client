@@ -1,6 +1,7 @@
+from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil
-from typing import Optional, Any, Unpack, Type, cast
+from typing import Iterator, Optional, Any, Unpack, Type, cast
 
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.decisions_helper import DecisionsHelper
@@ -15,13 +16,12 @@ class Context(WorkflowContext):
     def __init__(
         self,
         info: WorkflowInfo,
-        decision_helper: DecisionsHelper,
         decision_manager: DecisionManager,
     ):
         self._info = info
         self._replay_mode = True
         self._replay_current_time_milliseconds: Optional[int] = None
-        self._decision_helper = decision_helper
+        self._decision_helper = DecisionsHelper()
         self._decision_manager = decision_manager
 
     def info(self) -> WorkflowInfo:
@@ -109,6 +109,12 @@ class Context(WorkflowContext):
     def get_replay_current_time_milliseconds(self) -> Optional[int]:
         """Get the current replay time in milliseconds."""
         return self._replay_current_time_milliseconds
+
+    @contextmanager
+    def _activate(self) -> Iterator["Context"]:
+        token = WorkflowContext._var.set(self)
+        yield self
+        WorkflowContext._var.reset(token)
 
 
 def _round_to_nearest_second(delta: timedelta) -> timedelta:

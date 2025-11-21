@@ -124,7 +124,9 @@ class TestDecisionTaskHandlerIntegration:
             await decision_task_handler._handle_task_implementation(decision_task)
 
             # Verify the workflow engine was called
-            mock_engine.process_decision.assert_called_once_with(decision_task.history.events)
+            mock_engine.process_decision.assert_called_once_with(
+                decision_task.history.events
+            )
 
             # Verify the response was sent
             mock_client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()

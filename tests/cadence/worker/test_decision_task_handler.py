@@ -86,7 +86,10 @@ class TestDecisionTaskHandler:
 
     @pytest.mark.asyncio
     async def test_handle_task_implementation_success(
-        self, handler: DecisionTaskHandler, sample_decision_task: PollForDecisionTaskResponse, mock_registry
+        self,
+        handler: DecisionTaskHandler,
+        sample_decision_task: PollForDecisionTaskResponse,
+        mock_registry,
     ):
         """Test successful decision task handling."""
 
@@ -117,7 +120,9 @@ class TestDecisionTaskHandler:
         mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
 
         # Verify workflow engine was created and used
-        mock_engine.process_decision.assert_called_once_with(sample_decision_task.history.events)
+        mock_engine.process_decision.assert_called_once_with(
+            sample_decision_task.history.events
+        )
 
         # Verify response was sent
         handler._client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()

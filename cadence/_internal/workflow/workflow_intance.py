@@ -1,5 +1,5 @@
 from asyncio import Task
-from typing import Optional
+from typing import Any, Optional
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DataConverter
@@ -19,7 +19,8 @@ class WorkflowInstance:
     def start(self, input: Payload):
         if self._task is None:
             run_method = self._definition.get_run_method(self._instance)
-            workflow_input = self._data_converter.from_data(input, [])
+            # TODO handle multiple inputs
+            workflow_input = self._data_converter.from_data(input, [Any])
             self._task = self._loop.create_task(run_method(*workflow_input))
 
     def is_started(self) -> bool:

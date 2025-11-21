@@ -12,16 +12,14 @@ class WorkflowInstance:
     ):
         self._definition = workflow_definition
         self._data_converter = data_converter
-        self._instance = (
-            workflow_definition.cls().__init__()
-        )  # construct a new workflow object
+        self._instance = workflow_definition.cls()  # construct a new workflow object
         self._loop = DeterministicEventLoop()
         self._task: Optional[Task] = None
 
     def start(self, input: Payload):
         if self._task is None:
             run_method = self._definition.get_run_method(self._instance)
-            workflow_input = self._data_converter.from_data(input, [None])
+            workflow_input = self._data_converter.from_data(input, [])
             self._task = self._loop.create_task(run_method(*workflow_input))
 
     def is_started(self) -> bool:

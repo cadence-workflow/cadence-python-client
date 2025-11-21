@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from typing import List
 
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
@@ -10,7 +11,10 @@ from cadence.api.v1.decision_pb2 import (
     CompleteWorkflowExecutionDecisionAttributes,
     Decision,
 )
-from cadence.api.v1.history_pb2 import WorkflowExecutionStartedEventAttributes
+from cadence.api.v1.history_pb2 import (
+    HistoryEvent,
+    WorkflowExecutionStartedEventAttributes,
+)
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
 
@@ -33,7 +37,8 @@ class WorkflowEngine:
         self._context = Context(info, self._decision_manager)
 
     def process_decision(
-        self, decision_task: PollForDecisionTaskResponse
+        self,
+        events: List[HistoryEvent],
     ) -> DecisionResult:
         """
         Process a decision task and generate decisions using DecisionEventsIterator.
@@ -57,18 +62,14 @@ class WorkflowEngine:
                         "workflow_type": ctx.info().workflow_type,
                         "workflow_id": ctx.info().workflow_id,
                         "run_id": ctx.info().workflow_run_id,
-                        "started_event_id": decision_task.started_event_id,
-                        "attempt": decision_task.attempt,
                     },
                 )
 
                 # Create DecisionEventsIterator for structured event processing
-                events_iterator = DecisionEventsIterator(
-                    decision_task, ctx.info().workflow_events
-                )
+                events_iterator = DecisionEventsIterator(events)
 
                 # Process decision events using iterator-driven approach
-                self._process_decision_events(ctx, events_iterator, decision_task)
+                self._process_decision_events(ctx, events_iterator)
 
                 # Collect all pending decisions from state machines
                 decisions = self._decision_manager.collect_pending_decisions()
@@ -100,8 +101,6 @@ class WorkflowEngine:
                     "workflow_type": ctx.info().workflow_type,
                     "workflow_id": ctx.info().workflow_id,
                     "run_id": ctx.info().workflow_run_id,
-                    "started_event_id": decision_task.started_event_id,
-                    "attempt": decision_task.attempt,
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
@@ -116,7 +115,6 @@ class WorkflowEngine:
         self,
         ctx: Context,
         events_iterator: DecisionEventsIterator,
-        decision_task: PollForDecisionTaskResponse,
     ) -> None:
         """
         Process decision events using the iterator-driven approach similar to Java client.
@@ -139,15 +137,14 @@ class WorkflowEngine:
                 "Processing decision events batch",
                 extra={
                     "workflow_id": ctx.info().workflow_id,
-                    "events_count": len(decision_events.get_events()),
-                    "markers_count": len(decision_events.get_markers()),
-                    "replay_mode": decision_events.is_replay(),
+                    "markers_count": len(decision_events.markers),
+                    "replay_mode": decision_events.replay,
                     "replay_time": decision_events.replay_current_time_milliseconds,
                 },
             )
 
             # Update context with replay information
-            ctx.set_replay_mode(decision_events.is_replay())
+            ctx.set_replay_mode(decision_events.replay)
             if decision_events.replay_current_time_milliseconds:
                 ctx.set_replay_current_time_milliseconds(
                     decision_events.replay_current_time_milliseconds
@@ -161,7 +158,7 @@ class WorkflowEngine:
                         "workflow_id": ctx.info().workflow_id,
                         "marker_name": getattr(marker_event, "marker_name", "unknown"),
                         "event_id": getattr(marker_event, "event_id", None),
-                        "replay_mode": ctx.is_replay_mode(),
+                        "replay_mode": decision_events.replay,
                     },
                 )
                 # Process through state machines (DecisionsHelper now delegates to DecisionManager)
@@ -175,18 +172,24 @@ class WorkflowEngine:
                         "workflow_id": ctx.info().workflow_id,
                         "event_type": getattr(event, "event_type", "unknown"),
                         "event_id": getattr(event, "event_id", None),
-                        "replay_mode": ctx.is_replay_mode(),
+                        "replay_mode": decision_events.replay,
                     },
                 )
+                # start workflow on workflow started event
+                if (
+                    event.WhichOneof("attributes")
+                    == "workflow_execution_started_event_attributes"
+                ):
+                    started_attrs: WorkflowExecutionStartedEventAttributes = (
+                        event.workflow_execution_started_event_attributes
+                    )
+                    if started_attrs and hasattr(started_attrs, "input"):
+                        self._workflow_instance.start(started_attrs.input)
+
                 # Process through state machines (DecisionsHelper now delegates to DecisionManager)
                 self._decision_manager.handle_history_event(event)
 
             # Phase 3: Execute workflow logic
-            if not self._workflow_instance.is_started():
-                self._workflow_instance.start(
-                    self._extract_workflow_input(decision_task)
-                )
-
             self._workflow_instance.run_once()
 
             # Phase 4: update state machine with output events

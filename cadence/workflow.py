@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
     Callable,
-    List,
     cast,
     Optional,
     Union,
@@ -15,10 +14,10 @@ from typing import (
     Type,
     Unpack,
     Any,
+    Generic,
 )
 import inspect
 
-from cadence.api.v1.history_pb2 import HistoryEvent
 from cadence.data_converter import DataConverter
 
 ResultType = TypeVar("ResultType")
@@ -44,6 +43,7 @@ async def execute_activity(
 
 
 T = TypeVar("T", bound=Callable[..., Any])
+C = TypeVar("C")
 
 
 class WorkflowDefinitionOptions(TypedDict, total=False):
@@ -52,7 +52,7 @@ class WorkflowDefinitionOptions(TypedDict, total=False):
     name: str
 
 
-class WorkflowDefinition:
+class WorkflowDefinition(Generic[C]):
     """
     Definition of a workflow class with metadata.
 
@@ -60,8 +60,8 @@ class WorkflowDefinition:
     Provides type safety and metadata for workflow classes.
     """
 
-    def __init__(self, cls: Type, name: str, run_method_name: str):
-        self._cls = cls
+    def __init__(self, cls: Type[C], name: str, run_method_name: str):
+        self._cls: Type[C] = cls
         self._name = name
         self._run_method_name = run_method_name
 
@@ -71,7 +71,7 @@ class WorkflowDefinition:
         return self._name
 
     @property
-    def cls(self) -> Type:
+    def cls(self) -> Type[C]:
         """Get the workflow class."""
         return self._cls
 
@@ -151,7 +151,7 @@ def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
             raise ValueError(f"Workflow run method '{f.__name__}' must be async")
 
         # Attach metadata to the function
-        f._workflow_run = True  # type: ignore
+        setattr(f, "_workflow_run", None)
         return f
 
     # Support both @workflow.run and @workflow.run()
@@ -163,14 +163,13 @@ def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
         return decorator(func)
 
 
-@dataclass
+@dataclass(frozen=True)
 class WorkflowInfo:
     workflow_type: str
     workflow_domain: str
     workflow_id: str
     workflow_run_id: str
     workflow_task_list: str
-    workflow_events: List[HistoryEvent]
     data_converter: DataConverter
 
 

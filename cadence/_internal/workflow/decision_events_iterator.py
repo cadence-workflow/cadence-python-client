@@ -11,7 +11,6 @@ from typing import Iterator, List, Optional
 
 from cadence._internal.workflow.history_event_iterator import HistoryEventsIterator
 from cadence.api.v1.history_pb2 import HistoryEvent
-from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 
 
 @dataclass
@@ -44,10 +43,8 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
 
     def __init__(
         self,
-        decision_task: PollForDecisionTaskResponse,
         events: List[HistoryEvent],
     ):
-        self._decision_task = decision_task
         self._events: HistoryEventsIterator = HistoryEventsIterator(events)
         self._next_decision_event_id: Optional[int] = None
         self._replay_current_time_milliseconds: Optional[int] = None

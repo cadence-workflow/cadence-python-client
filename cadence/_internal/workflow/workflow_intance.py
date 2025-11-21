@@ -23,9 +23,6 @@ class WorkflowInstance:
             workflow_input = self._data_converter.from_data(input, [Any])
             self._task = self._loop.create_task(run_method(*workflow_input))
 
-    def is_started(self) -> bool:
-        return self._task is not None
-
     def run_once(self):
         self._loop.run_until_yield()
 

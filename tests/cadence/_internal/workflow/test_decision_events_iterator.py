@@ -3,16 +3,14 @@
 Tests for Decision Events Iterator.
 """
 
-import pytest
 from typing import List
+import pytest
 
-from cadence.api.v1.history_pb2 import HistoryEvent, History
-from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
-from cadence.api.v1.common_pb2 import WorkflowExecution
 
 from cadence._internal.workflow.decision_events_iterator import (
     DecisionEventsIterator,
 )
+from cadence.api.v1.history_pb2 import HistoryEvent
 
 
 class TestDecisionEventsIterator:
@@ -95,8 +93,7 @@ class TestDecisionEventsIterator:
     )
     def test_successful_cases(self, name, event_types, expected):
         events = create_mock_history_event(event_types)
-        decision_task = create_mock_decision_task(events)
-        iterator = DecisionEventsIterator(decision_task, events)
+        iterator = DecisionEventsIterator(events)
 
         batches = [decision_events for decision_events in iterator]
         assert len(expected) == len(batches)
@@ -166,26 +163,3 @@ def create_mock_history_event(event_types: List[str]) -> List[HistoryEvent]:
         events.append(event)
 
     return events
-
-
-def create_mock_decision_task(
-    events: List[HistoryEvent], next_page_token: bytes = None
-) -> PollForDecisionTaskResponse:
-    """Create a mock decision task for testing."""
-    task = PollForDecisionTaskResponse()
-
-    # Mock history
-    history = History()
-    history.events.extend(events)
-    task.history.CopyFrom(history)
-
-    # Mock workflow execution
-    workflow_execution = WorkflowExecution()
-    workflow_execution.workflow_id = "test-workflow"
-    workflow_execution.run_id = "test-run"
-    task.workflow_execution.CopyFrom(workflow_execution)
-
-    if next_page_token:
-        task.next_page_token = next_page_token
-
-    return task

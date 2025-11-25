@@ -124,7 +124,12 @@ class DeterministicEventLoop(AbstractEventLoop):
                 "eager_start in create_task is not supported for deterministic event loop"
             )
 
-        return tasks.Task(coro, loop=self, **kwargs)
+        task = tasks.Task(coro, loop=self, **kwargs)
+        # We intentionally destroy pending tasks when shutting down the event loop.
+        # If our asyncio implementation supports it, disable the logs
+        if hasattr(task, "_log_destroy_pending"):
+            setattr(task, "_log_destroy_pending", False)
+        return task
 
     def create_future(self) -> Future[Any]:
         return futures.Future(loop=self)

@@ -110,7 +110,7 @@ class SignalDefinition(Generic[P, T]):
         params = _get_signal_signature(fn)
         _validate_signal_return_type(fn)
 
-        return SignalDefinition(fn, name, params, is_async)
+        return SignalDefinition[P, T](fn, name, params, is_async)
 
 
 def _validate_signal_return_type(fn: Callable) -> None:

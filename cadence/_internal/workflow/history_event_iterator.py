@@ -1,3 +1,5 @@
+from typing import Iterator, List, Optional
+from cadence.api.v1.history_pb2 import HistoryEvent
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
@@ -32,3 +34,25 @@ async def iterate_history_events(
         )
         current_page = response.history.events
         next_page_token = response.next_page_token
+
+
+class HistoryEventsIterator(Iterator[HistoryEvent]):
+    def __init__(self, events: List[HistoryEvent]):
+        self._iter = iter(events)
+        self._current = next(self._iter, None)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> HistoryEvent:
+        if not self._current:
+            raise StopIteration("No more events")
+        event = self._current
+        self._current = next(self._iter, None)
+        return event
+
+    def has_next(self) -> bool:
+        return self._current is not None
+
+    def peek(self) -> Optional[HistoryEvent]:
+        return self._current

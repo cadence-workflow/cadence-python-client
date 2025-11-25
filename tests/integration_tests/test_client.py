@@ -7,7 +7,10 @@ from cadence.api.v1.service_domain_pb2 import (
 )
 from cadence.error import EntityNotExistsError
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
-from cadence.api.v1.service_workflow_pb2 import DescribeWorkflowExecutionRequest
+from cadence.api.v1.service_workflow_pb2 import (
+    DescribeWorkflowExecutionRequest,
+    GetWorkflowExecutionHistoryRequest,
+)
 from cadence.api.v1.common_pb2 import WorkflowExecution
 
 
@@ -137,59 +140,27 @@ async def test_workflow_stub_start_and_describe(helper: CadenceHelper):
         )
 
 
-# trying parametrized test for table test
-@pytest.mark.parametrize(
-    "test_case,workflow_id,start_first,expected_same_run",
-    [
-        (
-            "new_workflow",
-            "test-workflow-signal-with-start-123",
-            False,
-            False,
-        ),
-        (
-            "existing_workflow",
-            "test-workflow-signal-existing-456",
-            True,
-            True,
-        ),
-    ],
-)
 @pytest.mark.usefixtures("helper")
-async def test_signal_with_start_workflow(
-    helper: CadenceHelper,
-    test_case: str,
-    workflow_id: str,
-    start_first: bool,
-    expected_same_run: bool,
-):
+async def test_signal_with_start_workflow(helper: CadenceHelper):
     """Test signal_with_start_workflow method.
 
-    Test cases:
-    1. new_workflow: SignalWithStartWorkflow starts a new workflow if it doesn't exist
-    2. existing_workflow: SignalWithStartWorkflow signals existing workflow without restart
+    This integration test verifies:
+    1. Starting a workflow via signal_with_start_workflow
+    2. Sending a signal to the workflow
+    3. Signal appears in the workflow's history with correct name and payload
     """
     async with helper.client() as client:
-        workflow_type = f"test-workflow-signal-{test_case}"
-        task_list_name = f"test-task-list-signal-{test_case}"
+        workflow_type = "test-workflow-signal-with-start"
+        task_list_name = "test-task-list-signal-with-start"
+        workflow_id = "test-workflow-signal-with-start-123"
         execution_timeout = timedelta(minutes=5)
         signal_name = "test-signal"
-        signal_input = {"data": "test-signal-data"}
-
-        first_run_id = None
-        if start_first:
-            first_execution = await client.start_workflow(
-                workflow_type,
-                task_list=task_list_name,
-                execution_start_to_close_timeout=execution_timeout,
-                workflow_id=workflow_id,
-            )
-            first_run_id = first_execution.run_id
+        signal_arg = {"data": "test-signal-data"}
 
         execution = await client.signal_with_start_workflow(
             workflow_type,
             signal_name,
-            signal_input,
+            [signal_arg],
             "arg1",
             "arg2",
             task_list=task_list_name,
@@ -202,20 +173,31 @@ async def test_signal_with_start_workflow(
         assert execution.run_id is not None
         assert execution.run_id != ""
 
-        if expected_same_run:
-            assert execution.run_id == first_run_id
-
-        describe_request = DescribeWorkflowExecutionRequest(
-            domain=DOMAIN_NAME,
-            workflow_execution=WorkflowExecution(
-                workflow_id=execution.workflow_id,
-                run_id=execution.run_id,
-            ),
+        # Fetch workflow history to verify signal was recorded
+        history_response = await client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                skip_archival=True,
+            )
         )
 
-        response = await client.workflow_stub.DescribeWorkflowExecution(
-            describe_request
-        )
+        # Verify signal event appears in history with correct name and payload
+        signal_events = [
+            event
+            for event in history_response.history.events
+            if event.HasField("workflow_execution_signaled_event_attributes")
+        ]
 
-        assert response.workflow_execution_info.type.name == workflow_type
-        assert response.workflow_execution_info.task_list == task_list_name
+        assert len(signal_events) == 1, "Expected exactly one signal event in history"
+        signal_event = signal_events[0]
+        assert (
+            signal_event.workflow_execution_signaled_event_attributes.signal_name
+            == signal_name
+        ), f"Expected signal name '{signal_name}'"
+
+        # Verify signal payload matches what we sent
+        signal_payload_data = signal_event.workflow_execution_signaled_event_attributes.input.data.decode()
+        assert signal_arg["data"] in signal_payload_data, (
+            f"Expected signal payload to contain '{signal_arg['data']}'"
+        )

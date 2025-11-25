@@ -236,8 +236,8 @@ class Client:
         self,
         workflow: Union[str, WorkflowDefinition],
         signal_name: str,
-        signal_input: Any = None,
-        *args,
+        signal_args: list[Any],
+        *workflow_args: Any,
         **options_kwargs: Unpack[StartWorkflowOptions],
     ) -> WorkflowExecution:
         """
@@ -246,8 +246,8 @@ class Client:
         Args:
             workflow: WorkflowDefinition or workflow type name string
             signal_name: Name of the signal
-            signal_input: Input data for the signal
-            *args: Arguments to pass to the workflow if it needs to be started
+            signal_args: List of arguments to pass to the signal handler
+            *workflow_args: Arguments to pass to the workflow if it needs to be started
             **options_kwargs: StartWorkflowOptions as keyword arguments
 
         Returns:
@@ -261,13 +261,15 @@ class Client:
         options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
 
         # Build the start workflow request
-        start_request = self._build_start_workflow_request(workflow, args, options)
+        start_request = self._build_start_workflow_request(
+            workflow, workflow_args, options
+        )
 
         # Encode signal input
         signal_payload = None
-        if signal_input is not None:
+        if signal_args:
             try:
-                signal_payload = self.data_converter.to_data([signal_input])
+                signal_payload = self.data_converter.to_data(signal_args)
             except Exception as e:
                 raise ValueError(f"Failed to encode signal input: {e}")
 
@@ -285,11 +287,6 @@ class Client:
             response: SignalWithStartWorkflowExecutionResponse = (
                 await self.workflow_stub.SignalWithStartWorkflowExecution(request)
             )
-
-            # Emit metrics if available
-            if self.metrics_emitter:
-                # TODO: Add metrics similar to Go client
-                pass
 
             execution = WorkflowExecution()
             execution.workflow_id = start_request.workflow_id

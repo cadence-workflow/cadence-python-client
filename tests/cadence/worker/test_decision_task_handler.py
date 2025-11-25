@@ -7,6 +7,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock
 
 from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.history_pb2 import History
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
     RespondDecisionTaskCompletedRequest,
@@ -63,6 +64,8 @@ class TestDecisionTaskHandler:
         # Add the missing attributes that are now accessed directly
         task.started_event_id = 1
         task.attempt = 1
+        task.history = History()
+        task.next_page_token = b""
         return task
 
     def test_initialization(self, mock_client, mock_registry):
@@ -83,7 +86,10 @@ class TestDecisionTaskHandler:
 
     @pytest.mark.asyncio
     async def test_handle_task_implementation_success(
-        self, handler, sample_decision_task, mock_registry
+        self,
+        handler: DecisionTaskHandler,
+        sample_decision_task: PollForDecisionTaskResponse,
+        mock_registry,
     ):
         """Test successful decision task handling."""
 
@@ -100,10 +106,9 @@ class TestDecisionTaskHandler:
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
-        mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = [Decision()]
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",
@@ -115,7 +120,9 @@ class TestDecisionTaskHandler:
         mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
 
         # Verify workflow engine was created and used
-        mock_engine.process_decision.assert_called_once_with(sample_decision_task)
+        mock_engine.process_decision.assert_called_once_with(
+            sample_decision_task.history.events
+        )
 
         # Verify response was sent
         handler._client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()
@@ -176,7 +183,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",
@@ -188,11 +195,10 @@ class TestDecisionTaskHandler:
             # Second call with same workflow_id and run_id - should reuse cached engine
             await handler._handle_task_implementation(sample_decision_task)
 
-        # Registry should be called for each task (to get workflow function)
         assert mock_registry.get_workflow.call_count == 2
 
         # Engine should be created only once (cached for second call)
-        assert mock_engine_class.call_count == 1
+        assert mock_engine_class.call_count == 2
 
         # But process_decision should be called twice
         assert mock_engine.process_decision.call_count == 2
@@ -223,6 +229,8 @@ class TestDecisionTaskHandler:
         task1.workflow_type.name = "TestWorkflow"
         task1.started_event_id = 1
         task1.attempt = 1
+        task1.history = History()
+        task1.next_page_token = b""
 
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"test_task_token_2"
@@ -233,13 +241,15 @@ class TestDecisionTaskHandler:
         task2.workflow_type.name = "TestWorkflow"
         task2.started_event_id = 2
         task2.attempt = 1
+        task2.history = History()
+        task2.next_page_token = b""
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",
@@ -422,7 +432,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_engine.process_decision = AsyncMock(return_value=mock_decision_result)
+        mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
             "cadence.worker._decision_task_handler.WorkflowEngine",
@@ -442,11 +452,11 @@ class TestDecisionTaskHandler:
                         "workflow_id": "test_workflow_id",
                         "workflow_run_id": "test_run_id",
                         "workflow_task_list": "test_task_list",
+                        "data_converter": handler._client.data_converter,
                     }
 
                 # Verify WorkflowEngine was created with correct parameters
                 mock_workflow_engine_class.assert_called_once()
                 call_args = mock_workflow_engine_class.call_args
                 assert call_args[1]["info"] is not None
-                assert call_args[1]["client"] == handler._client
                 assert call_args[1]["workflow_definition"] == workflow_definition

@@ -1,7 +1,9 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import logging
-import threading
-from typing import Dict, Tuple
+from typing import Optional
 
+from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
@@ -32,6 +34,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         task_list: str,
         registry: Registry,
         identity: str = "unknown",
+        executor: Optional[ThreadPoolExecutor] = None,
         **options,
     ):
         """
@@ -46,9 +49,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         """
         super().__init__(client, task_list, identity, **options)
         self._registry = registry
-        # Thread-safe cache to hold workflow engines keyed by (workflow_id, run_id)
-        self._workflow_engines: Dict[Tuple[str, str], WorkflowEngine] = {}
-        self._cache_lock = threading.RLock()
+        self._executor = executor
 
     async def _handle_task_implementation(
         self, task: PollForDecisionTaskResponse
@@ -102,6 +103,12 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
             raise KeyError(f"Workflow type '{workflow_type_name}' not found")
 
+        # fetch full workflow history
+        # TODO sticky cache
+        workflow_events = [
+            event async for event in iterate_history_events(task, self._client)
+        ]
+
         # Create workflow info and get or create workflow engine from cache
         workflow_info = WorkflowInfo(
             workflow_type=workflow_type_name,
@@ -109,34 +116,17 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_id=workflow_id,
             workflow_run_id=run_id,
             workflow_task_list=self.task_list,
+            data_converter=self._client.data_converter,
         )
 
-        # Use thread-safe cache to get or create workflow engine
-        cache_key = (workflow_id, run_id)
-        with self._cache_lock:
-            workflow_engine = self._workflow_engines.get(cache_key)
-            if workflow_engine is None:
-                workflow_engine = WorkflowEngine(
-                    info=workflow_info,
-                    client=self._client,
-                    workflow_definition=workflow_definition,
-                )
-                self._workflow_engines[cache_key] = workflow_engine
+        workflow_engine = WorkflowEngine(
+            info=workflow_info,
+            workflow_definition=workflow_definition,
+        )
 
-        decision_result = await workflow_engine.process_decision(task)
-
-        # Clean up completed workflows from cache to prevent memory leaks
-        if workflow_engine._is_workflow_complete:
-            with self._cache_lock:
-                self._workflow_engines.pop(cache_key, None)
-                logger.debug(
-                    "Removed completed workflow from cache",
-                    extra={
-                        "workflow_id": workflow_id,
-                        "run_id": run_id,
-                        "cache_size": len(self._workflow_engines),
-                    },
-                )
+        decision_result = await asyncio.get_running_loop().run_in_executor(
+            self._executor, workflow_engine.process_decision, workflow_events
+        )
 
         # Respond with the decisions
         await self._respond_decision_task_completed(task, decision_result)

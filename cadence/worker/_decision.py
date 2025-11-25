@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from cadence.api.v1.service_worker_pb2 import (
@@ -24,8 +25,11 @@ class DecisionWorker:
         permits = asyncio.Semaphore(
             options["max_concurrent_decision_task_execution_size"]
         )
+        executor = ThreadPoolExecutor(
+            max_workers=options["max_concurrent_decision_task_execution_size"]
+        )
         self._decision_handler = DecisionTaskHandler(
-            client, task_list, registry, **options
+            client, task_list, registry, executor=executor, **options
         )
         self._poller = Poller[PollForDecisionTaskResponse](
             options["decision_task_pollers"], permits, self._poll, self._execute

@@ -74,8 +74,12 @@ CancelFn = Callable[[], bool]
 
 
 class DecisionFuture(asyncio.Future[T]):
-    def __init__(self, request_cancel: CancelFn | None = None) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop | None = None,
+        request_cancel: CancelFn | None = None,
+    ) -> None:
+        super().__init__(loop=loop)
         if request_cancel is None:
             request_cancel = self.force_cancel
         self._request_cancel = request_cancel

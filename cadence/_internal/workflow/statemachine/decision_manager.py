@@ -1,6 +1,6 @@
 import asyncio
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Type, Tuple, ClassVar, List
 
 from cadence._internal.workflow.statemachine.activity_state_machine import (
@@ -12,6 +12,7 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionStateMachine,
     DecisionType,
     DecisionFuture,
+    T,
 )
 from cadence._internal.workflow.statemachine.event_dispatcher import (
     EventDispatcher,
@@ -48,7 +49,6 @@ def _create_dispatch_map(
     return result
 
 
-@dataclass
 class DecisionManager:
     """Aggregates multiple decision state machines and coordinates decisions.
 
@@ -64,10 +64,13 @@ class DecisionManager:
             DecisionType.TIMER: timer_events,
         }
     )
-    state_machines: OrderedDict[DecisionId, DecisionStateMachine] = field(
-        default_factory=OrderedDict
-    )
-    aliases: Dict[DecisionAlias, DecisionStateMachine] = field(default_factory=dict)
+
+    def __init__(self, event_loop: asyncio.AbstractEventLoop):
+        self._event_loop = event_loop
+        self.state_machines: OrderedDict[DecisionId, DecisionStateMachine] = (
+            OrderedDict()
+        )
+        self.aliases: Dict[DecisionAlias, DecisionStateMachine] = dict()
 
     # ----- Activity API -----
 
@@ -75,7 +78,7 @@ class DecisionManager:
         self, attrs: decision.ScheduleActivityTaskDecisionAttributes
     ) -> asyncio.Future[Payload]:
         decision_id = DecisionId(DecisionType.ACTIVITY, attrs.activity_id)
-        future = DecisionFuture[Payload](lambda: self._request_cancel(decision_id))
+        future: DecisionFuture[Payload] = self._create_future(decision_id)
         machine = ActivityStateMachine(attrs, future)
         self._add_state_machine(machine)
 
@@ -87,7 +90,7 @@ class DecisionManager:
         self, attrs: decision.StartTimerDecisionAttributes
     ) -> asyncio.Future[None]:
         decision_id = DecisionId(DecisionType.TIMER, attrs.timer_id)
-        future = DecisionFuture[None](lambda: self._request_cancel(decision_id))
+        future: DecisionFuture[None] = self._create_future(decision_id)
         machine = TimerStateMachine(attrs, future)
         self._add_state_machine(machine)
 
@@ -148,6 +151,11 @@ class DecisionManager:
                 decisions.append(to_send)
 
         return decisions
+
+    def _create_future(self, decision_id: DecisionId) -> DecisionFuture[T]:
+        return DecisionFuture[T](
+            self._event_loop, lambda: self._request_cancel(decision_id)
+        )
 
     def _request_cancel(self, decision_id: DecisionId) -> bool:
         machine = self._get_machine(decision_id)

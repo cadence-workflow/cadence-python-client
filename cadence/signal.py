@@ -1,8 +1,8 @@
 """
-Signal definition and registration for Cadence workflows.
+Signal definition for Cadence workflows.
 
-This module provides functionality to define and register signal handlers
-for workflows, similar to ActivityDefinition but for signals.
+This module provides the SignalDefinition class used internally by WorkflowDefinition
+to track signal handler metadata.
 """
 
 import inspect
@@ -16,8 +16,6 @@ from typing import (
     Type,
     TypeVar,
     TypedDict,
-    Unpack,
-    overload,
     get_type_hints,
     Any,
 )
@@ -94,6 +92,9 @@ class SignalDefinition(Generic[P, T]):
         """
         Wrap a function as a SignalDefinition.
 
+        This is an internal method used by WorkflowDefinition to create signal definitions
+        from methods decorated with @workflow.signal.
+
         Args:
             fn: The signal handler function to wrap
             opts: Options for the signal definition
@@ -102,7 +103,7 @@ class SignalDefinition(Generic[P, T]):
             A SignalDefinition instance
 
         Raises:
-            ValueError: If name is not provided in options or return type is not None
+            ValueError: If return type is not None
         """
         name = opts.get("name") or fn.__qualname__
         is_async = inspect.iscoroutinefunction(fn)
@@ -110,53 +111,6 @@ class SignalDefinition(Generic[P, T]):
         _validate_signal_return_type(fn)
 
         return SignalDefinition(fn, name, params, is_async)
-
-
-SignalDecorator = Callable[[Callable[P, T]], SignalDefinition[P, T]]
-
-
-@overload
-def defn(fn: Callable[P, T]) -> SignalDefinition[P, T]: ...
-
-
-@overload
-def defn(**kwargs: Unpack[SignalDefinitionOptions]) -> SignalDecorator: ...
-
-
-def defn(
-    fn: Callable[P, T] | None = None, **kwargs: Unpack[SignalDefinitionOptions]
-) -> SignalDecorator | SignalDefinition[P, T]:
-    """
-    Decorator to define a signal handler.
-
-    Can be used with or without parentheses:
-        @signal.defn(name="approval")
-        async def handle_approval(self, approved: bool):
-            ...
-
-        @signal.defn(name="approval")
-        def handle_approval(self, approved: bool):
-            ...
-
-    Args:
-        fn: The signal handler function to decorate
-        **kwargs: Options for the signal definition (name is required)
-
-    Returns:
-        The decorated function as a SignalDefinition instance
-
-    Raises:
-        ValueError: If name is not provided
-    """
-    options = SignalDefinitionOptions(**kwargs)
-
-    def decorator(inner_fn: Callable[P, T]) -> SignalDefinition[P, T]:
-        return SignalDefinition.wrap(inner_fn, options)
-
-    if fn is not None:
-        return decorator(fn)
-
-    return decorator
 
 
 def _validate_signal_return_type(fn: Callable) -> None:

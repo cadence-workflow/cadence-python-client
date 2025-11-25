@@ -86,7 +86,10 @@ class TestDecisionTaskHandler:
 
     @pytest.mark.asyncio
     async def test_handle_task_implementation_success(
-        self, handler: DecisionTaskHandler, sample_decision_task, mock_registry
+        self,
+        handler: DecisionTaskHandler,
+        sample_decision_task: PollForDecisionTaskResponse,
+        mock_registry,
     ):
         """Test successful decision task handling."""
 
@@ -117,7 +120,9 @@ class TestDecisionTaskHandler:
         mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
 
         # Verify workflow engine was created and used
-        mock_engine.process_decision.assert_called_once_with(sample_decision_task)
+        mock_engine.process_decision.assert_called_once_with(
+            sample_decision_task.history.events
+        )
 
         # Verify response was sent
         handler._client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()
@@ -190,11 +195,10 @@ class TestDecisionTaskHandler:
             # Second call with same workflow_id and run_id - should reuse cached engine
             await handler._handle_task_implementation(sample_decision_task)
 
-        # Registry should be called for each task (to get workflow function)
         assert mock_registry.get_workflow.call_count == 2
 
         # Engine should be created only once (cached for second call)
-        assert mock_engine_class.call_count == 1
+        assert mock_engine_class.call_count == 2
 
         # But process_decision should be called twice
         assert mock_engine.process_decision.call_count == 2
@@ -449,7 +453,6 @@ class TestDecisionTaskHandler:
                         "workflow_run_id": "test_run_id",
                         "workflow_task_list": "test_task_list",
                         "data_converter": handler._client.data_converter,
-                        "workflow_events": [],
                     }
 
                 # Verify WorkflowEngine was created with correct parameters

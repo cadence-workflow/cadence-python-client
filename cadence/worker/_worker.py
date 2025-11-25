@@ -26,6 +26,14 @@ class Worker:
         self._activity_worker = ActivityWorker(client, task_list, registry, options)
         self._decision_worker = DecisionWorker(client, task_list, registry, options)
 
+    @property
+    def client(self) -> Client:
+        return self._client
+
+    @property
+    def task_list(self) -> str:
+        return self._task_list
+
     async def run(self) -> None:
         async with asyncio.TaskGroup() as tg:
             if not self._options["disable_workflow_worker"]:

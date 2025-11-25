@@ -253,7 +253,7 @@ class Client:
         signal_payload = None
         if signal_input is not None:
             try:
-                signal_payload = await self.data_converter.to_data(signal_input)
+                signal_payload = self.data_converter.to_data([signal_input])
             except Exception as e:
                 raise ValueError(f"Failed to encode signal input: {e}")
 

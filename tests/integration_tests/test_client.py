@@ -7,7 +7,10 @@ from cadence.api.v1.service_domain_pb2 import (
 )
 from cadence.error import EntityNotExistsError
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
-from cadence.api.v1.service_workflow_pb2 import DescribeWorkflowExecutionRequest
+from cadence.api.v1.service_workflow_pb2 import (
+    DescribeWorkflowExecutionRequest,
+    GetWorkflowExecutionHistoryRequest,
+)
 from cadence.api.v1.common_pb2 import WorkflowExecution
 
 
@@ -144,7 +147,7 @@ async def test_signal_workflow(helper: CadenceHelper):
     This integration test verifies:
     1. Starting a workflow execution
     2. Sending a signal to the running workflow
-    3. Signal is accepted (no errors thrown)
+    3. Signal appears in the workflow's history
     """
     async with helper.client() as client:
         workflow_type = "test-workflow-signal"
@@ -152,7 +155,7 @@ async def test_signal_workflow(helper: CadenceHelper):
         workflow_id = "test-workflow-signal-789"
         execution_timeout = timedelta(minutes=5)
         signal_name = "test-signal"
-        signal_input = {"action": "update", "value": 42}
+        signal_arg = {"action": "update", "value": 42}
 
         execution = await client.start_workflow(
             workflow_type,
@@ -162,25 +165,31 @@ async def test_signal_workflow(helper: CadenceHelper):
         )
 
         await client.signal_workflow(
-            workflow_id=execution.workflow_id,
-            run_id=execution.run_id,
-            signal_name=signal_name,
-            signal_input=signal_input,
+            execution.workflow_id,
+            execution.run_id,
+            signal_name,
+            signal_arg,
         )
 
-        describe_request = DescribeWorkflowExecutionRequest(
-            domain=DOMAIN_NAME,
-            workflow_execution=WorkflowExecution(
-                workflow_id=execution.workflow_id,
-                run_id=execution.run_id,
-            ),
+        # Fetch workflow history to verify signal was recorded
+        history_response = await client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                skip_archival=True,
+            )
         )
 
-        response = await client.workflow_stub.DescribeWorkflowExecution(
-            describe_request
-        )
+        # Verify signal event appears in history
+        signal_events = [
+            event
+            for event in history_response.history.events
+            if event.HasField("workflow_execution_signaled_event_attributes")
+        ]
 
+        assert len(signal_events) == 1, "Expected exactly one signal event in history"
+        signal_event = signal_events[0]
         assert (
-            response.workflow_execution_info.workflow_execution.workflow_id
-            == workflow_id
-        )
+            signal_event.workflow_execution_signaled_event_attributes.signal_name
+            == signal_name
+        ), f"Expected signal name '{signal_name}'"

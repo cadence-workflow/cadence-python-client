@@ -1,21 +1,24 @@
 import logging
 from dataclasses import dataclass
+import traceback
 from typing import List
 
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.workflow_intance import WorkflowInstance
-from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.common_pb2 import Failure, Payload
 from cadence.api.v1.decision_pb2 import (
     CompleteWorkflowExecutionDecisionAttributes,
     Decision,
+    FailWorkflowExecutionDecisionAttributes,
 )
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     WorkflowExecutionStartedEventAttributes,
 )
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
+from cadence.error import WorkflowFailure
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
 
 logger = logging.getLogger(__name__)
@@ -75,9 +78,24 @@ class WorkflowEngine:
                 decisions = self._decision_manager.collect_pending_decisions()
 
                 # complete workflow if it is done
-                try:
-                    if self._workflow_instance.is_done():
+                if self._workflow_instance.is_done():
+                    try:
                         result = self._workflow_instance.get_result()
+                    except WorkflowFailure as e:
+                        decisions.append(
+                            Decision(
+                                fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes(
+                                    failure=Failure(
+                                        reason=str(e),
+                                        details=traceback.format_exc().encode("utf-8"),
+                                    )
+                                )
+                            )
+                        )
+                    # TODO: handle cancellation error
+                    except Exception:
+                        raise
+                    else:
                         decisions.append(
                             Decision(
                                 complete_workflow_execution_decision_attributes=CompleteWorkflowExecutionDecisionAttributes(
@@ -85,13 +103,7 @@ class WorkflowEngine:
                                 )
                             )
                         )
-                    return DecisionResult(decisions=decisions)
-
-                except Exception:
-                    # TODO: handle CancellationError
-                    # TODO: handle WorkflowError
-                    # TODO: handle unknown error, fail decision task and try again instead of breaking the engine
-                    raise
+                return DecisionResult(decisions=decisions)
 
         except Exception as e:
             # Log decision task failure with full context (matches Java ReplayDecisionTaskHandler)

@@ -141,6 +141,61 @@ async def test_workflow_stub_start_and_describe(helper: CadenceHelper):
 
 
 @pytest.mark.usefixtures("helper")
+async def test_signal_workflow(helper: CadenceHelper):
+    """Test signal_workflow method.
+
+    This integration test verifies:
+    1. Starting a workflow execution
+    2. Sending a signal to the running workflow
+    3. Signal appears in the workflow's history
+    """
+    async with helper.client() as client:
+        workflow_type = "test-workflow-signal"
+        task_list_name = "test-task-list-signal"
+        workflow_id = "test-workflow-signal-789"
+        execution_timeout = timedelta(minutes=5)
+        signal_name = "test-signal"
+        signal_arg = {"action": "update", "value": 42}
+
+        execution = await client.start_workflow(
+            workflow_type,
+            task_list=task_list_name,
+            execution_start_to_close_timeout=execution_timeout,
+            workflow_id=workflow_id,
+        )
+
+        await client.signal_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            signal_name,
+            signal_arg,
+        )
+
+        # Fetch workflow history to verify signal was recorded
+        history_response = await client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                skip_archival=True,
+            )
+        )
+
+        # Verify signal event appears in history
+        signal_events = [
+            event
+            for event in history_response.history.events
+            if event.HasField("workflow_execution_signaled_event_attributes")
+        ]
+
+        assert len(signal_events) == 1, "Expected exactly one signal event in history"
+        signal_event = signal_events[0]
+        assert (
+            signal_event.workflow_execution_signaled_event_attributes.signal_name
+            == signal_name
+        ), f"Expected signal name '{signal_name}'"
+
+
+@pytest.mark.usefixtures("helper")
 async def test_signal_with_start_workflow(helper: CadenceHelper):
     """Test signal_with_start_workflow method.
 

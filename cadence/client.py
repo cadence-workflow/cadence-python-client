@@ -15,6 +15,7 @@ from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 from grpc.aio import Channel, ClientInterceptor, secure_channel, insecure_channel
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.api.v1.service_workflow_pb2 import (
+    SignalWorkflowExecutionRequest,
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
     SignalWithStartWorkflowExecutionRequest,
@@ -231,6 +232,51 @@ class Client:
             return execution
         except Exception:
             raise
+
+    async def signal_workflow(
+        self,
+        workflow_id: str,
+        run_id: str,
+        signal_name: str,
+        *signal_args: Any,
+    ) -> None:
+        """
+        Send a signal to a running workflow execution.
+
+        Args:
+            workflow_id: The workflow ID
+            run_id: The run ID (can be empty string to signal current run)
+            signal_name: Name of the signal
+            *signal_args: Arguments to pass to the signal handler
+
+        Raises:
+            ValueError: If signal encoding fails
+            Exception: If the gRPC call fails
+        """
+        signal_payload = None
+        if signal_args:
+            try:
+                signal_payload = self.data_converter.to_data(list[Any](signal_args))
+            except Exception as e:
+                raise ValueError(f"Failed to encode signal input: {e}")
+
+        workflow_execution = WorkflowExecution()
+        workflow_execution.workflow_id = workflow_id
+        if run_id:
+            workflow_execution.run_id = run_id
+
+        signal_request = SignalWorkflowExecutionRequest(
+            domain=self.domain,
+            workflow_execution=workflow_execution,
+            identity=self.identity,
+            request_id=str(uuid.uuid4()),
+            signal_name=signal_name,
+        )
+
+        if signal_payload:
+            signal_request.signal_input.CopyFrom(signal_payload)
+
+        await self.workflow_stub.SignalWorkflowExecution(signal_request)
 
     async def signal_with_start_workflow(
         self,

@@ -4,16 +4,16 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
+    Iterator,
     Callable,
+    TypeVar,
+    TypedDict,
+    Type,
     cast,
+    Any,
     Optional,
     Union,
-    Iterator,
-    TypedDict,
-    TypeVar,
-    Type,
     Unpack,
-    Any,
     Generic,
 )
 import inspect

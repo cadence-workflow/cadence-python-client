@@ -85,10 +85,7 @@ class WorkflowEngine:
                         decisions.append(
                             Decision(
                                 fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes(
-                                    failure=Failure(
-                                        reason=str(e),
-                                        details=traceback.format_exc().encode("utf-8"),
-                                    )
+                                    failure=_failure_from_workflow_failure(e)
                                 )
                             )
                         )
@@ -233,3 +230,16 @@ class WorkflowEngine:
                     return started_attrs.input
 
         raise ValueError("No WorkflowExecutionStarted event found in history")
+
+
+def _failure_from_workflow_failure(e: WorkflowFailure) -> Failure:
+    cause = e.__cause__
+
+    stacktrace = "".join(traceback.format_exception(cause))
+
+    details = f"message: {str(cause)}\nstacktrace: {stacktrace}"
+
+    return Failure(
+        reason=type(cause).__name__,
+        details=details.encode("utf-8"),
+    )

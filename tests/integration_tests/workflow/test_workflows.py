@@ -23,11 +23,15 @@ class EchoWorkflow:
         return message
 
 
+class MockedFailure(Exception):
+    pass
+
+
 @reg.workflow()
 class FailureWorkflow:
     @workflow.run
     async def failure(self, message: str) -> str:
-        raise Exception("mocked workflow failure")
+        raise MockedFailure("mocked workflow failure")
 
 
 async def test_simple_workflow(helper: CadenceHelper):
@@ -77,14 +81,14 @@ async def test_workflow_failure(helper: CadenceHelper):
         )
 
         assert (
-            "Workflow failed: mocked workflow failure"
+            "MockedFailure"
             == response.history.events[
                 -1
             ].workflow_execution_failed_event_attributes.failure.reason
         )
 
         assert (
-            """raise Exception("mocked workflow failure")"""
+            """raise MockedFailure("mocked workflow failure")"""
             in response.history.events[
                 -1
             ].workflow_execution_failed_event_attributes.failure.details.decode()

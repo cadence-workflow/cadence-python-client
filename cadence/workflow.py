@@ -19,6 +19,7 @@ from typing import (
 import inspect
 
 from cadence.data_converter import DataConverter
+from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
 ResultType = TypeVar("ResultType")
 
@@ -60,10 +61,22 @@ class WorkflowDefinition(Generic[C]):
     Provides type safety and metadata for workflow classes.
     """
 
-    def __init__(self, cls: Type[C], name: str, run_method_name: str):
+    def __init__(
+        self,
+        cls: Type[C],
+        name: str,
+        run_method_name: str,
+        signals: dict[str, SignalDefinition[..., Any]],
+    ):
         self._cls: Type[C] = cls
         self._name = name
         self._run_method_name = run_method_name
+        self._signals = signals
+
+    @property
+    def signals(self) -> dict[str, SignalDefinition[..., Any]]:
+        """Get the signal definitions."""
+        return self._signals
 
     @property
     def name(self) -> str:
@@ -99,6 +112,11 @@ class WorkflowDefinition(Generic[C]):
             name = opts["name"]
 
         # Validate that the class has exactly one run method and find it
+        # Also validate that class does not have multiple signal methods with the same name
+        signals: dict[str, SignalDefinition[..., Any]] = {}
+        signal_names: dict[
+            str, str
+        ] = {}  # Map signal name to method name for duplicate detection
         run_method_name = None
         for attr_name in dir(cls):
             if attr_name.startswith("_"):
@@ -116,10 +134,24 @@ class WorkflowDefinition(Generic[C]):
                     )
                 run_method_name = attr_name
 
+            if hasattr(attr, "_workflow_signal"):
+                signal_name = getattr(attr, "_workflow_signal")
+                if signal_name in signal_names:
+                    raise ValueError(
+                        f"Multiple @workflow.signal methods found in class {cls.__name__} "
+                        f"with signal name '{signal_name}': '{attr_name}' and '{signal_names[signal_name]}'"
+                    )
+                # Create SignalDefinition from the decorated method
+                signal_def = SignalDefinition.wrap(
+                    attr, SignalDefinitionOptions(name=signal_name)
+                )
+                signals[signal_name] = signal_def
+                signal_names[signal_name] = attr_name
+
         if run_method_name is None:
             raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
 
-        return WorkflowDefinition(cls, name, run_method_name)
+        return WorkflowDefinition(cls, name, run_method_name, signals)
 
 
 def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
@@ -161,6 +193,36 @@ def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
     else:
         # Called without parentheses: @workflow.run
         return decorator(func)
+
+
+def signal(name: str | None = None) -> Callable[[T], T]:
+    """
+    Decorator to mark a method as a workflow signal handler.
+
+    Example:
+        @workflow.signal(name="approval_channel")
+        async def approve(self, approved: bool):
+            self.approved = approved
+
+    Args:
+        name: The name of the signal
+
+    Returns:
+        The decorated method with workflow signal metadata
+
+    Raises:
+        ValueError: If name is not provided
+
+    """
+    if name is None:
+        raise ValueError("name is required")
+
+    def decorator(f: T) -> T:
+        f._workflow_signal = name  # type: ignore
+        return f
+
+    # Only allow @workflow.signal(name), require name to be explicitly provided
+    return decorator
 
 
 @dataclass(frozen=True)

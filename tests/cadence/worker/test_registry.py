@@ -9,6 +9,7 @@ from cadence import activity
 from cadence import workflow
 from cadence.worker import Registry
 from cadence.workflow import WorkflowDefinition
+from cadence.signal import SignalDefinition
 from tests.cadence import common_activities
 
 
@@ -212,3 +213,99 @@ class TestRegistry:
         workflow_def = reg.get_workflow("custom_workflow_name")
         assert workflow_def.name == "custom_workflow_name"
         assert workflow_def.cls == CustomWorkflow
+
+    def test_workflow_with_signal(self):
+        """Test workflow with signal handler."""
+        reg = Registry()
+
+        @reg.workflow
+        class WorkflowWithSignal:
+            @workflow.run
+            async def run(self):
+                return "done"
+
+            @workflow.signal(name="approval")
+            async def handle_approval(self, approved: bool):
+                self.approved = approved
+
+        workflow_def = reg.get_workflow("WorkflowWithSignal")
+        assert isinstance(workflow_def, WorkflowDefinition)
+        assert len(workflow_def.signals) == 1
+        assert "approval" in workflow_def.signals
+        signal_def = workflow_def.signals["approval"]
+        assert isinstance(signal_def, SignalDefinition)
+        assert signal_def.name == "approval"
+        assert signal_def.is_async is True
+        assert len(signal_def.params) == 1
+        assert signal_def.params[0].name == "approved"
+
+    def test_workflow_with_multiple_signals(self):
+        """Test workflow with multiple signal handlers."""
+        reg = Registry()
+
+        @reg.workflow
+        class WorkflowWithMultipleSignals:
+            @workflow.run
+            async def run(self):
+                return "done"
+
+            @workflow.signal(name="approval")
+            async def handle_approval(self, approved: bool):
+                self.approved = approved
+
+            @workflow.signal(name="cancel")
+            async def handle_cancel(self):
+                self.cancelled = True
+
+        workflow_def = reg.get_workflow("WorkflowWithMultipleSignals")
+        assert len(workflow_def.signals) == 2
+        assert "approval" in workflow_def.signals
+        assert "cancel" in workflow_def.signals
+        assert isinstance(workflow_def.signals["approval"], SignalDefinition)
+        assert isinstance(workflow_def.signals["cancel"], SignalDefinition)
+        assert workflow_def.signals["approval"].name == "approval"
+        assert workflow_def.signals["cancel"].name == "cancel"
+
+    def test_signal_decorator_requires_name(self):
+        """Test that signal decorator requires name parameter."""
+        with pytest.raises(ValueError, match="name is required"):
+
+            @workflow.signal()
+            async def test_signal(self):
+                pass
+
+    def test_workflow_without_signals(self):
+        """Test that workflow without signals has empty signals dict."""
+        reg = Registry()
+
+        @reg.workflow
+        class WorkflowWithoutSignals:
+            @workflow.run
+            async def run(self):
+                return "done"
+
+        workflow_def = reg.get_workflow("WorkflowWithoutSignals")
+        assert isinstance(workflow_def.signals, dict)
+        assert len(workflow_def.signals) == 0
+
+    def test_duplicate_signal_names_error(self):
+        """Test that duplicate signal names raise ValueError."""
+        reg = Registry()
+
+        with pytest.raises(
+            ValueError, match="Multiple.*signal.*found.*with signal name 'approval'"
+        ):
+
+            @reg.workflow
+            class WorkflowWithDuplicateSignalNames:
+                @workflow.run
+                async def run(self):
+                    return "done"
+
+                @workflow.signal(name="approval")
+                async def handle_approval(self, approved: bool):
+                    self.approved = approved
+
+                @workflow.signal(name="approval")
+                async def handle_approval_different(self):
+                    self.also_approved = True

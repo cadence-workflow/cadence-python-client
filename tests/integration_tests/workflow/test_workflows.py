@@ -23,6 +23,17 @@ class EchoWorkflow:
         return message
 
 
+class MockedFailure(Exception):
+    pass
+
+
+@reg.workflow()
+class FailureWorkflow:
+    @workflow.run
+    async def failure(self, message: str) -> str:
+        raise MockedFailure("mocked workflow failure")
+
+
 async def test_simple_workflow(helper: CadenceHelper):
     async with helper.worker(reg) as worker:
         execution = await worker.client.start_workflow(
@@ -47,6 +58,40 @@ async def test_simple_workflow(helper: CadenceHelper):
             == response.history.events[
                 -1
             ].workflow_execution_completed_event_attributes.result.data.decode()
+        )
+
+
+async def test_workflow_failure(helper: CadenceHelper):
+    async with helper.worker(reg) as worker:
+        execution = await worker.client.start_workflow(
+            "FailureWorkflow",
+            "hello world",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=10),
+        )
+
+        response: GetWorkflowExecutionHistoryResponse = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
+        )
+
+        assert (
+            "MockedFailure"
+            == response.history.events[
+                -1
+            ].workflow_execution_failed_event_attributes.failure.reason
+        )
+
+        assert (
+            """raise MockedFailure("mocked workflow failure")"""
+            in response.history.events[
+                -1
+            ].workflow_execution_failed_event_attributes.failure.details.decode()
         )
 
 

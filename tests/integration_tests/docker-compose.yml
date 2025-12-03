@@ -41,6 +41,18 @@ services:
       services-network:
         aliases:
           - cadence
+  cadence-web:
+    image: ubercadence/web:latest
+    environment:
+      - "CADENCE_GRPC_PEERS=cadence:7833"
+    ports:
+      - "8088:8088"
+    depends_on:
+      - cadence
+    networks:
+      services-network:
+        aliases:
+          - cadence-web
 networks:
   services-network:
     name: services-network

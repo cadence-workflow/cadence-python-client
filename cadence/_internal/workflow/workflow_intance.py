@@ -1,8 +1,9 @@
-from asyncio import Task
+from asyncio import CancelledError, InvalidStateError, Task
 from typing import Any, Optional
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DataConverter
+from cadence.error import WorkflowFailure
 from cadence.workflow import WorkflowDefinition
 
 
@@ -33,6 +34,11 @@ class WorkflowInstance:
     def get_result(self) -> Payload:
         if self._task is None:
             raise RuntimeError("Workflow is not started yet")
-        result = self._task.result()
+        try:
+            result = self._task.result()
+        except (CancelledError, InvalidStateError) as e:
+            raise e
+        except Exception as e:
+            raise WorkflowFailure(f"Workflow failed: {e}") from e
         # TODO: handle result with multiple outputs
         return self._data_converter.to_data([result])

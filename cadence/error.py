@@ -6,6 +6,11 @@ class ActivityFailure(Exception):
         super().__init__(message)
 
 
+class WorkflowFailure(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
 class CadenceRpcError(Exception):
     def __init__(self, message: str, code: grpc.StatusCode, *args):
         super().__init__(message, code, *args)

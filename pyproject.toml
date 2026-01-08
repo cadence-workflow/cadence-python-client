@@ -58,48 +58,17 @@ examples = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cadence-workflow/cadence-python-client"
-Documentation = "https://cadence-python-client.readthedocs.io/"
+Homepage = "https://cadenceworkflow.io/"
+Documentation = "https://cadenceworkflow.io/docs/get-started"
 Repository = "https://github.com/cadence-workflow/cadence-python-client"
 "Bug Tracker" = "https://github.com/cadence-workflow/cadence-python-client/issues"
 
-[project.scripts]
-cadence-cli = "cadence.cli:main"
-
-[tool.setuptools]
-packages = ["cadence"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cadence*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.proto"]
-
-[tool.black]
-line-length = 88
-target-version = ["py311"]
-include = "\\.pyi?$"
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["cadence"]
-
-[tool.flake8]
-max-line-length = 88
-extend-ignore = ["E203", "W503"]
-exclude = [
-    ".git",
-    "__pycache__",
-    "build",
-    "dist",
-    "*.egg-info",
-    "venv",
-    ".venv",
-    ".mypy_cache",
-    ".pytest_cache",
-    "*.pb.py",
-    "*.pb.pyi",
-    "*.pyi",
-]
 
 [tool.mypy]
 python_version = "3.11"
@@ -130,7 +99,6 @@ module = [
     "grpcio.*",
     "grpcio_tools.*",
     "grpc.*",
-    "thriftpy2.*",
     "google.protobuf.*",
     "uber.cadence.*",
     "msgspec.*",

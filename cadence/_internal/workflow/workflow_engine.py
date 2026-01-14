@@ -5,6 +5,7 @@ from typing import List
 
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.workflow_intance import WorkflowInstance
 from cadence.api.v1.common_pb2 import Failure, Payload
@@ -31,12 +32,11 @@ class DecisionResult:
 
 class WorkflowEngine:
     def __init__(self, info: WorkflowInfo, workflow_definition: WorkflowDefinition):
+        self._event_loop = DeterministicEventLoop()
         self._workflow_instance = WorkflowInstance(
-            workflow_definition, info.data_converter
+            self._event_loop, workflow_definition, info.data_converter
         )
-        self._decision_manager = (
-            DecisionManager()
-        )  # TODO: remove this stateful object and use the context instead
+        self._decision_manager = DecisionManager(self._event_loop)
         self._context = Context(info, self._decision_manager)
 
     def process_decision(

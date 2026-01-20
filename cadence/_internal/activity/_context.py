@@ -3,7 +3,8 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Any
 
 from cadence import Client
-from cadence.activity import ActivityInfo, ActivityContext, ActivityDefinition
+from cadence._internal.activity._definition import BaseDefinition
+from cadence.activity import ActivityInfo, ActivityContext
 from cadence.api.v1.common_pb2 import Payload
 
 
@@ -12,20 +13,21 @@ class _Context(ActivityContext):
         self,
         client: Client,
         info: ActivityInfo,
-        activity_fn: ActivityDefinition[[Any], Any],
+        activity_def: BaseDefinition[[Any], Any],
     ):
         self._client = client
         self._info = info
-        self._activity_fn = activity_fn
+        self._activity_def = activity_def
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
         with self._activate():
-            return await self._activity_fn(*params)
+            return await self._activity_def.impl_fn(*params)
 
     def _to_params(self, payload: Payload) -> list[Any]:
-        type_hints = [param.type_hint for param in self._activity_fn.params]
-        return self._client.data_converter.from_data(payload, type_hints)
+        return self._activity_def.signature.params_from_payload(
+            self._client.data_converter, payload
+        )
 
     def client(self) -> Client:
         return self._client
@@ -39,10 +41,10 @@ class _SyncContext(_Context):
         self,
         client: Client,
         info: ActivityInfo,
-        activity_fn: ActivityDefinition[[Any], Any],
+        activity_def: BaseDefinition[[Any], Any],
         executor: ThreadPoolExecutor,
     ):
-        super().__init__(client, info, activity_fn)
+        super().__init__(client, info, activity_def)
         self._executor = executor
 
     async def execute(self, payload: Payload) -> Any:
@@ -52,7 +54,7 @@ class _SyncContext(_Context):
 
     def _run(self, args: list[Any]) -> Any:
         with self._activate():
-            return self._activity_fn(*args)
+            return self._activity_def.impl_fn(*args)
 
     def client(self) -> Client:
         raise RuntimeError("client is only supported in async activities")

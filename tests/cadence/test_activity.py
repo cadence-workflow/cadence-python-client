@@ -1,51 +1,30 @@
-from cadence.activity import ActivityParameter, ExecutionStrategy
+from cadence import Registry
 from tests.cadence.common_activities import (
-    simple_fn,
-    async_echo,
     ActivityInterface,
-    Activities,
+    ActivityImpl,
+    echo,
 )
 
 
-def test_sync():
-    definition = simple_fn
+def test_activity_fn() -> None:
+    reg = Registry()
 
-    assert definition.name == "simple_fn"
-    assert definition.params == []
-    assert definition.result_type is None.__class__
-    assert definition.strategy == ExecutionStrategy.THREAD_POOL
+    reg.register_activity(echo)
 
-
-def test_async():
-    definition = async_echo
-
-    assert definition.name == "async_echo"
-    assert definition.params == [
-        ActivityParameter(
-            name="incoming", type_hint=str, has_default=False, default_value=None
-        )
-    ]
-    assert definition.result_type is str
-    assert definition.strategy == ExecutionStrategy.ASYNC
+    assert reg.get_activity(echo.name) is not None
+    # Verify the decorator doesn't interfere with calling the methods
+    assert echo("hello") == "hello"
 
 
-def test_interface():
-    definition = ActivityInterface.do_something
+def test_activity_interface() -> None:
+    impl = ActivityImpl("expected")
+    reg = Registry()
 
-    assert definition.name == "ActivityInterface.do_something"
-    assert definition.params == []
-    assert definition.result_type is str
-    assert definition.strategy == ExecutionStrategy.THREAD_POOL
+    reg.register_activities(impl)
 
-
-def test_class_async():
-    definition = Activities.echo_async
-
-    assert definition.name == "Activities.echo_async"
-    assert definition.params == [
-        ActivityParameter(
-            name="incoming", type_hint=str, has_default=False, default_value=None
-        )
-    ]
-    assert definition.result_type is str
-    assert definition.strategy == ExecutionStrategy.ASYNC
+    assert reg.get_activity(ActivityInterface.add.name) is not None
+    assert reg.get_activity(ActivityInterface.do_something.name) is not None
+    # Verify the decorator doesn't interfere with calling the methods
+    assert impl.add(1, 2) == 3
+    assert impl.do_something() == "expected"
+    assert ActivityImpl.do_something(impl) == "expected"

@@ -18,6 +18,7 @@ from typing import (
 )
 import inspect
 
+from cadence._internal.fn_signature import FnSignature
 from cadence.data_converter import DataConverter
 from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
@@ -67,11 +68,13 @@ class WorkflowDefinition(Generic[C]):
         name: str,
         run_method_name: str,
         signals: dict[str, SignalDefinition[..., Any]],
+        run_signature: FnSignature,
     ):
         self._cls: Type[C] = cls
         self._name = name
         self._run_method_name = run_method_name
         self._signals = signals
+        self._run_signature = run_signature
 
     @property
     def signals(self) -> dict[str, SignalDefinition[..., Any]]:
@@ -118,6 +121,7 @@ class WorkflowDefinition(Generic[C]):
             str, str
         ] = {}  # Map signal name to method name for duplicate detection
         run_method_name = None
+        run_signature = None
         for attr_name in dir(cls):
             if attr_name.startswith("_"):
                 continue
@@ -133,6 +137,7 @@ class WorkflowDefinition(Generic[C]):
                         f"Multiple @workflow.run methods found in class {cls.__name__}"
                     )
                 run_method_name = attr_name
+                run_signature = FnSignature.of(attr)
 
             if hasattr(attr, "_workflow_signal"):
                 signal_name = getattr(attr, "_workflow_signal")
@@ -148,10 +153,29 @@ class WorkflowDefinition(Generic[C]):
                 signals[signal_name] = signal_def
                 signal_names[signal_name] = attr_name
 
-        if run_method_name is None:
+        if run_method_name is None or run_signature is None:
             raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
 
-        return WorkflowDefinition(cls, name, run_method_name, signals)
+        return WorkflowDefinition(cls, name, run_method_name, signals, run_signature)
+
+
+class WorkflowDecorator:
+    def __init__(
+        self,
+        options: WorkflowDefinitionOptions,
+        callback_fn: Callable[[WorkflowDefinition], None] | None = None,
+    ):
+        self._options = options
+        self._callback_fn = callback_fn
+
+    def __call__(self, cls: Type[C]) -> Type[C]:
+        workflow_opts = WorkflowDefinitionOptions(**self._options)
+        workflow_opts["name"] = self._options.get("name") or cls.__name__
+        workflow_def = WorkflowDefinition.wrap(cls, workflow_opts)
+        if self._callback_fn is not None:
+            self._callback_fn(workflow_def)
+
+        return cls
 
 
 def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:

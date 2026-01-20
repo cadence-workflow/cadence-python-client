@@ -53,7 +53,7 @@ class DefaultDataConverter(DataConverter):
     ) -> List[Any]:
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
-            if not type_hint:
+            if not type_hint or type_hint is Any:
                 value = values[i]
             elif i < len(values):
                 value = convert(values[i], type_hint)

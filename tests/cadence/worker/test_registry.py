@@ -123,17 +123,6 @@ class TestRegistry:
             is not None
         )
         assert reg.get_activity("ActivityInterface.do_something") is not None
-        assert (
-            reg.get_activity(common_activities.ActivityInterface.do_something.name)()
-            == "result"
-        )
-
-    def test_register_activities_invalid_impl(self):
-        impl = common_activities.InvalidImpl()
-        reg = Registry()
-
-        with pytest.raises(ValueError):
-            reg.register_activities(impl)
 
     def test_add(self):
         registry = Registry()

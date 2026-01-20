@@ -1,4 +1,3 @@
-# type: ignore
 from datetime import timedelta
 
 import pytest
@@ -100,7 +99,7 @@ async def test_workflow_failure(helper: CadenceHelper):
 async def test_workflow_fn(helper: CadenceHelper):
     async with helper.worker(reg) as worker:
         execution = await worker.client.start_workflow(
-            EchoWorkflow.echo,
+            EchoWorkflow.echo,  # type: ignore
             "hello world",
             task_list=worker.task_list,
             execution_start_to_close_timeout=timedelta(seconds=10),

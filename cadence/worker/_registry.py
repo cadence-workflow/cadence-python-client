@@ -12,32 +12,41 @@ from typing import (
     Dict,
     Optional,
     Unpack,
-    TypedDict,
     overload,
     Type,
     Union,
     TypeVar,
+    Awaitable,
+    ParamSpec,
+    Any,
+    Sequence,
 )
+
+from cadence._internal.activity._definition import BaseDefinition
 from cadence.activity import (
     ActivityDefinitionOptions,
     ActivityDefinition,
     ActivityDecorator,
     P,
-    T,
+    R,
+    _AsyncActivityDefinition,
+    _SyncActivityDefinition,
 )
-from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
+from cadence.workflow import (
+    WorkflowDefinition,
+    WorkflowDefinitionOptions,
+    WorkflowDecorator,
+)
 
 logger = logging.getLogger(__name__)
 
 # TypeVar for workflow class types
 W = TypeVar("W")
 
-
-class RegisterWorkflowOptions(TypedDict, total=False):
-    """Options for registering a workflow."""
-
-    name: Optional[str]
-    alias: Optional[str]
+_P1 = ParamSpec("_P1")
+_T1 = TypeVar("_T1")
+_P2 = ParamSpec("_P2")
+_T2 = TypeVar("_T2")
 
 
 class Registry:
@@ -52,11 +61,17 @@ class Registry:
         """Initialize the registry."""
         self._workflows: Dict[str, WorkflowDefinition] = {}
         self._activities: Dict[str, ActivityDefinition] = {}
-        self._workflow_aliases: Dict[str, str] = {}  # alias -> name mapping
+
+    @overload
+    def workflow(self, cls: Type[W]) -> Type[W]: ...
+    @overload
+    def workflow(
+        self, **kwargs: Unpack[WorkflowDefinitionOptions]
+    ) -> WorkflowDecorator: ...
 
     def workflow(
-        self, cls: Optional[Type[W]] = None, **kwargs: Unpack[RegisterWorkflowOptions]
-    ) -> Union[Type[W], Callable[[Type[W]], Type[W]]]:
+        self, cls: Optional[Type[W]] = None, **kwargs: Unpack[WorkflowDefinitionOptions]
+    ) -> Union[Type[W], WorkflowDecorator]:
         """
         Register a workflow class.
 
@@ -74,35 +89,27 @@ class Registry:
             KeyError: If workflow name already exists
             ValueError: If class workflow is invalid
         """
-        options = RegisterWorkflowOptions(**kwargs)
+        options = WorkflowDefinitionOptions(**kwargs)
 
-        def decorator(target: Type[W]) -> Type[W]:
-            workflow_name = options.get("name") or target.__name__
-
-            if workflow_name in self._workflows:
-                raise KeyError(f"Workflow '{workflow_name}' is already registered")
-
-            # Create WorkflowDefinition with type information
-            workflow_opts = WorkflowDefinitionOptions(name=workflow_name)
-            workflow_def = WorkflowDefinition.wrap(target, workflow_opts)
-            self._workflows[workflow_name] = workflow_def
-
-            # Register alias if provided
-            alias = options.get("alias")
-            if alias:
-                if alias in self._workflow_aliases:
-                    raise KeyError(f"Workflow alias '{alias}' is already registered")
-                self._workflow_aliases[alias] = workflow_name
-
-            logger.info(f"Registered workflow '{workflow_name}'")
-            return target
+        decorator = WorkflowDecorator(options, self._register_workflow)
 
         if cls is None:
             return decorator
         return decorator(cls)
 
+    def _register_workflow(self, defn: WorkflowDefinition) -> None:
+        if defn.name in self._workflows:
+            raise KeyError(f"Workflow '{defn.name}' is already registered")
+
+        self._workflows[defn.name] = defn
+
     @overload
-    def activity(self, func: Callable[P, T]) -> ActivityDefinition[P, T]: ...
+    def activity(self, func: Callable[P, R]) -> _SyncActivityDefinition[P, R]: ...
+
+    @overload
+    def activity(
+        self, func: Callable[P, Awaitable[R]]
+    ) -> _AsyncActivityDefinition[P, R]: ...
 
     @overload
     def activity(
@@ -111,9 +118,13 @@ class Registry:
 
     def activity(
         self,
-        func: Callable[P, T] | None = None,
+        func: Union[Callable[_P1, _T1], Callable[_P2, Awaitable[_T2]], None] = None,
         **kwargs: Unpack[ActivityDefinitionOptions],
-    ) -> ActivityDecorator | ActivityDefinition[P, T]:
+    ) -> Union[
+        ActivityDecorator,
+        _SyncActivityDefinition[_P1, _T1],
+        _AsyncActivityDefinition[_P2, _T2],
+    ]:
         """
         Register an activity function.
 
@@ -130,13 +141,7 @@ class Registry:
             KeyError: If activity name already exists
         """
         options = ActivityDefinitionOptions(**kwargs)
-
-        def decorator(f: Callable[P, T]) -> ActivityDefinition[P, T]:
-            defn = ActivityDefinition.wrap(f, options)
-
-            self._register_activity(defn)
-
-            return defn
+        decorator = ActivityDecorator(options, self._register_activity)
 
         if func is not None:
             return decorator(func)
@@ -151,12 +156,12 @@ class Registry:
         for defn in activities:
             self._register_activity(defn)
 
-    def register_activity(self, defn: Callable) -> None:
-        if not isinstance(defn, ActivityDefinition):
-            raise ValueError(f"{defn.__qualname__} must have @activity.defn decorator")
+    def register_activity(self, defn: ActivityDefinition[Any, Any]) -> None:
+        if not isinstance(defn, BaseDefinition):
+            raise ValueError(f"{defn} must have @activity.defn decorator")
         self._register_activity(defn)
 
-    def _register_activity(self, defn: ActivityDefinition) -> None:
+    def _register_activity(self, defn: ActivityDefinition[Any, Any]) -> None:
         if defn.name in self._activities:
             raise KeyError(f"Activity '{defn.name}' is already registered")
 
@@ -175,13 +180,8 @@ class Registry:
         Raises:
             KeyError: If workflow is not found
         """
-        # Check if it's an alias
-        actual_name = self._workflow_aliases.get(name, name)
 
-        if actual_name not in self._workflows:
-            raise KeyError(f"Workflow '{name}' not found in registry")
-
-        return self._workflows[actual_name]
+        return self._workflows[name]
 
     def get_activity(self, name: str) -> ActivityDefinition:
         """
@@ -204,6 +204,10 @@ class Registry:
             result._register_activity(fn)
         for name, fn in other._activities.items():
             result._register_activity(fn)
+        for name, workflow in self._workflows.items():
+            result._register_workflow(workflow)
+        for name, workflow in other._workflows.items():
+            result._register_workflow(workflow)
 
         return result
 
@@ -216,30 +220,13 @@ class Registry:
         return result
 
 
-def _find_activity_definitions(instance: object) -> list[ActivityDefinition]:
-    attr_to_def: dict[str, ActivityDefinition] = {}
-    for t in instance.__class__.__mro__:
-        for attr in dir(t):
-            if attr.startswith("_"):
-                continue
-            value = getattr(t, attr)
-            if isinstance(value, ActivityDefinition):
-                if attr in attr_to_def:
-                    raise ValueError(
-                        f"'{attr}' was overridden with a duplicate activity definition"
-                    )
-                attr_to_def[attr] = value
+def _find_activity_definitions(instance: object) -> Sequence[ActivityDefinition]:
+    attr_to_def: dict[str, BaseDefinition] = {}
+    for attr in dir(instance):
+        if attr.startswith("_"):
+            continue
+        value = getattr(instance, attr)
+        if isinstance(value, BaseDefinition):
+            attr_to_def[attr] = value
 
-    result: list[ActivityDefinition] = []
-    for attr, definition in attr_to_def.items():
-        result.append(
-            ActivityDefinition(
-                getattr(instance, attr),
-                definition.name,
-                definition.strategy,
-                definition.params,
-                definition.result_type,
-            )
-        )
-
-    return result
+    return list(attr_to_def.values())

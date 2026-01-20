@@ -1,5 +1,5 @@
 from asyncio import CancelledError, InvalidStateError, Task
-from typing import Any, Optional
+from typing import Optional
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DataConverter
@@ -20,11 +20,13 @@ class WorkflowInstance:
         self._instance = workflow_definition.cls()  # construct a new workflow object
         self._task: Optional[Task] = None
 
-    def start(self, input: Payload):
+    def start(self, payload: Payload):
         if self._task is None:
             run_method = self._definition.get_run_method(self._instance)
-            # TODO handle multiple inputs
-            workflow_input = self._data_converter.from_data(input, [Any])
+            # noinspection PyProtectedMember
+            workflow_input = self._definition._run_signature.params_from_payload(
+                self._data_converter, payload
+            )
             self._task = self._loop.create_task(run_method(*workflow_input))
 
     def run_once(self):

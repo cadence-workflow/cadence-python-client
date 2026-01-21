@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""
-Tests for the registry functionality.
-"""
-
+# type: ignore
 import pytest
 
 from cadence import activity

@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Integration tests for task handlers.
-"""
-
 import pytest
 from contextlib import contextmanager
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock

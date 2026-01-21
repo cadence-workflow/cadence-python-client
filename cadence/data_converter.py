@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Protocol, List, Type, Any
+from typing import Protocol, List, Type, Any, Sequence
 
 from cadence.api.v1.common_pb2 import Payload
 from json import JSONDecoder
@@ -24,7 +24,9 @@ class DefaultDataConverter(DataConverter):
         # Need to use std lib decoder in order to decode the custom whitespace delimited data format
         self._decoder = JSONDecoder(strict=False)
 
-    def from_data(self, payload: Payload, type_hints: List[Type | None]) -> List[Any]:
+    def from_data(
+        self, payload: Payload, type_hints: Sequence[Type | None]
+    ) -> List[Any]:
         if not payload.data:
             return DefaultDataConverter._convert_into([], type_hints)
 
@@ -33,7 +35,7 @@ class DefaultDataConverter(DataConverter):
         return self._decode_whitespace_delimited(payload_str, type_hints)
 
     def _decode_whitespace_delimited(
-        self, payload: str, type_hints: List[Type | None]
+        self, payload: str, type_hints: Sequence[Type | None]
     ) -> List[Any]:
         results: List[Any] = []
         start, end = 0, len(payload)
@@ -46,7 +48,9 @@ class DefaultDataConverter(DataConverter):
         return DefaultDataConverter._convert_into(results, type_hints)
 
     @staticmethod
-    def _convert_into(values: List[Any], type_hints: List[Type | None]) -> List[Any]:
+    def _convert_into(
+        values: List[Any], type_hints: Sequence[Type | None]
+    ) -> List[Any]:
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
             if not type_hint:

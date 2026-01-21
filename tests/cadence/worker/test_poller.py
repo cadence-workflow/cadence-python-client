@@ -8,8 +8,8 @@ from cadence.worker._poller import Poller
 @pytest.mark.asyncio
 async def test_poller():
     permits = asyncio.Semaphore(1)
-    incoming = asyncio.Queue()
-    outgoing = asyncio.Queue()
+    incoming = asyncio.Queue[str]()
+    outgoing = asyncio.Queue[str]()
     poller = Poller(1, permits, incoming.get, outgoing.put)
 
     task = asyncio.create_task(poller.run())
@@ -25,8 +25,8 @@ async def test_poller():
 @pytest.mark.asyncio
 async def test_poller_empty_task():
     permits = asyncio.Semaphore(1)
-    incoming = asyncio.Queue()
-    outgoing = asyncio.Queue()
+    incoming = asyncio.Queue[str | None]()
+    outgoing = asyncio.Queue[str]()
     poller = Poller(1, permits, incoming.get, outgoing.put)
 
     task = asyncio.create_task(poller.run())
@@ -56,7 +56,7 @@ async def test_poller_num_tasks():
         await done.wait()
         return "foo"
 
-    outgoing = asyncio.Queue()
+    outgoing = asyncio.Queue[str]()
     poller = Poller(5, permits, poll_func, outgoing.put)
     task = asyncio.create_task(poller.run())
 
@@ -121,7 +121,7 @@ async def test_poller_poll_error():
             await done.wait()
             return "bar"
 
-    outgoing = asyncio.Queue()
+    outgoing = asyncio.Queue[str]()
     poller = Poller(1, permits, poll_func, outgoing.put)
 
     task = asyncio.create_task(poller.run())
@@ -136,7 +136,7 @@ async def test_poller_poll_error():
 async def test_poller_execute_error():
     permits = asyncio.Semaphore(1)
 
-    outgoing = asyncio.Queue()
+    outgoing = asyncio.Queue[str]()
     call_count = 0
 
     async def execute(item: str):
@@ -146,7 +146,7 @@ async def test_poller_execute_error():
             raise RuntimeError("oh no")
         await outgoing.put(item)
 
-    incoming = asyncio.Queue()
+    incoming = asyncio.Queue[str]()
     poller = Poller(1, permits, incoming.get, execute)
 
     task = asyncio.create_task(poller.run())

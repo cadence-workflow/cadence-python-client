@@ -3,10 +3,10 @@ from typing import Tuple, Type
 
 import pytest
 from google.protobuf import any_pb2
-from google.rpc import status_pb2, code_pb2
+from google.rpc import status_pb2, code_pb2  # type: ignore
 from grpc import server
 from grpc.aio import insecure_channel
-from grpc_status.rpc_status import to_status
+from grpc_status.rpc_status import to_status  # type: ignore
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence.api.v1 import error_pb2, service_workflow_pb2_grpc

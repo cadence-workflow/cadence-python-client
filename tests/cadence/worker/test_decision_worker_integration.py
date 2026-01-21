@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Integration tests for DecisionWorker with DecisionTaskHandler.
-"""
-
 import asyncio
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
@@ -13,6 +8,7 @@ from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     WorkflowExecutionStartedEventAttributes,
 )
+from cadence.worker import WorkerOptions
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._registry import Registry
 from cadence import workflow
@@ -52,11 +48,11 @@ class TestDecisionWorkerIntegration:
     @pytest.fixture
     def decision_worker(self, mock_client, registry):
         """Create a DecisionWorker instance."""
-        options = {
-            "identity": "test-worker",
-            "max_concurrent_decision_task_execution_size": 1,
-            "decision_task_pollers": 1,
-        }
+        options = WorkerOptions(
+            identity="test-worker",
+            max_concurrent_decision_task_execution_size=1,
+            decision_task_pollers=1,
+        )
         return DecisionWorker(
             client=mock_client,
             task_list="test-task-list",
@@ -297,11 +293,11 @@ class TestDecisionWorkerIntegration:
 
     def test_decision_worker_options_handling(self, mock_client, registry):
         """Test DecisionWorker with various options."""
-        options = {
-            "identity": "custom-worker",
-            "max_concurrent_decision_task_execution_size": 5,
-            "decision_task_pollers": 3,
-        }
+        options = WorkerOptions(
+            identity="custom-worker",
+            max_concurrent_decision_task_execution_size=5,
+            decision_task_pollers=3,
+        )
 
         worker = DecisionWorker(
             client=mock_client,

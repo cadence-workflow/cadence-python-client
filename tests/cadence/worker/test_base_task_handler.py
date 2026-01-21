@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Unit tests for BaseTaskHandler class.
-"""
-
 import pytest
 from unittest.mock import Mock
 

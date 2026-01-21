@@ -267,7 +267,7 @@ class TestClientStartWorkflow:
             request.domain = "test-domain"
             return request
 
-        client._build_start_workflow_request = Mock(side_effect=mock_build_request)
+        client._build_start_workflow_request = Mock(side_effect=mock_build_request)  # type: ignore
 
         execution = await client.start_workflow(
             "TestWorkflow",
@@ -298,7 +298,7 @@ class TestClientStartWorkflow:
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method
-        client._build_start_workflow_request = Mock(
+        client._build_start_workflow_request = Mock(  # type: ignore
             return_value=StartWorkflowExecutionRequest()
         )
 
@@ -324,7 +324,7 @@ class TestClientStartWorkflow:
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method to capture options
-        captured_options = None
+        captured_options: StartWorkflowOptions = StartWorkflowOptions()
 
         def mock_build_request(workflow, args, options):
             nonlocal captured_options
@@ -333,7 +333,7 @@ class TestClientStartWorkflow:
             request.workflow_id = "test-workflow-id"
             return request
 
-        client._build_start_workflow_request = Mock(side_effect=mock_build_request)
+        client._build_start_workflow_request = Mock(side_effect=mock_build_request)  # type: ignore
 
         await client.start_workflow(
             "TestWorkflow",
@@ -365,7 +365,7 @@ class TestClientStartWorkflow:
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method to capture options
-        captured_options = None
+        captured_options: StartWorkflowOptions = StartWorkflowOptions()
 
         def mock_build_request(workflow, args, options):
             nonlocal captured_options
@@ -374,7 +374,7 @@ class TestClientStartWorkflow:
             request.workflow_id = "test-workflow-id"
             return request
 
-        client._build_start_workflow_request = Mock(side_effect=mock_build_request)
+        client._build_start_workflow_request = Mock(side_effect=mock_build_request)  # type: ignore
 
         await client.start_workflow(
             "TestWorkflow",

@@ -1,3 +1,4 @@
+# type: ignore
 import asyncio
 from datetime import timedelta
 

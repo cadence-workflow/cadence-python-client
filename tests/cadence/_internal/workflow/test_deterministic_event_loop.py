@@ -3,12 +3,12 @@ import asyncio
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 
 
-async def coro_append(results: list, i: int):
+async def coro_append(results: list[int], i: int):
     results.append(i)
 
 
 async def coro_await(size: int):
-    results = []
+    results: list[int] = []
     for i in range(size):
         await coro_append(results, i)
     return results
@@ -19,7 +19,7 @@ async def coro_await_future(future: asyncio.Future):
 
 
 async def coro_await_task(size: int):
-    results = []
+    results: list[int] = []
     for i in range(size):
         asyncio.create_task(coro_append(results, i))
     return results
@@ -40,11 +40,15 @@ class TestDeterministicEventLoop:
 
     def test_call_soon(self):
         """Test _run_once executes single callback."""
-        results = []
-        expected = []
+        results: list[int] = []
+        expected: list[int] = []
         for i in range(10000):
             expected.append(i)
-            self.loop.call_soon(lambda x=i: results.append(x))
+
+            def add_to_result(result: int):
+                results.append(result)
+
+            self.loop.call_soon(add_to_result, i)
 
         self.loop._run_once()
 

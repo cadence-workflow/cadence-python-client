@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Unpack
 
 from cadence import Registry
 from cadence.client import ClientOptions, Client
@@ -16,7 +16,7 @@ class CadenceHelper:
 
     @asynccontextmanager
     async def worker(
-        self, registry: Registry, **kwargs: WorkerOptions
+        self, registry: Registry, **kwargs: Unpack[WorkerOptions]
     ) -> AsyncGenerator[Worker, None]:
         async with self.client() as client:
             worker = Worker(client, self.test_name, registry, **kwargs)

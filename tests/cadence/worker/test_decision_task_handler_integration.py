@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Integration tests for DecisionTaskHandler and WorkflowEngine.
-"""
-
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
@@ -39,8 +34,8 @@ class TestDecisionTaskHandlerIntegration:
         """Create a registry with a test workflow."""
         reg = Registry()
 
-        @reg.workflow(name="test_workflow")
-        class TestWorkflow:
+        @reg.workflow(name="test_workflow")  # type: ignore
+        class TestWorkflow:  # type: ignore
             @workflow.run
             async def run(self, input_data):
                 """Simple test workflow that returns the input."""

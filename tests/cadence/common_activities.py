@@ -1,3 +1,4 @@
+from typing import Protocol
 from dataclasses import dataclass
 
 from cadence import activity
@@ -43,7 +44,7 @@ class Activities:
         return incoming
 
 
-class ActivityInterface:
+class ActivityInterface(Protocol):
     @activity.defn()
     def do_something(self) -> str: ...
 
@@ -52,7 +53,7 @@ class ActivityInterface:
 class ActivityImpl(ActivityInterface):
     result: str
 
-    def do_something(self) -> str:
+    def do_something(self) -> str:  # type: ignore
         return self.result
 
 

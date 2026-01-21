@@ -9,12 +9,15 @@ from cadence.workflow import WorkflowDefinition
 
 class WorkflowInstance:
     def __init__(
-        self, workflow_definition: WorkflowDefinition, data_converter: DataConverter
+        self,
+        loop: DeterministicEventLoop,
+        workflow_definition: WorkflowDefinition,
+        data_converter: DataConverter,
     ):
+        self._loop = loop
         self._definition = workflow_definition
         self._data_converter = data_converter
         self._instance = workflow_definition.cls()  # construct a new workflow object
-        self._loop = DeterministicEventLoop()
         self._task: Optional[Task] = None
 
     def start(self, input: Payload):

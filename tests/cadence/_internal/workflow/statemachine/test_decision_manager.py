@@ -1,3 +1,4 @@
+import asyncio
 from asyncio import CancelledError
 
 import pytest
@@ -8,7 +9,7 @@ from cadence.api.v1.common_pb2 import Payload
 
 
 async def test_activity_dispatch():
-    decisions = DecisionManager()
+    decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
@@ -22,7 +23,7 @@ async def test_activity_dispatch():
 
 
 async def test_simple_cancellation():
-    decisions = DecisionManager()
+    decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
@@ -34,7 +35,7 @@ async def test_simple_cancellation():
 
 
 async def test_cancellation_not_immediate():
-    decisions = DecisionManager()
+    decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
@@ -47,7 +48,7 @@ async def test_cancellation_not_immediate():
 
 
 async def test_cancellation_completed():
-    decisions = DecisionManager()
+    decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
@@ -78,7 +79,7 @@ async def test_cancellation_completed():
 
 
 async def test_collect_decisions():
-    decisions = DecisionManager()
+    decisions = DecisionManager(asyncio.get_event_loop())
 
     activity1 = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
@@ -105,7 +106,7 @@ async def test_collect_decisions():
 
 
 async def test_collect_decisions_ignore_empty():
-    decisions = DecisionManager()
+    decisions = DecisionManager(asyncio.get_event_loop())
 
     _ = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
@@ -117,7 +118,7 @@ async def test_collect_decisions_ignore_empty():
 
 async def test_collection_decisions_reordering():
     # Decisions should be emitted in the order that they happened within the workflow
-    decisions = DecisionManager()
+    decisions = DecisionManager(asyncio.get_event_loop())
 
     activity1 = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")

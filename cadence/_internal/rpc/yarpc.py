@@ -8,6 +8,8 @@ SERVICE_KEY = "rpc-service"
 CALLER_KEY = "rpc-caller"
 ENCODING_KEY = "rpc-encoding"
 ENCODING_PROTO = "proto"
+CALLER_TYPE_KEY = "cadence-caller-type"
+CALLER_TYPE_VALUE = "sdk"
 
 
 class YarpcMetadataInterceptor(UnaryUnaryClientInterceptor):
@@ -16,6 +18,7 @@ class YarpcMetadataInterceptor(UnaryUnaryClientInterceptor):
             (SERVICE_KEY, service),
             (CALLER_KEY, caller),
             (ENCODING_KEY, ENCODING_PROTO),
+            (CALLER_TYPE_KEY, CALLER_TYPE_VALUE),
         )
 
     async def intercept_unary_unary(

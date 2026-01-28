@@ -55,7 +55,7 @@ def client_options(docker_ip: str, docker_services: Services) -> ClientOptions:
 
 @pytest.fixture(scope="session", autouse=True)
 async def create_test_domain(client_options: ClientOptions) -> None:
-    helper = CadenceHelper(client_options, "create_test_domain")
+    helper = CadenceHelper(client_options, "create_test_domain", "")
     async with helper.client() as client:
         logging.info("Connecting to service...")
         # It takes around a minute for the Cadence server to start up with Cassandra
@@ -86,4 +86,4 @@ async def create_test_domain(client_options: ClientOptions) -> None:
 async def helper(
     client_options: ClientOptions, request: pytest.FixtureRequest
 ) -> CadenceHelper:
-    return CadenceHelper(client_options, request.node.name)
+    return CadenceHelper(client_options, request.node.name, request.node.fspath)

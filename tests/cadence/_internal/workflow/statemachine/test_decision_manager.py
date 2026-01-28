@@ -12,9 +12,9 @@ async def test_activity_dispatch():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
-    decisions.handle_history_event(activity_scheduled(1, "a"))
+    decisions.handle_history_event(activity_scheduled(1, "0"))
     decisions.handle_history_event(activity_started(2, 1))
     decisions.handle_history_event(activity_completed(3, 1, Payload(data=b"completed")))
 
@@ -26,7 +26,7 @@ async def test_simple_cancellation():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
     activity_result.cancel()
 
@@ -38,9 +38,9 @@ async def test_cancellation_not_immediate():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
-    decisions.handle_history_event(activity_scheduled(1, "a"))
+    decisions.handle_history_event(activity_scheduled(1, "0"))
     activity_result.cancel()
 
     assert activity_result.done() is False
@@ -51,15 +51,15 @@ async def test_cancellation_completed():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
-    decisions.handle_history_event(activity_scheduled(1, "a"))
+    decisions.handle_history_event(activity_scheduled(1, "0"))
     activity_result.cancel()
     decisions.handle_history_event(
         history.HistoryEvent(
             event_id=2,
             activity_task_cancel_requested_event_attributes=history.ActivityTaskCancelRequestedEventAttributes(
-                activity_id="a"
+                activity_id="0"
             ),
         )
     )
@@ -82,22 +82,22 @@ async def test_collect_decisions():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity1 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
     activity2 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="b")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
 
     # Order matters
     assert decisions.collect_pending_decisions() == [
         decision.Decision(
             schedule_activity_task_decision_attributes=decision.ScheduleActivityTaskDecisionAttributes(
-                activity_id="a"
+                activity_id="0"
             )
         ),
         decision.Decision(
             schedule_activity_task_decision_attributes=decision.ScheduleActivityTaskDecisionAttributes(
-                activity_id="b"
+                activity_id="1"
             )
         ),
     ]
@@ -108,10 +108,8 @@ async def test_collect_decisions():
 async def test_collect_decisions_ignore_empty():
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    _ = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
-    )
-    decisions.handle_history_event(activity_scheduled(1, "a"))
+    _ = decisions.schedule_activity(decision.ScheduleActivityTaskDecisionAttributes())
+    decisions.handle_history_event(activity_scheduled(1, "0"))
 
     assert decisions.collect_pending_decisions() == []
 
@@ -121,27 +119,27 @@ async def test_collection_decisions_reordering():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity1 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="a")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
     activity2 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes(activity_id="b")
+        decision.ScheduleActivityTaskDecisionAttributes()
     )
 
     assert decisions.collect_pending_decisions() == [
         decision.Decision(
             schedule_activity_task_decision_attributes=decision.ScheduleActivityTaskDecisionAttributes(
-                activity_id="a"
+                activity_id="0"
             )
         ),
         decision.Decision(
             schedule_activity_task_decision_attributes=decision.ScheduleActivityTaskDecisionAttributes(
-                activity_id="b"
+                activity_id="1"
             )
         ),
     ]
 
-    decisions.handle_history_event(activity_scheduled(1, "a"))
-    decisions.handle_history_event(activity_scheduled(2, "b"))
+    decisions.handle_history_event(activity_scheduled(1, "0"))
+    decisions.handle_history_event(activity_scheduled(2, "1"))
     # cancel them in reverse order
     activity2.cancel()
     activity1.cancel()
@@ -150,12 +148,12 @@ async def test_collection_decisions_reordering():
     assert decisions.collect_pending_decisions() == [
         decision.Decision(
             request_cancel_activity_task_decision_attributes=decision.RequestCancelActivityTaskDecisionAttributes(
-                activity_id="b"
+                activity_id="1"
             )
         ),
         decision.Decision(
             request_cancel_activity_task_decision_attributes=decision.RequestCancelActivityTaskDecisionAttributes(
-                activity_id="a"
+                activity_id="0"
             )
         ),
     ]

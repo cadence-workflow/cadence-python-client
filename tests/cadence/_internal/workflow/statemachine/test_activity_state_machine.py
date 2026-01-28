@@ -8,6 +8,9 @@ from cadence._internal.workflow.statemachine.activity_state_machine import (
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionFuture,
 )
+from cadence._internal.workflow.statemachine.nondeterminism import (
+    record_immediate_cancel,
+)
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, Failure
 from cadence.api.v1.decision_pb2 import RequestCancelActivityTaskDecisionAttributes
@@ -37,7 +40,7 @@ async def test_activity_state_machine_cancelled_before_initiated():
     assert res is True
     assert completed.done() is True
     assert completed.cancelled() is True
-    assert m.get_decision() is None
+    assert m.get_decision() == record_immediate_cancel(attrs)
 
 
 async def test_activity_state_machine_cancelled_after_initiated():

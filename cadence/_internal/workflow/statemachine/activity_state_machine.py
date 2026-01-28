@@ -6,6 +6,9 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     BaseDecisionStateMachine,
 )
 from cadence._internal.workflow.statemachine.event_dispatcher import EventDispatcher
+from cadence._internal.workflow.statemachine.nondeterminism import (
+    record_immediate_cancel,
+)
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload
 from cadence.error import ActivityFailure
@@ -30,12 +33,14 @@ class ActivityStateMachine(BaseDecisionStateMachine):
         return DecisionId(DecisionType.ACTIVITY, self.request.activity_id)
 
     def get_decision(self) -> decision.Decision | None:
-        if self.state is DecisionState.CREATED:
+        if self.state is DecisionState.REQUESTED:
             return decision.Decision(
                 schedule_activity_task_decision_attributes=self.request
             )
+        if self.state is DecisionState.CANCELED_AFTER_REQUESTED:
+            return record_immediate_cancel(self.request)
 
-        if self.state is DecisionState.CANCELED_AFTER_INITIATED:
+        if self.state is DecisionState.CANCELED_AFTER_RECORDED:
             return decision.Decision(
                 request_cancel_activity_task_decision_attributes=decision.RequestCancelActivityTaskDecisionAttributes(
                     activity_id=self.request.activity_id,
@@ -45,20 +50,20 @@ class ActivityStateMachine(BaseDecisionStateMachine):
         return None
 
     def request_cancel(self) -> bool:
-        if self.state is DecisionState.CREATED:
-            self._transition(DecisionState.COMPLETED)
+        if self.state is DecisionState.REQUESTED:
+            self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
             self.completed.force_cancel()
             return True
 
-        if self.state is DecisionState.INITIATED:
-            self._transition(DecisionState.CANCELED_AFTER_INITIATED)
+        if self.state is DecisionState.RECORDED:
+            self._transition(DecisionState.CANCELED_AFTER_RECORDED)
             return True
 
         return False
 
     @activity_events.event(id_attr="activity_id", event_id_is_alias=True)
     def handle_scheduled(self, _: history.ActivityTaskScheduledEventAttributes) -> None:
-        self._transition(DecisionState.INITIATED)
+        self._transition(DecisionState.RECORDED)
 
     @activity_events.event()
     def handle_started(self, _: history.ActivityTaskStartedEventAttributes) -> None:
@@ -97,10 +102,10 @@ class ActivityStateMachine(BaseDecisionStateMachine):
     def handle_cancel_requested(
         self, _: history.ActivityTaskCancelRequestedEventAttributes
     ) -> None:
-        self._transition(DecisionState.CANCELLATION_DECISION_SENT)
+        self._transition(DecisionState.CANCELLATION_RECORDED)
 
     @activity_events.event("activity_id")
     def handle_cancel_failed(
         self, _: history.RequestCancelActivityTaskFailedEventAttributes
     ) -> None:
-        self._transition(DecisionState.INITIATED)
+        self._transition(DecisionState.RECORDED)

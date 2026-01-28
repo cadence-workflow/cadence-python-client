@@ -6,6 +6,9 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     BaseDecisionStateMachine,
 )
 from cadence._internal.workflow.statemachine.event_dispatcher import EventDispatcher
+from cadence._internal.workflow.statemachine.nondeterminism import (
+    record_immediate_cancel,
+)
 from cadence.api.v1 import decision, history
 
 timer_events = EventDispatcher("timer_id")
@@ -28,9 +31,11 @@ class TimerStateMachine(BaseDecisionStateMachine):
         return DecisionId(DecisionType.TIMER, self.request.timer_id)
 
     def get_decision(self) -> decision.Decision | None:
-        if self.state is DecisionState.CREATED:
+        if self.state is DecisionState.REQUESTED:
             return decision.Decision(start_timer_decision_attributes=self.request)
-        if self.state is DecisionState.CANCELED_AFTER_INITIATED:
+        if self.state is DecisionState.CANCELED_AFTER_REQUESTED:
+            return record_immediate_cancel(self.request)
+        if self.state is DecisionState.CANCELED_AFTER_RECORDED:
             return decision.Decision(
                 cancel_timer_decision_attributes=decision.CancelTimerDecisionAttributes(
                     timer_id=self.request.timer_id,
@@ -39,13 +44,13 @@ class TimerStateMachine(BaseDecisionStateMachine):
         return None
 
     def request_cancel(self) -> bool:
-        if self.state is DecisionState.CREATED:
-            self._transition(DecisionState.COMPLETED)
+        if self.state is DecisionState.REQUESTED:
+            self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
             self.completed.force_cancel()
             return True
 
-        if self.state is DecisionState.INITIATED:
-            self._transition(DecisionState.CANCELED_AFTER_INITIATED)
+        if self.state is DecisionState.RECORDED:
+            self._transition(DecisionState.CANCELED_AFTER_RECORDED)
             self.completed.force_cancel()
             return True
 
@@ -53,7 +58,7 @@ class TimerStateMachine(BaseDecisionStateMachine):
 
     @timer_events.event()
     def handle_started(self, _: history.TimerStartedEventAttributes) -> None:
-        self._transition(DecisionState.INITIATED)
+        self._transition(DecisionState.RECORDED)
 
     @timer_events.event()
     def handle_fired(self, _: history.TimerFiredEventAttributes) -> None:
@@ -70,4 +75,4 @@ class TimerStateMachine(BaseDecisionStateMachine):
         # This leaves the timer in a likely invalid state, but matches the other clients.
         # The only way for timer cancellation to fail is if the timer ID isn't known, so this
         # can't really happen in the first place.
-        self._transition(DecisionState.INITIATED)
+        self._transition(DecisionState.RECORDED)

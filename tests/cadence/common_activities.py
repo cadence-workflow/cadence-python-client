@@ -35,29 +35,46 @@ async def async_echo(incoming: str) -> str:
 
 
 class Activities:
-    @activity.defn()
+    @activity.method()
     def echo_sync(self, incoming: str) -> str:
         return incoming
 
-    @activity.defn()
+    @activity.method()
     async def echo_async(self, incoming: str) -> str:
         return incoming
 
 
 class ActivityInterface(Protocol):
-    @activity.defn()
+    @activity.method()
     def do_something(self) -> str: ...
+
+    @activity.method()
+    async def other_thing(self) -> str: ...
+
+    @activity.method()
+    def add(self, a: int, b: int) -> int: ...
+
+
+class PartialImplementation(ActivityInterface):
+    @activity.override(ActivityInterface.add)
+    def add(self, a: int, b: int) -> int:
+        return a + b
+
+    @activity.override(ActivityInterface.other_thing)
+    async def other_thing(self) -> str:
+        return "hello"
 
 
 @dataclass
-class ActivityImpl(ActivityInterface):
+class ActivityImpl(PartialImplementation):
     result: str
 
-    def do_something(self) -> str:  # type: ignore
+    @activity.override(ActivityInterface.do_something)
+    def do_something(self) -> str:
         return self.result
 
 
 class InvalidImpl(ActivityInterface):
-    @activity.defn(name="something else entirely")
+    @activity.override(ActivityInterface.do_something)
     def do_something(self) -> str:
         return "hehe"

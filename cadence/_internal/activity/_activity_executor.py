@@ -1,12 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
 
 from cadence._internal.activity._context import _Context, _SyncContext
-from cadence.activity import ActivityInfo, ActivityDefinition, ExecutionStrategy
+from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
+from cadence.activity import ActivityInfo, ActivityDefinition
 from cadence.api.v1.common_pb2 import Failure
 from cadence.api.v1.service_worker_pb2 import (
     PollForActivityTaskResponse,
@@ -42,12 +43,13 @@ class ActivityExecutor:
             result = await context.execute(task.input)
             await self._report_success(task, result)
         except Exception as e:
+            _logger.exception("Activity failed")
             await self._report_failure(task, e)
 
     def _create_context(self, task: PollForActivityTaskResponse) -> _Context:
         activity_type = task.activity_type.name
         try:
-            activity_def = self._registry(activity_type)
+            activity_def = cast(BaseDefinition, self._registry(activity_type))
         except KeyError:
             raise KeyError(f"Activity type not found: {activity_type}") from None
 

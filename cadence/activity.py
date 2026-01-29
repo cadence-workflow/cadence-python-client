@@ -4,27 +4,34 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta, datetime
-from enum import Enum
-from functools import update_wrapper
-from inspect import signature, Parameter
 from typing import (
     Iterator,
     TypedDict,
     Unpack,
     Callable,
-    Type,
     ParamSpec,
     TypeVar,
-    Generic,
-    get_type_hints,
-    Any,
     overload,
-    Tuple,
-    Sequence,
+    Awaitable,
+    Self,
+    Protocol,
+    cast,
+    Union,
+    Any,
+    Concatenate,
+    Generic,
+    Type,
 )
 
 from cadence import Client
-from cadence.workflow import WorkflowContext, ActivityOptions, execute_activity
+from cadence._internal.activity._definition import (
+    AsyncImpl,
+    SyncImpl,
+    AsyncMethodImpl,
+    SyncMethodImpl,
+)
+from cadence._internal.fn_signature import FnSignature
+from cadence.workflow import ActivityOptions
 
 
 @dataclass(frozen=True)
@@ -80,108 +87,114 @@ class ActivityContext(ABC):
         return ActivityContext._var.get()
 
 
-@dataclass(frozen=True)
-class ActivityParameter:
-    name: str
-    type_hint: Type | None
-    has_default: bool
-    default_value: Any
-
-
-class ExecutionStrategy(Enum):
-    ASYNC = "async"
-    THREAD_POOL = "thread_pool"
-
-
 class ActivityDefinitionOptions(TypedDict, total=False):
     name: str
 
 
+T = TypeVar("T", contravariant=True)
 P = ParamSpec("P")
-T = TypeVar("T")
+R = TypeVar("R", covariant=True)
 
 
-class ActivityDefinition(Generic[P, T]):
+class ActivityDefinition(Protocol[P, R]):
+    @property
+    def name(self) -> str: ...
+
+    def with_options(self, **kwargs: Unpack[ActivityOptions]) -> Self: ...
+
+    async def execute(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
+
+
+class _SyncActivityDefinition(ActivityDefinition[P, R], Protocol):
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
+
+
+class _AsyncActivityDefinition(ActivityDefinition[P, R], Protocol):
+    async def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
+
+
+class _SyncActivityMethodDefinition(ActivityDefinition[P, R], Protocol[T, P, R]):
+    def __call__(self, original_self: T, *args: P.args, **kwargs: P.kwargs) -> R: ...
+
+    @overload
+    def __get__(
+        self, instance: None, owner: Type[T]
+    ) -> "_SyncActivityMethodDefinition[T, P, R]": ...
+    @overload
+    def __get__(self, instance: T, owner: Type[T]) -> _SyncActivityDefinition[P, R]: ...
+    def __get__(
+        self, instance: T | None, owner: Type[T]
+    ) -> _SyncActivityDefinition[P, R] | Self: ...
+
+
+class _AsyncActivityMethodDefinition(ActivityDefinition[P, R], Protocol[T, P, R]):
+    async def __call__(
+        self, original_self: T, *args: P.args, **kwargs: P.kwargs
+    ) -> R: ...
+
+    @overload
+    def __get__(
+        self, instance: None, owner: Type[T]
+    ) -> "_AsyncActivityMethodDefinition[T, P, R]": ...
+    @overload
+    def __get__(
+        self, instance: T, owner: Type[T]
+    ) -> _AsyncActivityDefinition[P, R]: ...
+    def __get__(
+        self, instance: T | None, owner: Type[T]
+    ) -> _AsyncActivityDefinition[P, R] | Self: ...
+
+
+_T1 = TypeVar("_T1", contravariant=True)
+_P1 = ParamSpec("_P1")
+_R1 = TypeVar("_R1")
+_T2 = TypeVar("_T2", contravariant=True)
+_P2 = ParamSpec("_P2")
+_R2 = TypeVar("_R2")
+
+
+class ActivityDecorator:
     def __init__(
         self,
-        wrapped: Callable[P, T],
-        name: str,
-        strategy: ExecutionStrategy,
-        params: list[ActivityParameter],
-        result_type: Type[T],
-    ):
-        self._wrapped = wrapped
-        self._name = name
-        self._strategy = strategy
-        self._params = params
-        self._result_type = result_type
-        self._execution_options = ActivityOptions()
-        update_wrapper(self, wrapped)
+        options: ActivityDefinitionOptions,
+        callback_fn: Callable[[ActivityDefinition[Any, Any]], None] | None = None,
+    ) -> None:
+        self._options = options
+        self._callback_fn = callback_fn
 
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
-        if WorkflowContext.is_set():
-            # If the original function is async then this is fine
-            # If it's not async then this is invalid typing, but still allowed
-            # Users can use execute as a guaranteed type safe option if the function is sync
-            return self.execute(*args, **kwargs)  # type: ignore
-        return self._wrapped(*args, **kwargs)
-
-    def with_options(
-        self, **kwargs: Unpack[ActivityOptions]
-    ) -> "ActivityDefinition[P, T]":
-        res = ActivityDefinition(
-            self._wrapped, self._name, self.strategy, self.params, self.result_type
-        )
-        new_opts = self._execution_options.copy()
-        new_opts.update(kwargs)
-        res._execution_options = new_opts
-        return res
-
-    async def execute(self, *args: P.args, **kwargs: P.kwargs) -> T:
-        return await execute_activity(
-            self.name,
-            self.result_type,
-            *_to_parameters(self.params, args, kwargs),
-            **self._execution_options,
-        )
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def strategy(self) -> ExecutionStrategy:
-        return self._strategy
-
-    @property
-    def params(self) -> list[ActivityParameter]:
-        return self._params
-
-    @property
-    def result_type(self) -> Type[T]:
-        return self._result_type
-
-    @staticmethod
-    def wrap(
-        fn: Callable[P, T], opts: ActivityDefinitionOptions
-    ) -> "ActivityDefinition[P, T]":
-        name = fn.__qualname__
-        if "name" in opts and opts["name"]:
-            name = opts["name"]
-
-        strategy = ExecutionStrategy.THREAD_POOL
+    @overload
+    def __call__(
+        self, fn: Callable[P, Awaitable[R]]
+    ) -> _AsyncActivityDefinition[P, R]: ...
+    @overload
+    def __call__(self, fn: Callable[P, R]) -> _SyncActivityDefinition[P, R]: ...
+    def __call__(
+        self, fn: Union[Callable[_P1, Awaitable[_R1]], Callable[_P2, _R2]]
+    ) -> Union[_AsyncActivityDefinition[_P1, _R1], _SyncActivityDefinition[_P2, _R2]]:
+        name = self._options.get("name", fn.__qualname__)
         if inspect.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn.__call__):  # type: ignore
-            strategy = ExecutionStrategy.ASYNC
-
-        params, result_type = _get_signature(fn)
-        return ActivityDefinition(fn, name, strategy, params, result_type)
-
-
-ActivityDecorator = Callable[[Callable[P, T]], ActivityDefinition[P, T]]
+            async_fn = cast(Callable[_P1, Awaitable[_R1]], fn)
+            async_def: _AsyncActivityDefinition[_P1, _R1] = AsyncImpl[_P1, _R1](
+                async_fn, name, FnSignature.of(async_fn)
+            )
+            if self._callback_fn is not None:
+                self._callback_fn(async_def)
+            return async_def
+        sync_fn = cast(Callable[_P2, _R2], fn)
+        sync_def: _SyncActivityDefinition[_P2, _R2] = SyncImpl[_P2, _R2](
+            sync_fn, name, FnSignature.of(fn)
+        )
+        if self._callback_fn is not None:
+            self._callback_fn(sync_def)
+        return sync_def
 
 
 @overload
-def defn(fn: Callable[P, T]) -> ActivityDefinition[P, T]: ...
+def defn(fn: Callable[P, Awaitable[R]]) -> _AsyncActivityDefinition[P, R]: ...
+
+
+@overload
+def defn(fn: Callable[P, R]) -> _SyncActivityDefinition[P, R]: ...
 
 
 @overload
@@ -189,67 +202,141 @@ def defn(**kwargs: Unpack[ActivityDefinitionOptions]) -> ActivityDecorator: ...
 
 
 def defn(
-    fn: Callable[P, T] | None = None, **kwargs: Unpack[ActivityDefinitionOptions]
-) -> ActivityDecorator | ActivityDefinition[P, T]:
+    fn: Union[Callable[_P1, _R1], Callable[_P2, Awaitable[_R2]], None] = None,
+    **kwargs: Unpack[ActivityDefinitionOptions],
+) -> Union[
+    ActivityDecorator,
+    _SyncActivityDefinition[_P1, _R1],
+    _AsyncActivityDefinition[_P2, _R2],
+]:
     options = ActivityDefinitionOptions(**kwargs)
-
-    def decorator(inner_fn: Callable[P, T]) -> ActivityDefinition[P, T]:
-        return ActivityDefinition.wrap(inner_fn, options)
-
     if fn is not None:
-        return decorator(fn)
+        return ActivityDecorator(options)(fn)
 
-    return decorator
-
-
-def _get_signature(fn: Callable[P, T]) -> Tuple[list[ActivityParameter], Type[T]]:
-    sig = signature(fn)
-    args = sig.parameters
-    hints = get_type_hints(fn)
-    params = []
-    for name, param in args.items():
-        # "unbound functions" aren't a thing in the Python spec. We don't have a way to determine whether the function
-        # is part of a class or is standalone.
-        # Filter out the self parameter and hope they followed the convention.
-        if param.name == "self":
-            continue
-        default = None
-        has_default = False
-        if param.default != Parameter.empty:
-            default = param.default
-            has_default = param.default is not None
-        if param.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD):
-            type_hint = hints.get(name, None)
-            params.append(ActivityParameter(name, type_hint, has_default, default))
-        else:
-            raise ValueError(
-                f"Parameters must be positional. {name} is {param.kind}, and not valid"
-            )
-
-    # Treat unspecified return type
-    return_type = hints.get("return", dict)
-
-    return params, return_type
+    return ActivityDecorator(options)
 
 
-def _to_parameters(
-    params: list[ActivityParameter], args: Sequence[Any], kwargs: dict[str, Any]
-) -> list[Any]:
-    result: list[Any] = []
-    for value, param_spec in zip(args, params):
-        result.append(value)
+class _ActivityMethodDecorator:
+    def __init__(
+        self,
+        options: ActivityDefinitionOptions,
+        callback_fn: Callable[[ActivityDefinition[Any, Any]], None] | None = None,
+    ) -> None:
+        self._options = options
+        self._callback_fn = callback_fn
 
-    i = len(result)
-    while i < len(params):
-        param = params[i]
-        if param.name not in kwargs and not param.has_default:
-            raise ValueError(f"Missing parameter: {param.name}")
+    @overload
+    def __call__(
+        self, fn: Callable[Concatenate[T, P], Awaitable[R]]
+    ) -> _AsyncActivityMethodDefinition[T, P, R]: ...
+    @overload
+    def __call__(
+        self, fn: Callable[Concatenate[T, P], R]
+    ) -> _SyncActivityMethodDefinition[T, P, R]: ...
+    def __call__(
+        self,
+        fn: Union[
+            Callable[Concatenate[_T1, _P1], Awaitable[_R1]],
+            Callable[Concatenate[_T2, _P2], _R2],
+        ],
+    ) -> Union[
+        _AsyncActivityMethodDefinition[_T1, _P1, _R1],
+        _SyncActivityMethodDefinition[_T2, _P2, _R2],
+    ]:
+        name = self._options.get("name", fn.__qualname__)
+        if inspect.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn.__call__):  # type: ignore
+            async_fn = cast(Callable[Concatenate[_T1, _P1], Awaitable[_R1]], fn)
+            async_def: _AsyncActivityMethodDefinition[_T1, _P1, _R1] = AsyncMethodImpl[
+                _T1, _P1, _R1
+            ](async_fn, name, FnSignature.of(async_fn))
+            if self._callback_fn is not None:
+                self._callback_fn(async_def)
+            return async_def
+        sync_fn = cast(Callable[Concatenate[_T2, _P2], _R2], fn)
+        sync_def: _SyncActivityMethodDefinition[_T2, _P2, _R2] = SyncMethodImpl[
+            _T2, _P2, _R2
+        ](sync_fn, name, FnSignature.of(fn))
+        if self._callback_fn is not None:
+            self._callback_fn(sync_def)
+        return sync_def
 
-        value = kwargs.pop(param.name, param.default_value)
-        result.append(value)
-        i = i + 1
 
-    if len(kwargs) > 0:
-        raise ValueError(f"Unexpected keyword arguments: {kwargs}")
+@overload
+def method(
+    fn: Callable[Concatenate[T, P], Awaitable[R]],
+) -> _AsyncActivityMethodDefinition[T, P, R]: ...
 
-    return result
+
+@overload
+def method(
+    fn: Callable[Concatenate[T, P], R],
+) -> _SyncActivityMethodDefinition[T, P, R]: ...
+
+
+@overload
+def method(**kwargs: Unpack[ActivityDefinitionOptions]) -> _ActivityMethodDecorator: ...
+
+
+def method(
+    fn: Union[
+        Callable[Concatenate[_T1, _P1], _R1],
+        Callable[Concatenate[_T2, _P2], Awaitable[_R2]],
+        None,
+    ] = None,
+    **kwargs: Unpack[ActivityDefinitionOptions],
+) -> Union[
+    _ActivityMethodDecorator,
+    _SyncActivityMethodDefinition[_T1, _P1, _R1],
+    _AsyncActivityMethodDefinition[_T2, _P2, _R2],
+]:
+    options = ActivityDefinitionOptions(**kwargs)
+    if fn is not None:
+        return _ActivityMethodDecorator(options)(fn)
+
+    return _ActivityMethodDecorator(options)
+
+
+class _OverrideDecorator(Generic[T, P, R]):
+    def __init__(self, definition: ActivityDefinition[P, R]):
+        self._definition = definition
+
+    @overload
+    def __call__(
+        self, fn: Callable[Concatenate[Any, P], Awaitable[R]]
+    ) -> _AsyncActivityMethodDefinition[T, P, R]: ...
+    @overload
+    def __call__(
+        self, fn: Callable[Concatenate[Any, P], R]
+    ) -> _SyncActivityMethodDefinition[T, P, R]: ...
+    def __call__(
+        self,
+        fn: Union[
+            Callable[Concatenate[Any, P], R],
+            Callable[Concatenate[Any, P], Awaitable[R]],
+        ],
+    ) -> Union[
+        _SyncActivityMethodDefinition[T, P, R], _AsyncActivityMethodDefinition[T, P, R]
+    ]:
+        return self._definition.rebind(fn)  # type: ignore
+
+
+@overload
+def override(
+    definition: _AsyncActivityMethodDefinition[T, P, R],
+) -> _OverrideDecorator[T, P, R]: ...
+@overload
+def override(
+    definition: _SyncActivityMethodDefinition[T, P, R],
+) -> _OverrideDecorator[T, P, R]: ...
+def override(
+    definition: Union[
+        _AsyncActivityMethodDefinition[T, _P1, _R1],
+        _SyncActivityMethodDefinition[T, _P2, _R2],
+    ],
+) -> Union[_OverrideDecorator[T, _P1, _R1], _OverrideDecorator[T, _P2, _R2]]:
+    if inspect.iscoroutinefunction(definition.__call__):  # type: ignore
+        async_def = cast(ActivityDefinition[_P1, _R1], definition)
+        return _OverrideDecorator[T, _P1, _R1](async_def)
+    else:
+        sync_def = cast(ActivityDefinition[_P2, _R2], definition)
+        return _OverrideDecorator[T, _P2, _R2](sync_def)

@@ -46,7 +46,10 @@ class TestEncode:
     def test_datetime(self, converter: SearchAttributeConverter) -> None:
         dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         result = converter.encode({"CreatedAt": dt})
-        assert json.loads(result.indexed_fields["CreatedAt"].data) == "2024-01-15T10:30:00+00:00"
+        assert (
+            json.loads(result.indexed_fields["CreatedAt"].data)
+            == "2024-01-15T10:30:00+00:00"
+        )
 
     def test_list_of_strings(self, converter: SearchAttributeConverter) -> None:
         result = converter.encode({"Tags": ["urgent", "customer"]})
@@ -97,7 +100,9 @@ class TestDecode:
     def test_datetime_with_hint(self, converter: SearchAttributeConverter) -> None:
         proto = make_search_attrs({"CreatedAt": b'"2024-01-15T10:30:00+00:00"'})
         result = converter.decode(proto, type_hints={"CreatedAt": datetime})
-        assert result["CreatedAt"] == datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        assert result["CreatedAt"] == datetime(
+            2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc
+        )
 
     def test_empty_search_attributes(self, converter: SearchAttributeConverter) -> None:
         assert converter.decode(SearchAttributes()) == {}
@@ -147,7 +152,9 @@ class TestValidate:
             validate_search_attributes({CADENCE_CHANGE_VERSION: ["v1"]})
 
     def test_reserved_key_allowed(self) -> None:
-        validate_search_attributes({CADENCE_CHANGE_VERSION: ["v1"]}, allow_reserved_keys=True)
+        validate_search_attributes(
+            {CADENCE_CHANGE_VERSION: ["v1"]}, allow_reserved_keys=True
+        )
 
 
 def test_cadence_change_version_constant() -> None:

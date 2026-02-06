@@ -19,6 +19,7 @@ SearchAttributeValue = Any
 # CadenceChangeVersion is used as search attributes key to find workflows with specific change version.
 CADENCE_CHANGE_VERSION = "CadenceChangeVersion"
 
+
 class SearchAttributeConverter:
     """
     Converts between Python dictionaries and protobuf SearchAttributes.

@@ -4,7 +4,6 @@ from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast
 
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
-from cadence._internal.workflow.decisions_helper import DecisionsHelper
 from cadence.api.v1.common_pb2 import ActivityType
 from cadence.api.v1.decision_pb2 import ScheduleActivityTaskDecisionAttributes
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
@@ -21,7 +20,6 @@ class Context(WorkflowContext):
         self._info = info
         self._replay_mode = True
         self._replay_current_time_milliseconds: Optional[int] = None
-        self._decision_helper = DecisionsHelper()
         self._decision_manager = decision_manager
 
     def info(self) -> WorkflowInfo:
@@ -70,9 +68,7 @@ class Context(WorkflowContext):
         )
 
         activity_input = self.data_converter().to_data(list(args))
-        activity_id = self._decision_helper.generate_activity_id(activity)
         schedule_attributes = ScheduleActivityTaskDecisionAttributes(
-            activity_id=activity_id,
             activity_type=ActivityType(name=activity),
             domain=self.info().workflow_domain,
             task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),

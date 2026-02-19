@@ -1,3 +1,4 @@
+import traceback
 from asyncio import AbstractEventLoop, Handle, TimerHandle, futures, tasks, Future, Task
 from contextvars import Context
 import logging
@@ -8,6 +9,12 @@ from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator
 from typing_extensions import Unpack, TypeVarTuple
 
 logger = logging.getLogger(__name__)
+
+
+class FatalDecisionError(Exception):
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+
 
 _Ts = TypeVarTuple("_Ts")
 _T = TypeVar("_T")
@@ -455,9 +462,36 @@ class DeterministicEventLoop(AbstractEventLoop):
         )
 
     def call_exception_handler(self, context: dict[str, Any]) -> None:
-        raise NotImplementedError(
-            "Custom exception handlers not supported in deterministic event loop"
-        )
+        # This is called if a task has an unhandled exception. Short term, it's helpful to log these for debugging.
+        # Long term, we need some combination of failing decision tasks or workflows based on these errors.
+        message = context.get("message")
+        if not message:
+            message = "Unhandled exception in event loop"
+
+        exception = context.get("exception")
+        if isinstance(exception, BaseException):
+            exc_info = exception
+        else:
+            exc_info = None
+
+        log_lines = [message]
+        for key in sorted(context):
+            if key in {"message", "exception"}:
+                continue
+            value = context[key]
+            if key == "source_traceback":
+                tb = "".join(traceback.format_list(value))
+                value = "Object created at (most recent call last):\n"
+                value += tb.rstrip()
+            elif key == "handle_traceback":
+                tb = "".join(traceback.format_list(value))
+                value = "Handle created at (most recent call last):\n"
+                value += tb.rstrip()
+            else:
+                value = repr(value)
+            log_lines.append(f"{key}: {value}")
+
+        logger.error("\n".join(log_lines), exc_info=exc_info)
 
     # Task factory
     def set_task_factory(  # type: ignore[override]

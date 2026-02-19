@@ -1,11 +1,15 @@
 import asyncio
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Type, Tuple, ClassVar, List
+from typing import Dict, Type, Tuple, ClassVar, List, Iterator
 
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,
+)
+from cadence._internal.workflow.statemachine.completion_state_machine import (
+    CompletionStateMachine,
 )
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionId,
@@ -18,6 +22,7 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
     EventDispatcher,
     Action,
 )
+from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.timer_state_machine import (
     TimerStateMachine,
     timer_events,
@@ -67,6 +72,9 @@ class DecisionManager:
 
     def __init__(self, event_loop: asyncio.AbstractEventLoop):
         self._event_loop = event_loop
+        self._id_counter = 0
+        self._determinism_tracker = DeterminismTracker()
+        self._replaying = False
         self.state_machines: OrderedDict[DecisionId, DecisionStateMachine] = (
             OrderedDict()
         )
@@ -77,6 +85,9 @@ class DecisionManager:
     def schedule_activity(
         self, attrs: decision.ScheduleActivityTaskDecisionAttributes
     ) -> asyncio.Future[Payload]:
+        attrs.activity_id = self._next_id()
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
         decision_id = DecisionId(DecisionType.ACTIVITY, attrs.activity_id)
         future: DecisionFuture[Payload] = self._create_future(decision_id)
         machine = ActivityStateMachine(attrs, future)
@@ -89,12 +100,29 @@ class DecisionManager:
     def start_timer(
         self, attrs: decision.StartTimerDecisionAttributes
     ) -> asyncio.Future[None]:
+        attrs.timer_id = self._next_id()
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
         decision_id = DecisionId(DecisionType.TIMER, attrs.timer_id)
         future: DecisionFuture[None] = self._create_future(decision_id)
         machine = TimerStateMachine(attrs, future)
         self._add_state_machine(machine)
 
         return future
+
+    # ----- Workflow API -----
+    def complete_workflow(self, decision: decision.Decision) -> None:
+        if self._replaying:
+            attr = decision.WhichOneof("attributes")
+            decision_attributes = getattr(decision, attr)
+            self._determinism_tracker.validate_action(decision_attributes)
+
+        self._add_state_machine(CompletionStateMachine(decision))
+
+    def _next_id(self) -> str:
+        next_id = self._id_counter
+        self._id_counter += 1
+        return str(next_id)
 
     def _get_machine(self, decision_id: DecisionId) -> DecisionStateMachine:
         machine = self.state_machines.get(decision_id, None)
@@ -140,6 +168,25 @@ class DecisionManager:
             if action.event_id_is_alias:
                 self.aliases[(decision_type, event.event_id)] = machine
 
+    # ---- Non-determinism ----
+    @contextmanager
+    def track_nondeterminism(
+        self, replaying: bool, outcomes: List[history.HistoryEvent]
+    ) -> Iterator[None]:
+        self._start_execution(replaying, outcomes)
+        yield
+        self._end_execution()
+
+    def _start_execution(self, replaying: bool, outcomes: List[history.HistoryEvent]):
+        self._replaying = replaying
+        for event in outcomes:
+            self._determinism_tracker.add_expectation(event)
+
+    def _end_execution(self) -> None:
+        if self._replaying:
+            self._determinism_tracker.complete_replay()
+        self._replaying = False
+
     # ----- Decision aggregation -----
 
     def collect_pending_decisions(self) -> List[decision.Decision]:
@@ -159,7 +206,11 @@ class DecisionManager:
 
     def _request_cancel(self, decision_id: DecisionId) -> bool:
         machine = self._get_machine(decision_id)
-        # Interactions with the state machines should move them to the end so that the decisions are ordered as they
-        # happened in the Workflow
-        self.state_machines.move_to_end(decision_id)
-        return machine.request_cancel()
+        if machine.request_cancel():
+            if self._replaying:
+                self._determinism_tracker.validate_cancel(decision_id)
+            # Interactions with the state machines should move them to the end so that the decisions are ordered as they
+            # happened in the Workflow
+            self.state_machines.move_to_end(decision_id)
+            return True
+        return False

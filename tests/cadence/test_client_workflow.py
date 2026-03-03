@@ -241,6 +241,88 @@ class TestClientBuildStartWorkflowRequest:
 
         assert request.cron_schedule == "0 * * * *"
 
+    @pytest.mark.asyncio
+    async def test_build_request_with_delay_start(self, mock_client):
+        """Test building request with delay_start."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            delay_start=timedelta(minutes=5),
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("delay_start")
+        assert request.delay_start.seconds == 300  # 5 minutes
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_jitter_start(self, mock_client):
+        """Test building request with jitter_start."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            jitter_start=timedelta(seconds=30),
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("jitter_start")
+        assert request.jitter_start.seconds == 30
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_delay_and_jitter_start(self, mock_client):
+        """Test building request with both delay_start and jitter_start."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            delay_start=timedelta(minutes=1),
+            jitter_start=timedelta(seconds=10),
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.delay_start.seconds == 60
+        assert request.jitter_start.seconds == 10
+
+    def test_negative_delay_start_raises_error(self):
+        """Test that negative delay_start raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            delay_start=timedelta(seconds=-1),
+        )
+        with pytest.raises(ValueError, match="delay_start cannot be negative"):
+            _validate_and_apply_defaults(options)
+
+    def test_negative_jitter_start_raises_error(self):
+        """Test that negative jitter_start raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            jitter_start=timedelta(seconds=-1),
+        )
+        with pytest.raises(ValueError, match="jitter_start cannot be negative"):
+            _validate_and_apply_defaults(options)
+
+    def test_zero_delay_start_is_valid(self):
+        """Test that zero delay_start is valid."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            delay_start=timedelta(0),
+        )
+        validated = _validate_and_apply_defaults(options)
+        assert validated["delay_start"] == timedelta(0)
+
 
 class TestClientStartWorkflow:
     """Test Client.start_workflow method."""

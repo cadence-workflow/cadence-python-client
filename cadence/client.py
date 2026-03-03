@@ -60,13 +60,13 @@ def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflow
 
     # Validate delay_start (must be non-negative)
     delay_start = options.get("delay_start")
-    if delay_start is not None and delay_start < timedelta(0):
-        raise ValueError("delay_start cannot be negative")
+    if delay_start is not None and delay_start <= timedelta(0):
+        raise ValueError("delay_start must be greater than 0")
 
     # Validate jitter_start (must be non-negative)
     jitter_start = options.get("jitter_start")
-    if jitter_start is not None and jitter_start < timedelta(0):
-        raise ValueError("jitter_start cannot be negative")
+    if jitter_start is not None and jitter_start <= timedelta(0):
+        raise ValueError("jitter_start must be greater than 0")
 
     return options
 

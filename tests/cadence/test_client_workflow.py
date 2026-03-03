@@ -310,7 +310,7 @@ class TestClientBuildStartWorkflowRequest:
             execution_start_to_close_timeout=timedelta(minutes=10),
             jitter_start=timedelta(seconds=-1),
         )
-        with pytest.raises(ValueError, match="jitter_start cannot be negative"):
+        with pytest.raises(ValueError, match="jitter_start must be greater than 0"):
             _validate_and_apply_defaults(options)
 
     def test_zero_delay_start_is_valid(self):

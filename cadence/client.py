@@ -34,13 +34,15 @@ CronOverlapPolicyType = (
 )
 
 # Mapping from string to protobuf enum value
-_CRON_OVERLAP_POLICY_MAP: dict[str, int] = {
+_CRON_OVERLAP_POLICY_MAP: dict[str, workflow_pb2.CronOverlapPolicy] = {
     "SKIPPED": workflow_pb2.CRON_OVERLAP_POLICY_SKIPPED,
     "BUFFER_ONE": workflow_pb2.CRON_OVERLAP_POLICY_BUFFER_ONE,
 }
 
 
-def _resolve_cron_overlap_policy(policy: CronOverlapPolicyType) -> int:
+def _resolve_cron_overlap_policy(
+    policy: CronOverlapPolicyType,
+) -> workflow_pb2.CronOverlapPolicy:
     """Convert string or enum to protobuf enum value."""
     if isinstance(policy, str):
         policy_upper = policy.upper()
@@ -50,7 +52,7 @@ def _resolve_cron_overlap_policy(policy: CronOverlapPolicyType) -> int:
                 "Expected 'SKIPPED' or 'BUFFER_ONE'"
             )
         return _CRON_OVERLAP_POLICY_MAP[policy_upper]
-    return int(policy)
+    return policy
 
 
 class StartWorkflowOptions(TypedDict, total=False):

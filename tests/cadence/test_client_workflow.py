@@ -12,7 +12,6 @@ from cadence.client import (
     Client,
     StartWorkflowOptions,
     _validate_and_apply_defaults,
-    _resolve_cron_overlap_policy,
 )
 from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DefaultDataConverter

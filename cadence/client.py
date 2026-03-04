@@ -2,7 +2,7 @@ import os
 import socket
 import uuid
 from datetime import timedelta
-from typing import TypedDict, Unpack, Any, cast, Union, Literal
+from typing import TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
 from google.protobuf.duration_pb2 import Duration
@@ -28,32 +28,6 @@ from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 from cadence.workflow import WorkflowDefinition
 
-# Type alias for cron overlap policy - accepts protobuf enum or string
-CronOverlapPolicyType = (
-    workflow_pb2.CronOverlapPolicy | Literal["SKIPPED", "BUFFER_ONE"]
-)
-
-# Mapping from string to protobuf enum value
-_CRON_OVERLAP_POLICY_MAP: dict[str, workflow_pb2.CronOverlapPolicy] = {
-    "SKIPPED": workflow_pb2.CRON_OVERLAP_POLICY_SKIPPED,
-    "BUFFER_ONE": workflow_pb2.CRON_OVERLAP_POLICY_BUFFER_ONE,
-}
-
-
-def _resolve_cron_overlap_policy(
-    policy: CronOverlapPolicyType,
-) -> workflow_pb2.CronOverlapPolicy:
-    """Convert string or enum to protobuf enum value."""
-    if isinstance(policy, str):
-        policy_upper = policy.upper()
-        if policy_upper not in _CRON_OVERLAP_POLICY_MAP:
-            raise ValueError(
-                f"Invalid cron_overlap_policy: '{policy}'. "
-                "Expected 'SKIPPED' or 'BUFFER_ONE'"
-            )
-        return _CRON_OVERLAP_POLICY_MAP[policy_upper]
-    return policy
-
 
 class StartWorkflowOptions(TypedDict, total=False):
     """Options for starting a workflow execution."""
@@ -65,7 +39,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     cron_schedule: str
     delay_start: timedelta
     jitter_start: timedelta
-    cron_overlap_policy: CronOverlapPolicyType
+    cron_overlap_policy: workflow_pb2.CronOverlapPolicy
 
 
 def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflowOptions:
@@ -226,9 +200,7 @@ class Client:
         if options.get("cron_schedule"):
             request.cron_schedule = options["cron_schedule"]
         if options.get("cron_overlap_policy") is not None:
-            request.cron_overlap_policy = _resolve_cron_overlap_policy(
-                options["cron_overlap_policy"]
-            )
+            request.cron_overlap_policy = options["cron_overlap_policy"]
 
         # Set delay_start if provided
         delay_start = options.get("delay_start")

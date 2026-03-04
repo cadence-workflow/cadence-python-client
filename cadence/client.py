@@ -36,6 +36,8 @@ class StartWorkflowOptions(TypedDict, total=False):
     workflow_id: str
     task_start_to_close_timeout: timedelta
     cron_schedule: str
+    delay_start: timedelta
+    jitter_start: timedelta
 
 
 def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflowOptions:
@@ -55,6 +57,16 @@ def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflow
         options["task_start_to_close_timeout"] = timedelta(seconds=10)
     elif task_timeout <= timedelta(0):
         raise ValueError("task_start_to_close_timeout must be greater than 0")
+
+    # Validate delay_start (must be non-negative)
+    delay_start = options.get("delay_start")
+    if delay_start is not None and delay_start < timedelta(0):
+        raise ValueError("delay_start cannot be negative")
+
+    # Validate jitter_start (must be non-negative)
+    jitter_start = options.get("jitter_start")
+    if jitter_start is not None and jitter_start < timedelta(0):
+        raise ValueError("jitter_start cannot be negative")
 
     return options
 
@@ -185,6 +197,20 @@ class Client:
             request.input.CopyFrom(input_payload)
         if options.get("cron_schedule"):
             request.cron_schedule = options["cron_schedule"]
+
+        # Set delay_start if provided
+        delay_start = options.get("delay_start")
+        if delay_start is not None:
+            delay_duration = Duration()
+            delay_duration.FromTimedelta(delay_start)
+            request.delay_start.CopyFrom(delay_duration)
+
+        # Set jitter_start if provided
+        jitter_start = options.get("jitter_start")
+        if jitter_start is not None:
+            jitter_duration = Duration()
+            jitter_duration.FromTimedelta(jitter_start)
+            request.jitter_start.CopyFrom(jitter_duration)
 
         return request
 

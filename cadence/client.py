@@ -22,6 +22,7 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionResponse,
 )
 from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
+from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
@@ -38,6 +39,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     cron_schedule: str
     delay_start: timedelta
     jitter_start: timedelta
+    cron_overlap_policy: workflow_pb2.CronOverlapPolicy
 
 
 def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflowOptions:
@@ -197,6 +199,8 @@ class Client:
             request.input.CopyFrom(input_payload)
         if options.get("cron_schedule"):
             request.cron_schedule = options["cron_schedule"]
+        if options.get("cron_overlap_policy") is not None:
+            request.cron_overlap_policy = options["cron_overlap_policy"]
 
         # Set delay_start if provided
         delay_start = options.get("delay_start")

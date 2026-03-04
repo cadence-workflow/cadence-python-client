@@ -8,7 +8,12 @@ from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
 )
-from cadence.client import Client, StartWorkflowOptions, _validate_and_apply_defaults
+from cadence.client import (
+    Client,
+    StartWorkflowOptions,
+    _validate_and_apply_defaults,
+)
+from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DefaultDataConverter
 from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
 
@@ -322,6 +327,23 @@ class TestClientBuildStartWorkflowRequest:
         )
         validated = _validate_and_apply_defaults(options)
         assert validated["delay_start"] == timedelta(0)
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_cron_overlap_policy_enum(self, mock_client):
+        """Test building request with cron_overlap_policy as enum."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            cron_schedule="0 * * * *",
+            cron_overlap_policy=workflow_pb2.CRON_OVERLAP_POLICY_SKIPPED,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.cron_overlap_policy == workflow_pb2.CRON_OVERLAP_POLICY_SKIPPED
 
 
 class TestClientStartWorkflow:

@@ -1,11 +1,12 @@
 import os
 import socket
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
 from google.protobuf.duration_pb2 import Duration
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
@@ -40,6 +41,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     delay_start: timedelta
     jitter_start: timedelta
     cron_overlap_policy: workflow_pb2.CronOverlapPolicy
+    first_run_at: datetime
 
 
 def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflowOptions:
@@ -69,6 +71,21 @@ def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflow
     jitter_start = options.get("jitter_start")
     if jitter_start is not None and jitter_start < timedelta(0):
         raise ValueError("jitter_start cannot be negative")
+
+    # Validate first_run_at (must be timezone-aware and not before Unix epoch)
+    first_run_at = options.get("first_run_at")
+    if first_run_at is not None:
+        # Require timezone-aware datetime to prevent ambiguity
+        if first_run_at.tzinfo is None:
+            raise ValueError(
+                "first_run_at must be timezone-aware. "
+                "Use datetime.now(timezone.utc) or datetime(..., tzinfo=timezone.utc)"
+            )
+        # Validate timestamp is not before Unix epoch
+        if first_run_at.timestamp() < 0:
+            raise ValueError(
+                "first_run_at cannot be before Unix epoch (January 1, 1970 UTC)"
+            )
 
     return options
 
@@ -215,6 +232,13 @@ class Client:
             jitter_duration = Duration()
             jitter_duration.FromTimedelta(jitter_start)
             request.jitter_start.CopyFrom(jitter_duration)
+
+        # Set first_run_at if provided
+        first_run_at = options.get("first_run_at")
+        if first_run_at is not None:
+            first_run_timestamp = Timestamp()
+            first_run_timestamp.FromDatetime(first_run_at)
+            request.first_run_at.CopyFrom(first_run_timestamp)
 
         return request
 

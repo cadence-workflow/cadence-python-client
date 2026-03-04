@@ -1,6 +1,6 @@
 import pytest
 import uuid
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
 from cadence.api.v1.common_pb2 import WorkflowExecution
@@ -344,6 +344,76 @@ class TestClientBuildStartWorkflowRequest:
         request = client._build_start_workflow_request("TestWorkflow", (), options)
 
         assert request.cron_overlap_policy == workflow_pb2.CRON_OVERLAP_POLICY_SKIPPED
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_first_run_at_timezone_aware(self, mock_client):
+        """Test building request with timezone-aware first_run_at."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        first_run = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            cron_schedule="0 * * * *",
+            first_run_at=first_run,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("first_run_at")
+        # Convert back and verify
+        result_dt = request.first_run_at.ToDatetime()
+        assert result_dt == first_run.replace(
+            tzinfo=None
+        )  # ToDatetime returns naive UTC
+
+    def test_first_run_at_naive_datetime_raises_error(self):
+        """Test that timezone-naive first_run_at raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(2024, 1, 1, 12, 0, 0),  # Naive
+        )
+        with pytest.raises(ValueError, match="must be timezone-aware"):
+            _validate_and_apply_defaults(options)
+
+    def test_first_run_at_aware_datetime_is_valid(self):
+        """Test that timezone-aware first_run_at is valid."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        # Should not raise
+        validated = _validate_and_apply_defaults(options)
+        assert validated["first_run_at"] == datetime(
+            2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc
+        )
+
+    def test_first_run_at_before_epoch_raises_error(self):
+        """Test that first_run_at before Unix epoch raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(1960, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        )
+        with pytest.raises(ValueError, match="cannot be before Unix epoch"):
+            _validate_and_apply_defaults(options)
+
+    def test_first_run_at_at_epoch_is_valid(self):
+        """Test that first_run_at exactly at Unix epoch is valid."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        )
+        # Should not raise
+        validated = _validate_and_apply_defaults(options)
+        assert validated["first_run_at"] == datetime(
+            1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc
+        )
 
 
 class TestClientStartWorkflow:

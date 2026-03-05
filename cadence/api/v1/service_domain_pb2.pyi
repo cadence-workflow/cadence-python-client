@@ -4,7 +4,8 @@ from cadence.api.v1 import domain_pb2 as _domain_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -52,7 +53,7 @@ class RegisterDomainRequest(_message.Message):
     visibility_archival_status: _domain_pb2.ArchivalStatus
     visibility_archival_uri: str
     active_clusters_by_region: _containers.ScalarMap[str, str]
-    def __init__(self, security_token: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., owner_email: _Optional[str] = ..., workflow_execution_retention_period: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., clusters: _Optional[_Iterable[_Union[_domain_pb2.ClusterReplicationConfiguration, _Mapping]]] = ..., active_cluster_name: _Optional[str] = ..., data: _Optional[_Mapping[str, str]] = ..., is_global_domain: bool = ..., history_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., history_archival_uri: _Optional[str] = ..., visibility_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., visibility_archival_uri: _Optional[str] = ..., active_clusters_by_region: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    def __init__(self, security_token: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., owner_email: _Optional[str] = ..., workflow_execution_retention_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., clusters: _Optional[_Iterable[_Union[_domain_pb2.ClusterReplicationConfiguration, _Mapping]]] = ..., active_cluster_name: _Optional[str] = ..., data: _Optional[_Mapping[str, str]] = ..., is_global_domain: bool = ..., history_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., history_archival_uri: _Optional[str] = ..., visibility_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., visibility_archival_uri: _Optional[str] = ..., active_clusters_by_region: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class RegisterDomainResponse(_message.Message):
     __slots__ = ()
@@ -101,7 +102,7 @@ class UpdateDomainRequest(_message.Message):
     delete_bad_binary: str
     failover_timeout: _duration_pb2.Duration
     active_clusters: _domain_pb2.ActiveClusters
-    def __init__(self, security_token: _Optional[str] = ..., name: _Optional[str] = ..., update_mask: _Optional[_Union[_field_mask_pb2.FieldMask, _Mapping]] = ..., description: _Optional[str] = ..., owner_email: _Optional[str] = ..., data: _Optional[_Mapping[str, str]] = ..., workflow_execution_retention_period: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., bad_binaries: _Optional[_Union[_domain_pb2.BadBinaries, _Mapping]] = ..., history_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., history_archival_uri: _Optional[str] = ..., visibility_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., visibility_archival_uri: _Optional[str] = ..., active_cluster_name: _Optional[str] = ..., clusters: _Optional[_Iterable[_Union[_domain_pb2.ClusterReplicationConfiguration, _Mapping]]] = ..., delete_bad_binary: _Optional[str] = ..., failover_timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., active_clusters: _Optional[_Union[_domain_pb2.ActiveClusters, _Mapping]] = ...) -> None: ...
+    def __init__(self, security_token: _Optional[str] = ..., name: _Optional[str] = ..., update_mask: _Optional[_Union[_field_mask_pb2.FieldMask, _Mapping]] = ..., description: _Optional[str] = ..., owner_email: _Optional[str] = ..., data: _Optional[_Mapping[str, str]] = ..., workflow_execution_retention_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., bad_binaries: _Optional[_Union[_domain_pb2.BadBinaries, _Mapping]] = ..., history_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., history_archival_uri: _Optional[str] = ..., visibility_archival_status: _Optional[_Union[_domain_pb2.ArchivalStatus, str]] = ..., visibility_archival_uri: _Optional[str] = ..., active_cluster_name: _Optional[str] = ..., clusters: _Optional[_Iterable[_Union[_domain_pb2.ClusterReplicationConfiguration, _Mapping]]] = ..., delete_bad_binary: _Optional[str] = ..., failover_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., active_clusters: _Optional[_Union[_domain_pb2.ActiveClusters, _Mapping]] = ...) -> None: ...
 
 class UpdateDomainResponse(_message.Message):
     __slots__ = ("domain",)

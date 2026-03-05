@@ -3,7 +3,8 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -147,7 +148,7 @@ class RetryPolicy(_message.Message):
     maximum_attempts: int
     non_retryable_error_reasons: _containers.RepeatedScalarFieldContainer[str]
     expiration_interval: _duration_pb2.Duration
-    def __init__(self, initial_interval: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., backoff_coefficient: _Optional[float] = ..., maximum_interval: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., maximum_attempts: _Optional[int] = ..., non_retryable_error_reasons: _Optional[_Iterable[str]] = ..., expiration_interval: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+    def __init__(self, initial_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., backoff_coefficient: _Optional[float] = ..., maximum_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., maximum_attempts: _Optional[int] = ..., non_retryable_error_reasons: _Optional[_Iterable[str]] = ..., expiration_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
 
 class IsolationGroupPartition(_message.Message):
     __slots__ = ("name", "state")

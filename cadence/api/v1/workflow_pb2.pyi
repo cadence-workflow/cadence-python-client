@@ -6,7 +6,8 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -234,7 +235,7 @@ class WorkflowExecutionInfo(_message.Message):
     partition_config: _containers.ScalarMap[str, str]
     cron_overlap_policy: CronOverlapPolicy
     active_cluster_selection_policy: _common_pb2.ActiveClusterSelectionPolicy
-    def __init__(self, workflow_execution: _Optional[_Union[_common_pb2.WorkflowExecution, _Mapping]] = ..., type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., start_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., close_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., close_status: _Optional[_Union[WorkflowExecutionCloseStatus, str]] = ..., history_length: _Optional[int] = ..., parent_execution_info: _Optional[_Union[ParentExecutionInfo, _Mapping]] = ..., execution_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., auto_reset_points: _Optional[_Union[ResetPoints, _Mapping]] = ..., task_list: _Optional[str] = ..., task_list_info: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., is_cron: bool = ..., update_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., partition_config: _Optional[_Mapping[str, str]] = ..., cron_overlap_policy: _Optional[_Union[CronOverlapPolicy, str]] = ..., active_cluster_selection_policy: _Optional[_Union[_common_pb2.ActiveClusterSelectionPolicy, _Mapping]] = ...) -> None: ...
+    def __init__(self, workflow_execution: _Optional[_Union[_common_pb2.WorkflowExecution, _Mapping]] = ..., type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., close_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., close_status: _Optional[_Union[WorkflowExecutionCloseStatus, str]] = ..., history_length: _Optional[int] = ..., parent_execution_info: _Optional[_Union[ParentExecutionInfo, _Mapping]] = ..., execution_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., auto_reset_points: _Optional[_Union[ResetPoints, _Mapping]] = ..., task_list: _Optional[str] = ..., task_list_info: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., is_cron: bool = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., partition_config: _Optional[_Mapping[str, str]] = ..., cron_overlap_policy: _Optional[_Union[CronOverlapPolicy, str]] = ..., active_cluster_selection_policy: _Optional[_Union[_common_pb2.ActiveClusterSelectionPolicy, _Mapping]] = ...) -> None: ...
 
 class WorkflowExecutionConfiguration(_message.Message):
     __slots__ = ("task_list", "execution_start_to_close_timeout", "task_start_to_close_timeout")
@@ -244,7 +245,7 @@ class WorkflowExecutionConfiguration(_message.Message):
     task_list: _tasklist_pb2.TaskList
     execution_start_to_close_timeout: _duration_pb2.Duration
     task_start_to_close_timeout: _duration_pb2.Duration
-    def __init__(self, task_list: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., execution_start_to_close_timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., task_start_to_close_timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+    def __init__(self, task_list: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., execution_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., task_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
 
 class ParentExecutionInfo(_message.Message):
     __slots__ = ("domain_id", "domain_name", "workflow_execution", "initiated_id")
@@ -296,7 +297,7 @@ class PendingActivityInfo(_message.Message):
     last_worker_identity: str
     started_worker_identity: str
     schedule_id: int
-    def __init__(self, activity_id: _Optional[str] = ..., activity_type: _Optional[_Union[_common_pb2.ActivityType, _Mapping]] = ..., state: _Optional[_Union[PendingActivityState, str]] = ..., heartbeat_details: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., last_heartbeat_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., last_started_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., attempt: _Optional[int] = ..., maximum_attempts: _Optional[int] = ..., scheduled_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., expiration_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., last_failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., last_worker_identity: _Optional[str] = ..., started_worker_identity: _Optional[str] = ..., schedule_id: _Optional[int] = ...) -> None: ...
+    def __init__(self, activity_id: _Optional[str] = ..., activity_type: _Optional[_Union[_common_pb2.ActivityType, _Mapping]] = ..., state: _Optional[_Union[PendingActivityState, str]] = ..., heartbeat_details: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., last_heartbeat_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_started_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., attempt: _Optional[int] = ..., maximum_attempts: _Optional[int] = ..., scheduled_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., expiration_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., last_worker_identity: _Optional[str] = ..., started_worker_identity: _Optional[str] = ..., schedule_id: _Optional[int] = ...) -> None: ...
 
 class PendingChildExecutionInfo(_message.Message):
     __slots__ = ("workflow_execution", "workflow_type_name", "initiated_id", "parent_close_policy", "domain")
@@ -326,7 +327,7 @@ class PendingDecisionInfo(_message.Message):
     attempt: int
     original_scheduled_time: _timestamp_pb2.Timestamp
     schedule_id: int
-    def __init__(self, state: _Optional[_Union[PendingDecisionState, str]] = ..., scheduled_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., started_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., attempt: _Optional[int] = ..., original_scheduled_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., schedule_id: _Optional[int] = ...) -> None: ...
+    def __init__(self, state: _Optional[_Union[PendingDecisionState, str]] = ..., scheduled_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., started_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., attempt: _Optional[int] = ..., original_scheduled_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., schedule_id: _Optional[int] = ...) -> None: ...
 
 class ActivityLocalDispatchInfo(_message.Message):
     __slots__ = ("activity_id", "scheduled_time", "started_time", "scheduled_time_of_this_attempt", "task_token")
@@ -340,7 +341,7 @@ class ActivityLocalDispatchInfo(_message.Message):
     started_time: _timestamp_pb2.Timestamp
     scheduled_time_of_this_attempt: _timestamp_pb2.Timestamp
     task_token: bytes
-    def __init__(self, activity_id: _Optional[str] = ..., scheduled_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., started_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., scheduled_time_of_this_attempt: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., task_token: _Optional[bytes] = ...) -> None: ...
+    def __init__(self, activity_id: _Optional[str] = ..., scheduled_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., started_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., scheduled_time_of_this_attempt: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., task_token: _Optional[bytes] = ...) -> None: ...
 
 class ResetPoints(_message.Message):
     __slots__ = ("points",)
@@ -362,4 +363,4 @@ class ResetPointInfo(_message.Message):
     created_time: _timestamp_pb2.Timestamp
     expiring_time: _timestamp_pb2.Timestamp
     resettable: bool
-    def __init__(self, binary_checksum: _Optional[str] = ..., run_id: _Optional[str] = ..., first_decision_completed_id: _Optional[int] = ..., created_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., expiring_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., resettable: bool = ...) -> None: ...
+    def __init__(self, binary_checksum: _Optional[str] = ..., run_id: _Optional[str] = ..., first_decision_completed_id: _Optional[int] = ..., created_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., expiring_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., resettable: bool = ...) -> None: ...

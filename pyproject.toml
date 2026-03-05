@@ -26,17 +26,17 @@ classifiers = [
 ]
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "grpcio>=1.71.2",
-    "grpcio-status>=1.71.2",
+    "grpcio>=1.73.1",
+    "grpcio-status>=1.73.1",
     "msgspec>=0.19.0",
-    "protobuf>=5.29.1",
+    "protobuf>=6.31.0,<7.0.0",
     "typing-extensions>=4.0.0",
     "prometheus-client>=0.21.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "grpcio-tools==1.71.2",
+    "grpcio-tools>=1.73.1",
     "pytest>=8.4.1",
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.21.0",

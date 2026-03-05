@@ -5,7 +5,8 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -102,7 +103,7 @@ class PollerInfo(_message.Message):
     last_access_time: _timestamp_pb2.Timestamp
     identity: str
     rate_per_second: float
-    def __init__(self, last_access_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., identity: _Optional[str] = ..., rate_per_second: _Optional[float] = ...) -> None: ...
+    def __init__(self, last_access_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., identity: _Optional[str] = ..., rate_per_second: _Optional[float] = ...) -> None: ...
 
 class StickyExecutionAttributes(_message.Message):
     __slots__ = ("worker_task_list", "schedule_to_start_timeout")
@@ -110,7 +111,7 @@ class StickyExecutionAttributes(_message.Message):
     SCHEDULE_TO_START_TIMEOUT_FIELD_NUMBER: _ClassVar[int]
     worker_task_list: TaskList
     schedule_to_start_timeout: _duration_pb2.Duration
-    def __init__(self, worker_task_list: _Optional[_Union[TaskList, _Mapping]] = ..., schedule_to_start_timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+    def __init__(self, worker_task_list: _Optional[_Union[TaskList, _Mapping]] = ..., schedule_to_start_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
 
 class TaskListPartition(_message.Message):
     __slots__ = ("isolation_groups",)

@@ -165,6 +165,7 @@ def main():
     fix_pyi_imports_script = project_root / "scripts" / "fix_pyi_imports.py"
     if fix_pyi_imports_script.exists():
         import runpy
+
         runpy.run_path(str(fix_pyi_imports_script), run_name="__main__")
     else:
         print(f"Warning: {fix_pyi_imports_script} not found, skipping .pyi fixes")

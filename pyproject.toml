@@ -86,8 +86,8 @@ warn_unreachable = true
 strict_equality = true
 explicit_package_bases = true
 exclude = [
-    "cadence/api/.*\\.pyi$",
     "cadence/api",
+    "cadence/api/.*",
     "cadence/sample",
 ]
 
@@ -105,7 +105,6 @@ module = [
     "cadence.api.*",
 ]
 ignore_missing_imports = true
-ignore_errors = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"

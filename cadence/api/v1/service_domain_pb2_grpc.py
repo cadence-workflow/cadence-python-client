@@ -5,7 +5,7 @@ import warnings
 
 from cadence.api.v1 import service_domain_pb2 as cadence_dot_api_dot_v1_dot_service__domain__pb2
 
-GRPC_GENERATED_VERSION = '1.71.2'
+GRPC_GENERATED_VERSION = '1.73.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

@@ -160,6 +160,7 @@ class Client:
         await self._channel.close()
 
     async def __aenter__(self) -> "Client":
+        await self.ready()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:

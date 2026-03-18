@@ -63,6 +63,11 @@ def info() -> ActivityInfo:
     return ActivityContext.get().info()
 
 
+def heartbeat(*details: Any) -> None:
+    """Send a heartbeat for the current activity."""
+    ActivityContext.get().heartbeat(*details)
+
+
 class ActivityContext(ABC):
     _var: ContextVar["ActivityContext"] = ContextVar("activity")
 
@@ -71,6 +76,9 @@ class ActivityContext(ABC):
 
     @abstractmethod
     def client(self) -> Client: ...
+
+    @abstractmethod
+    def heartbeat(self, *details: Any) -> None: ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:

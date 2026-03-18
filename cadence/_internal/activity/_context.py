@@ -4,6 +4,7 @@ from typing import Any
 
 from cadence import Client
 from cadence._internal.activity._definition import BaseDefinition
+from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityContext
 from cadence.api.v1.common_pb2 import Payload
 
@@ -14,10 +15,12 @@ class _Context(ActivityContext):
         client: Client,
         info: ActivityInfo,
         activity_def: BaseDefinition[[Any], Any],
+        heartbeat_sender: _HeartbeatSender,
     ):
         self._client = client
         self._info = info
         self._activity_def = activity_def
+        self._heartbeat_sender = heartbeat_sender
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
@@ -35,6 +38,9 @@ class _Context(ActivityContext):
     def info(self) -> ActivityInfo:
         return self._info
 
+    def heartbeat(self, *details: Any) -> None:
+        asyncio.ensure_future(self._heartbeat_sender.send_heartbeat(*details))
+
 
 class _SyncContext(_Context):
     def __init__(
@@ -43,9 +49,12 @@ class _SyncContext(_Context):
         info: ActivityInfo,
         activity_def: BaseDefinition[[Any], Any],
         executor: ThreadPoolExecutor,
+        heartbeat_sender: _HeartbeatSender,
+        loop: asyncio.AbstractEventLoop,
     ):
-        super().__init__(client, info, activity_def)
+        super().__init__(client, info, activity_def, heartbeat_sender)
         self._executor = executor
+        self._loop = loop
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
@@ -58,3 +67,8 @@ class _SyncContext(_Context):
 
     def client(self) -> Client:
         raise RuntimeError("client is only supported in async activities")
+
+    def heartbeat(self, *details: Any) -> None:
+        asyncio.run_coroutine_threadsafe(
+            self._heartbeat_sender.send_heartbeat(*details), self._loop
+        )

@@ -1,6 +1,7 @@
 import asyncio
+from contextlib import asynccontextmanager
 import uuid
-from typing import Unpack, cast
+from typing import AsyncGenerator, Unpack, cast
 
 from cadence.client import Client
 from cadence.worker._registry import Registry
@@ -34,12 +35,14 @@ class Worker:
     def task_list(self) -> str:
         return self._task_list
 
-    async def run(self) -> None:
+    @asynccontextmanager
+    async def run(self):
         async with asyncio.TaskGroup() as tg:
             if not self._options["disable_workflow_worker"]:
                 tg.create_task(self._decision_worker.run())
             if not self._options["disable_activity_worker"]:
                 tg.create_task(self._activity_worker.run())
+            yield self
 
 
 def _validate_and_copy_defaults(

@@ -10,7 +10,7 @@ import cadence
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest, GetWorkflowExecutionHistoryResponse
 import cadence.worker
-from contrib.openai.agent_runner import CadenceAgentRunner
+from contrib.openai.cadence_agent_runner import CadenceAgentRunner
 from contrib.openai.openai_activities import OpenAIActivities
 from contrib.openai.pydantic_data_converter import PydanticDataConverter
 

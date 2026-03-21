@@ -1,19 +1,28 @@
 import dataclasses
 from datetime import timedelta
+import sys
 from typing import Any, Unpack, cast, override
 from agents import Agent, Handoff, RunConfig, RunErrorHandlers, RunHooks, RunResult, RunResultStreaming, RunState, Session, TContext, TResponseInputItem
 from agents.run import DEFAULT_MAX_TURNS, AgentRunner, RunOptions, Runner as _AgentsRunner
-from cadence.client import Client
-
-from cadence import Registry, workflow
-from cadence import client
-from cadence.api.v1.history_pb2 import EventFilterType
-from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest, GetWorkflowExecutionHistoryResponse
-from cadence.client import ClientOptions
-from cadence.worker import Worker
-from functools import partial
-
 from contrib.openai.cadence_model import CadenceModel
+
+# TraceCtxManager assumes that the model invocation is running in the same context.
+# This is no longer true with Cadence workflows, where each invocation is running in a separate coroutine.
+# Thus, suppress the error
+_original_unraisablehook = sys.unraisablehook
+
+def _suppress_ctx_error_hook(args) -> None:
+    if (
+        isinstance(args.exc_value, ValueError)
+        and (
+            isinstance(args.exc_value, ValueError)
+            and "was created in a different Context" in str(args.exc_value)
+        )
+    ):
+        return
+    _original_unraisablehook(args)
+
+sys.unraisablehook = _suppress_ctx_error_hook
 
 def _replace_model_in_agent(
     agent: Agent[Any],

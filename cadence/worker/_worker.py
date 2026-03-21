@@ -36,13 +36,18 @@ class Worker:
         return self._task_list
 
     @asynccontextmanager
-    async def run(self):
-        async with asyncio.TaskGroup() as tg:
+    async def run(self) -> AsyncGenerator["Worker"]:
+        tasks: list[asyncio.Task[None]] = []
+        try:
             if not self._options["disable_workflow_worker"]:
-                tg.create_task(self._decision_worker.run())
+                tasks.append(asyncio.create_task(self._decision_worker.run()))
             if not self._options["disable_activity_worker"]:
-                tg.create_task(self._activity_worker.run())
+                tasks.append(asyncio.create_task(self._activity_worker.run()))
             yield self
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _validate_and_copy_defaults(

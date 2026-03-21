@@ -1,4 +1,5 @@
 import dataclasses
+import datetime as dt
 import enum
 import json as json_module
 import logging
@@ -100,6 +101,10 @@ def _serialize_value(value: Any) -> bytes:
 
 def _to_json_compatible(obj: Any) -> Any:
     """Recursively convert an object to a JSON-compatible structure."""
+    if isinstance(obj, (dt.datetime, dt.date)):
+        return obj.isoformat()
+    if isinstance(obj, dt.timedelta):
+        return obj.total_seconds()
     if isinstance(obj, BaseModel):
         return obj.model_dump()
     if isinstance(obj, enum.Enum):
@@ -116,6 +121,10 @@ def _to_json_compatible(obj: Any) -> Any:
 
 
 def _json_default(obj: Any) -> Any:
+    if isinstance(obj, (dt.datetime, dt.date)):
+        return obj.isoformat()
+    if isinstance(obj, dt.timedelta):
+        return obj.total_seconds()
     if isinstance(obj, enum.Enum):
         return obj.value
     if isinstance(obj, set):

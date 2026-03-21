@@ -6,14 +6,11 @@ from datetime import datetime, timedelta
 from agents import Agent, RunConfig, Runner, function_tool
 from agents.run import set_default_agent_runner
 import cadence
-from cadence import activity
+
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest, GetWorkflowExecutionHistoryResponse
-from cadence.client import ClientOptions
 import cadence.worker
-from cadence.workflow import ActivityOptions
 from contrib.openai.agent_runner import CadenceAgentRunner
-from contrib.openai.cadence_model import CadenceModel
 from contrib.openai.openai_activities import OpenAIActivities
 from contrib.openai.pydantic_data_converter import PydanticDataConverter
 
@@ -40,8 +37,6 @@ async def book_flight(from_city: str, to_city: str, departure_date: datetime, re
     """
     return Flight(from_city=from_city, to_city=to_city, departure_date=departure_date, return_date=return_date, price=100, airline="United", flight_number="123456", seat_number="12A")
 
-book_flight_activity = activity.defn(book_flight, name="book_flight")
-
 @cadence_registry.workflow(name="BookFlightAgentWorkflow")
 class BookFlightAgentWorkflow:
 
@@ -52,7 +47,7 @@ class BookFlightAgentWorkflow:
             name = "Book Flight Agent",
             model = "gpt-4o-mini",
             tools = [
-                function_tool(book_flight_activity),
+                function_tool(book_flight),
             ],
         )
         result = await Runner.run(agent, input, run_config=RunConfig(

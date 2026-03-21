@@ -3,7 +3,7 @@ from agents import Model, OpenAIProvider
 from openai import AsyncOpenAI
 from openai.types.responses import ResponsePromptParam
 from cadence import activity
-from agents import TResponseInputItem, ModelSettings, Tool, AgentOutputSchemaBase, Handoff, ModelTracing, ModelResponse
+from agents import TResponseInputItem, ModelSettings, AgentOutputSchemaBase, Handoff, ModelTracing, ModelResponse
 
 from contrib.openai.cadence_tool import CadenceTool, from_cadence_tool
 

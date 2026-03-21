@@ -1,9 +1,8 @@
 import dataclasses
-from datetime import timedelta
 import sys
-from typing import Any, Unpack, cast, override
-from agents import Agent, Handoff, RunConfig, RunErrorHandlers, RunHooks, RunResult, RunResultStreaming, RunState, Session, TContext, TResponseInputItem
-from agents.run import DEFAULT_MAX_TURNS, AgentRunner, RunOptions, Runner as _AgentsRunner
+from typing import Any, Unpack, override
+from agents import Agent, Handoff, RunConfig, RunResult, RunResultStreaming, RunState, TContext, TResponseInputItem
+from agents.run import DEFAULT_MAX_TURNS, AgentRunner, RunOptions
 from contrib.openai.cadence_model import CadenceModel
 
 # TraceCtxManager assumes that the model invocation is running in the same context.

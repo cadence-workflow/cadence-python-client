@@ -1,11 +1,13 @@
 from dataclasses import dataclass
-from typing import AsyncIterator, Required, Unpack
-from agents import Model, ModelSettings, OpenAIProvider, TResponseInputItem, Tool, AgentOutputSchemaBase, Handoff, ModelTracing, ModelResponse
+from typing import Any, AsyncIterator, Required, Union, Unpack
+from agents import FunctionTool, Model, ModelSettings, OpenAIProvider, RunContextWrapper, TResponseInputItem, Tool, AgentOutputSchemaBase, Handoff, ModelTracing, ModelResponse
 from agents.items import TResponseStreamEvent
+from agents.tool_context import ToolContext
 from openai import AsyncOpenAI
 from openai.types.responses import ResponsePromptParam
 
 from cadence import activity, workflow
+from contrib.openai.cadence_tool import to_cadence_tool
 from contrib.openai.openai_activities import OpenAIActivities
 
 
@@ -35,7 +37,7 @@ class CadenceModel(Model):
             system_instructions=system_instructions,
             input=input,
             model_settings=model_settings,
-            tools=tools,
+            tools=[to_cadence_tool(tool) for tool in tools],
             output_schema=output_schema,
             handoffs=handoffs,
             tracing=tracing,

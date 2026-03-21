@@ -5,6 +5,8 @@ from openai.types.responses import ResponsePromptParam
 from cadence import activity
 from agents import TResponseInputItem, ModelSettings, Tool, AgentOutputSchemaBase, Handoff, ModelTracing, ModelResponse
 
+from contrib.openai.cadence_tool import CadenceTool, from_cadence_tool
+
 class OpenAIActivities:
 
     def __init__(self):
@@ -12,14 +14,14 @@ class OpenAIActivities:
             openai_client=AsyncOpenAI(max_retries=0)
         )
 
-    @activity.defn
+    @activity.method
     async def invoke_model(
         self,
         model_name: str,
         system_instructions: str | None,
         input: str | list[TResponseInputItem],
         model_settings: ModelSettings,
-        tools: list[Tool],
+        tools: list[CadenceTool],
         output_schema: AgentOutputSchemaBase | None,
         handoffs: list[Handoff],
         tracing: ModelTracing,
@@ -33,7 +35,7 @@ class OpenAIActivities:
             system_instructions=system_instructions,
             input=input,
             model_settings=model_settings,
-            tools=tools,
+            tools=[from_cadence_tool(tool) for tool in tools],
             output_schema=output_schema,
             handoffs=handoffs,
             tracing=tracing,

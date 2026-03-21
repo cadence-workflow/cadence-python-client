@@ -14,7 +14,6 @@ from cadence.workflow import WorkflowContext, WorkflowInfo, ResultType, Activity
 default_activity_options = ActivityOptions(
     schedule_to_close_timeout=timedelta(minutes=10),
     schedule_to_start_timeout=timedelta(seconds=10),
-    heartbeat_timeout=timedelta(seconds=10),
 )
 
 class Context(WorkflowContext):

@@ -6,15 +6,19 @@ from datetime import datetime, timedelta
 from agents import Agent, RunConfig, Runner, function_tool
 from agents.run import set_default_agent_runner
 import cadence
+from cadence import activity
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest, GetWorkflowExecutionHistoryResponse
 from cadence.client import ClientOptions
 import cadence.worker
+from cadence.workflow import ActivityOptions
 from contrib.openai.agent_runner import CadenceAgentRunner
 from contrib.openai.cadence_model import CadenceModel
 from contrib.openai.openai_activities import OpenAIActivities
+from contrib.openai.pydantic_data_converter import PydanticDataConverter
 
-
+CADENCE_DOMAIN_NAME = "default"
+CADENCE_FRONTEND_TARGET = "localhost:7833"
 cadence_registry = cadence.Registry()
 cadence_registry.register_activities(OpenAIActivities())
 
@@ -29,23 +33,26 @@ class Flight:
     flight_number: str
     seat_number: str
 
-@cadence_registry.activity
+@cadence_registry.activity(name="book_flight")
 async def book_flight(from_city: str, to_city: str, departure_date: datetime, return_date: datetime) -> Flight:
     """
-    Get the weather for a given city.
+    Book a flight tool
     """
     return Flight(from_city=from_city, to_city=to_city, departure_date=departure_date, return_date=return_date, price=100, airline="United", flight_number="123456", seat_number="12A")
+
+book_flight_activity = activity.defn(book_flight, name="book_flight")
 
 @cadence_registry.workflow(name="BookFlightAgentWorkflow")
 class BookFlightAgentWorkflow:
 
     @cadence.workflow.run
     async def run(self, input: str) -> str:
+
         agent =Agent(
             name = "Book Flight Agent",
             model = "gpt-4o-mini",
             tools = [
-                # function_tool(book_flight),
+                function_tool(book_flight_activity),
             ],
         )
         result = await Runner.run(agent, input, run_config=RunConfig(
@@ -53,14 +60,13 @@ class BookFlightAgentWorkflow:
             ))
         return result.final_output
 
-
-
 async def main():
     set_default_agent_runner(CadenceAgentRunner())
     worker = cadence.worker.Worker(
         cadence.Client(
-            domain="default",
-            target="localhost:7833",
+            domain=CADENCE_DOMAIN_NAME,
+            target=CADENCE_FRONTEND_TARGET,
+            data_converter=PydanticDataConverter(),
         ),
         "agent-task-list",
         cadence_registry,
@@ -71,7 +77,7 @@ async def main():
             "BookFlightAgentWorkflow",
             "Book a flight from New York to London on March 20th 2026 at 10:00 AM and return on March 25th, 2026 at 10:00 AM",
             task_list=worker.task_list,
-            execution_start_to_close_timeout=timedelta(seconds=10),
+            execution_start_to_close_timeout=timedelta(minutes=10),
         )
 
         print(f"cadence workflow started: http://localhost:8088/domains/default/cluster0/workflows/{execution.workflow_id}/{execution.run_id}/summary")

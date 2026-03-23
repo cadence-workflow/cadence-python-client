@@ -109,3 +109,4 @@ Desktop.ini
 # Claude Code files
 CLAUDE.md
 settings.local.json
+.python-version

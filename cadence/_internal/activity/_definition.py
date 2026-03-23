@@ -1,5 +1,9 @@
 import abc
+import asyncio.coroutines
 import inspect
+import sys
+
+_COROUTINE_MARKER = getattr(asyncio.coroutines, "_is_coroutine")
 from abc import ABC
 from enum import Enum
 from functools import update_wrapper, partial
@@ -142,7 +146,13 @@ class AsyncImpl(BaseDefinition[P, R]):
     ):
         super().__init__(name, wrapped, ExecutionStrategy.ASYNC, signature)
         update_wrapper(self, wrapped)
-        inspect.markcoroutinefunction(self)
+        if sys.version_info >= (3, 12):
+            """
+            Mark the function as a coroutine function. This is only available in python 3.12 and above
+            """
+            inspect.markcoroutinefunction(self)
+        else:
+            self._is_coroutine = _COROUTINE_MARKER
 
     async def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         if WorkflowContext.is_set():
@@ -162,7 +172,13 @@ class AsyncMethodImpl(BaseDefinition[P, R], Generic[T, P, R]):
     ):
         super().__init__(name, wrapped, ExecutionStrategy.ASYNC, signature)
         update_wrapper(self, wrapped)
-        inspect.markcoroutinefunction(self)
+        if sys.version_info >= (3, 12):
+            """
+            Mark the function as a coroutine function. This is only available in python 3.12 and above
+            """
+            inspect.markcoroutinefunction(self)
+        else:
+            self._is_coroutine = _COROUTINE_MARKER
 
     def __get__(self, instance, owner):
         if instance is None:

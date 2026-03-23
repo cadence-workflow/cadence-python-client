@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-import dataclasses
 from datetime import timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast
@@ -15,6 +14,7 @@ default_activity_options = ActivityOptions(
     schedule_to_close_timeout=timedelta(minutes=10),
     schedule_to_start_timeout=timedelta(seconds=10),
 )
+
 
 class Context(WorkflowContext):
     def __init__(
@@ -40,8 +40,7 @@ class Context(WorkflowContext):
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
     ) -> ResultType:
-        opts = default_activity_options.copy()
-        opts.update(**kwargs)
+        opts: ActivityOptions = {**default_activity_options, **kwargs}
         if "schedule_to_close_timeout" not in opts and (
             "schedule_to_start_timeout" not in opts
             or "start_to_close_timeout" not in opts

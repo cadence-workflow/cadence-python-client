@@ -3,7 +3,6 @@ import asyncio.coroutines
 import inspect
 import sys
 
-_COROUTINE_MARKER = getattr(asyncio.coroutines, "_is_coroutine")
 from abc import ABC
 from enum import Enum
 from functools import update_wrapper, partial
@@ -25,6 +24,8 @@ from cadence.workflow import ActivityOptions, WorkflowContext, execute_activity
 T = TypeVar("T")
 P = ParamSpec("P")
 R = TypeVar("R")
+
+_COROUTINE_MARKER = getattr(asyncio.coroutines, "_is_coroutine")
 
 
 class ExecutionStrategy(Enum):

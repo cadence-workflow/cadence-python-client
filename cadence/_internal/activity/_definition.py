@@ -1,4 +1,5 @@
 import abc
+import inspect
 from abc import ABC
 from enum import Enum
 from functools import update_wrapper, partial
@@ -141,6 +142,7 @@ class AsyncImpl(BaseDefinition[P, R]):
     ):
         super().__init__(name, wrapped, ExecutionStrategy.ASYNC, signature)
         update_wrapper(self, wrapped)
+        inspect.markcoroutinefunction(self)
 
     async def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         if WorkflowContext.is_set():
@@ -160,6 +162,7 @@ class AsyncMethodImpl(BaseDefinition[P, R], Generic[T, P, R]):
     ):
         super().__init__(name, wrapped, ExecutionStrategy.ASYNC, signature)
         update_wrapper(self, wrapped)
+        inspect.markcoroutinefunction(self)
 
     def __get__(self, instance, owner):
         if instance is None:

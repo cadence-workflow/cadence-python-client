@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from typing import Unpack, cast
 
@@ -7,6 +8,8 @@ from cadence.worker._registry import Registry
 from cadence.worker._activity import ActivityWorker
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
+
+logger = logging.getLogger(__name__)
 
 
 class Worker:
@@ -44,7 +47,12 @@ class Worker:
     async def close(self) -> None:
         for task in self._tasks:
             task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        results = await asyncio.gather(*self._tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                logger.error("Worker task failed", exc_info=result)
 
     async def __aenter__(self) -> "Worker":
         await self.run()

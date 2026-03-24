@@ -36,7 +36,7 @@ class Worker:
         return self._task_list
 
     @asynccontextmanager
-    async def run(self) -> AsyncGenerator["Worker"]:
+    async def run(self) -> AsyncGenerator["Worker", None]:
         tasks: list[asyncio.Task[None]] = []
         try:
             if not self._options["disable_workflow_worker"]:

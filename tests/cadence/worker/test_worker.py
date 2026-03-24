@@ -41,13 +41,9 @@ async def test_worker():
         identity="identity",
     )
 
-    task = asyncio.create_task(worker.run())
-
-    # Wait until both polled
-    await both_waited.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    async with worker.run():
+        # Wait until both polled
+        await both_waited.wait()
 
     worker_stub.PollForDecisionTask.assert_called_once_with(
         PollForDecisionTaskRequest(

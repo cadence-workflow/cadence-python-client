@@ -1,4 +1,3 @@
-import asyncio
 import pathlib
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Unpack, cast
@@ -23,15 +22,9 @@ class CadenceHelper:
     async def worker(
         self, registry: Registry, **kwargs: Unpack[WorkerOptions]
     ) -> AsyncGenerator[Worker, None]:
-        async with self.client() as client:
-            worker = Worker(client, self.test_name, registry, **kwargs)
-            task = asyncio.create_task(worker.run())
+        worker = Worker(self.client(), self.test_name, registry, **kwargs)
+        async with worker.run():
             yield worker
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
 
     def load_history(self, path: str) -> history.History:
         file = pathlib.Path(self.fspath).with_name(path)

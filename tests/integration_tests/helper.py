@@ -1,5 +1,6 @@
+from contextlib import asynccontextmanager
 import pathlib
-from typing import Unpack, cast
+from typing import AsyncGenerator, Unpack, cast
 
 from google.protobuf.proto_json import serialize, parse
 from msgspec import json
@@ -17,8 +18,13 @@ class CadenceHelper:
         self.test_name = test_name
         self.fspath = fspath
 
-    def worker(self, registry: Registry, **kwargs: Unpack[WorkerOptions]) -> Worker:
-        return Worker(self.client(), self.test_name, registry, **kwargs)
+    @asynccontextmanager
+    async def worker(
+        self, registry: Registry, **kwargs: Unpack[WorkerOptions]
+    ) -> AsyncGenerator[Worker, None]:
+        async with self.client() as client:
+            async with Worker(client, self.test_name, registry, **kwargs) as w:
+                yield w
 
     def load_history(self, path: str) -> history.History:
         file = pathlib.Path(self.fspath).with_name(path)

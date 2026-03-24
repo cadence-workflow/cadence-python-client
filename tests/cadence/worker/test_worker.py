@@ -32,16 +32,14 @@ async def test_worker():
     type(client).domain = PropertyMock(return_value="domain")
     type(client).identity = PropertyMock(return_value="identity")
 
-    worker = Worker(
+    async with Worker(
         client,
         "task_list",
         Registry(),
         activity_task_pollers=1,
         decision_task_pollers=1,
         identity="identity",
-    )
-
-    async with worker.run():
+    ):
         # Wait until both polled
         await both_waited.wait()
 

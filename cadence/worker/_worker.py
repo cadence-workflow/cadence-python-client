@@ -1,7 +1,6 @@
 import asyncio
-from contextlib import asynccontextmanager
 import uuid
-from typing import AsyncGenerator, Unpack, cast
+from typing import Unpack, cast
 
 from cadence.client import Client
 from cadence.worker._registry import Registry
@@ -18,6 +17,7 @@ class Worker:
         registry: Registry,
         **kwargs: Unpack[WorkerOptions],
     ) -> None:
+        self._tasks: list[asyncio.Task[None]] = []
         self._client = client
         self._task_list = task_list
 
@@ -35,19 +35,23 @@ class Worker:
     def task_list(self) -> str:
         return self._task_list
 
-    @asynccontextmanager
-    async def run(self) -> AsyncGenerator["Worker", None]:
-        tasks: list[asyncio.Task[None]] = []
-        try:
-            if not self._options["disable_workflow_worker"]:
-                tasks.append(asyncio.create_task(self._decision_worker.run()))
-            if not self._options["disable_activity_worker"]:
-                tasks.append(asyncio.create_task(self._activity_worker.run()))
-            yield self
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+    async def run(self) -> None:
+        if not self._options["disable_workflow_worker"]:
+            self._tasks.append(asyncio.create_task(self._decision_worker.run()))
+        if not self._options["disable_activity_worker"]:
+            self._tasks.append(asyncio.create_task(self._activity_worker.run()))
+
+    async def close(self) -> None:
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    async def __aenter__(self) -> "Worker":
+        await self.run()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
 
 def _validate_and_copy_defaults(

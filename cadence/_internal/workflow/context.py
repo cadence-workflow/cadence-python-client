@@ -12,7 +12,9 @@ from cadence.workflow import WorkflowContext, WorkflowInfo, ResultType, Activity
 
 default_activity_options = ActivityOptions(
     schedule_to_close_timeout=timedelta(minutes=10),
-    schedule_to_start_timeout=timedelta(seconds=10),
+    schedule_to_start_timeout=timedelta(
+        hours=1
+    ),  # more than 1 hour is recommended to set up options explicitly like heartbeat for self recovery
 )
 
 

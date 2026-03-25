@@ -1,6 +1,5 @@
-import asyncio
-import pathlib
 from contextlib import asynccontextmanager
+import pathlib
 from typing import AsyncGenerator, Unpack, cast
 
 from google.protobuf.proto_json import serialize, parse
@@ -24,14 +23,8 @@ class CadenceHelper:
         self, registry: Registry, **kwargs: Unpack[WorkerOptions]
     ) -> AsyncGenerator[Worker, None]:
         async with self.client() as client:
-            worker = Worker(client, self.test_name, registry, **kwargs)
-            task = asyncio.create_task(worker.run())
-            yield worker
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            async with Worker(client, self.test_name, registry, **kwargs) as w:
+                yield w
 
     def load_history(self, path: str) -> history.History:
         file = pathlib.Path(self.fspath).with_name(path)

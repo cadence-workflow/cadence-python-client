@@ -21,6 +21,7 @@ class _Context(ActivityContext):
         self._info = info
         self._activity_def = activity_def
         self._heartbeat_sender = heartbeat_sender
+        self._heartbeat_tasks: set[asyncio.Task[None]] = set()
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
@@ -39,7 +40,9 @@ class _Context(ActivityContext):
         return self._info
 
     def heartbeat(self, *details: Any) -> None:
-        asyncio.ensure_future(self._heartbeat_sender.send_heartbeat(*details))
+        task = asyncio.create_task(self._heartbeat_sender.send_heartbeat(*details))
+        self._heartbeat_tasks.add(task)
+        task.add_done_callback(self._heartbeat_tasks.discard)
 
 
 class _SyncContext(_Context):

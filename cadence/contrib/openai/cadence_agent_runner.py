@@ -1,8 +1,22 @@
 import dataclasses
 import sys
 from typing import Any, Unpack, override
-from agents import Agent, Handoff, RunConfig, RunResult, RunResultStreaming, RunState, TContext, TResponseInputItem
-from agents.run import DEFAULT_MAX_TURNS, AgentRunner, RunOptions, set_default_agent_runner
+from agents import (
+    Agent,
+    Handoff,
+    RunConfig,
+    RunResult,
+    RunResultStreaming,
+    RunState,
+    TContext,
+    TResponseInputItem,
+)
+from agents.run import (
+    DEFAULT_MAX_TURNS,
+    AgentRunner,
+    RunOptions,
+    set_default_agent_runner,
+)
 from cadence.contrib.openai.cadence_model import CadenceModel
 
 # TraceCtxManager assumes that the model invocation is running in the same context.
@@ -10,18 +24,18 @@ from cadence.contrib.openai.cadence_model import CadenceModel
 # Thus, suppress the error
 _original_unraisablehook = sys.unraisablehook
 
+
 def _suppress_ctx_error_hook(args) -> None:
-    if (
+    if isinstance(args.exc_value, ValueError) and (
         isinstance(args.exc_value, ValueError)
-        and (
-            isinstance(args.exc_value, ValueError)
-            and "was created in a different Context" in str(args.exc_value)
-        )
+        and "was created in a different Context" in str(args.exc_value)
     ):
         return
     _original_unraisablehook(args)
 
+
 sys.unraisablehook = _suppress_ctx_error_hook
+
 
 def _replace_model_in_agent(
     agent: Agent[Any],
@@ -43,12 +57,10 @@ def _replace_model_in_agent(
         else:
             raise TypeError(f"Unknown handoff type: {type(handoff)}")
 
-    agent.model = CadenceModel(model_name=name)
     return agent
 
 
 class CadenceAgentRunner(AgentRunner):
-
     @override
     async def run(
         self,
@@ -81,21 +93,22 @@ class CadenceAgentRunner(AgentRunner):
                 raise ValueError("Model must be a string")
             run_config = dataclasses.replace(
                 run_config,
-                model=CadenceModel(
-                    run_config.model
-                ),
+                model=CadenceModel(run_config.model),
             )
 
         return await super().run(
-                starting_agent=_replace_model_in_agent(starting_agent),
-                input=input,
-                context=context,
-                max_turns=max_turns,
-                hooks=hooks,
-                run_config=run_config,
-                previous_response_id=previous_response_id,
-                session=session,
-            )
+            starting_agent=_replace_model_in_agent(starting_agent),
+            input=input,
+            context=context,
+            max_turns=max_turns,
+            hooks=hooks,
+            run_config=run_config,
+            error_handlers=error_handlers,
+            previous_response_id=previous_response_id,
+            auto_previous_response_id=auto_previous_response_id,
+            conversation_id=conversation_id,
+            session=session,
+        )
 
     @override
     def run_sync(
@@ -114,5 +127,6 @@ class CadenceAgentRunner(AgentRunner):
         **kwargs: Any,
     ) -> RunResultStreaming:
         raise RuntimeError("Model run_streamed is not yet supported.")
+
 
 set_default_agent_runner(CadenceAgentRunner())

@@ -8,6 +8,8 @@ The module integrates with [OpenAI Agents SDK](https://github.com/openai/openai-
 
 Currently, it only supports agents with function tools.
 
+**Requirement** Python version 3.12+ is required. 
+
 ## Example: Booking flight Agent
 
 The example below demonstrates how to run a single agent with one tool. See full code example [here](https://gist.github.com/shijiesheng/a06b6b58e44a9a09555bd3140370700e)

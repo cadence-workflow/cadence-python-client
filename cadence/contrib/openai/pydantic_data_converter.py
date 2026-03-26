@@ -65,9 +65,7 @@ class PydanticDataConverter(DataConverter):
 
         return results
 
-    def _decode_whitespace_delimited(
-        self, payload: str, max_count: int
-    ) -> List[Any]:
+    def _decode_whitespace_delimited(self, payload: str, max_count: int) -> List[Any]:
         results: List[Any] = []
         start, end = 0, len(payload)
         while start < end and len(results) < max_count:
@@ -95,8 +93,12 @@ def _serialize_value(value: Any) -> bytes:
         ).encode()
     if isinstance(value, list):
         parts = [_to_json_compatible(item) for item in value]
-        return json_module.dumps(parts, separators=(",", ":"), default=_json_default).encode()
-    return json_module.dumps(value, separators=(",", ":"), default=_json_default).encode()
+        return json_module.dumps(
+            parts, separators=(",", ":"), default=_json_default
+        ).encode()
+    return json_module.dumps(
+        value, separators=(",", ":"), default=_json_default
+    ).encode()
 
 
 def _to_json_compatible(obj: Any) -> Any:

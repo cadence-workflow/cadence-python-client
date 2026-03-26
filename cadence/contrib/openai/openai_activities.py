@@ -1,14 +1,20 @@
-
 from agents import Model, OpenAIProvider
 from openai import AsyncOpenAI
 from openai.types.responses import ResponsePromptParam
 from cadence import activity
-from agents import TResponseInputItem, ModelSettings, AgentOutputSchemaBase, Handoff, ModelTracing, ModelResponse
+from agents import (
+    TResponseInputItem,
+    ModelSettings,
+    AgentOutputSchemaBase,
+    Handoff,
+    ModelTracing,
+    ModelResponse,
+)
 
 from cadence.contrib.openai.cadence_tool import CadenceTool, from_cadence_tool
 
-class OpenAIActivities:
 
+class OpenAIActivities:
     def __init__(self):
         self._openai_provider: OpenAIProvider = OpenAIProvider(
             openai_client=AsyncOpenAI(max_retries=0)
@@ -27,10 +33,10 @@ class OpenAIActivities:
         tracing: ModelTracing,
         previous_response_id: str | None,
         conversation_id: str | None,
-        prompt: ResponsePromptParam | None
+        prompt: ResponsePromptParam | None,
     ) -> ModelResponse:
 
-        model : Model = self._openai_provider.get_model(model_name)
+        model: Model = self._openai_provider.get_model(model_name)
         return await model.get_response(
             system_instructions=system_instructions,
             input=input,

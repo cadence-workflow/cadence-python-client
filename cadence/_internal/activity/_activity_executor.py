@@ -1,12 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
-from typing import Any, Callable, cast
+from typing import Any, Callable, Union, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
 
 from cadence._internal.activity._context import _Context, _SyncContext
 from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
+from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityDefinition
 from cadence.api.v1.common_pb2 import Failure
 from cadence.api.v1.service_worker_pb2 import (
@@ -46,7 +47,9 @@ class ActivityExecutor:
             _logger.exception("Activity failed")
             await self._report_failure(task, e)
 
-    def _create_context(self, task: PollForActivityTaskResponse) -> _Context:
+    def _create_context(
+        self, task: PollForActivityTaskResponse
+    ) -> Union[_Context, _SyncContext]:
         activity_type = task.activity_type.name
         try:
             activity_def = cast(BaseDefinition, self._registry(activity_type))
@@ -54,11 +57,23 @@ class ActivityExecutor:
             raise KeyError(f"Activity type not found: {activity_type}") from None
 
         info = self._create_info(task)
+        heartbeat_sender = _HeartbeatSender(
+            self._client.worker_stub,
+            self._data_converter,
+            task.task_token,
+            self._identity,
+        )
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:
-            return _Context(self._client, info, activity_def)
+            return _Context(self._client, info, activity_def, heartbeat_sender)
         else:
-            return _SyncContext(self._client, info, activity_def, self._thread_pool)
+            return _SyncContext(
+                self._client,
+                info,
+                activity_def,
+                self._thread_pool,
+                heartbeat_sender,
+            )
 
     async def _report_failure(
         self, task: PollForActivityTaskResponse, error: Exception

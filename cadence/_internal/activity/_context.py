@@ -25,8 +25,19 @@ class _Context(ActivityContext):
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
-        with self._activate():
-            return await self._activity_def.impl_fn(*params)
+        try:
+            with self._activate():
+                return await self._activity_def.impl_fn(*params)
+        finally:
+            await self._cancel_pending_heartbeats()
+
+    async def _cancel_pending_heartbeats(self) -> None:
+        if not self._heartbeat_tasks:
+            return
+        tasks = list(self._heartbeat_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def _to_params(self, payload: Payload) -> list[Any]:
         return self._activity_def.signature.params_from_payload(
@@ -40,9 +51,11 @@ class _Context(ActivityContext):
         return self._info
 
     def heartbeat(self, *details: Any) -> None:
-        task = asyncio.create_task(self._heartbeat_sender.send_heartbeat(*details))
-        self._heartbeat_tasks.add(task)
-        task.add_done_callback(self._heartbeat_tasks.discard)
+        heartbeat_task = asyncio.create_task(
+            self._heartbeat_sender.send_heartbeat(*details)
+        )
+        self._heartbeat_tasks.add(heartbeat_task)
+        heartbeat_task.add_done_callback(self._heartbeat_tasks.discard)
 
 
 class _SyncContext(_Context):

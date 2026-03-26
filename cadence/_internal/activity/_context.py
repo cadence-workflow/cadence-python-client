@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures.thread import ThreadPoolExecutor
+from logging import getLogger
 from typing import Any
 
 from cadence import Client
@@ -7,6 +8,8 @@ from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityContext
 from cadence.api.v1.common_pb2 import Payload
+
+_logger = getLogger(__name__)
 
 
 class _Context(ActivityContext):
@@ -39,7 +42,10 @@ class _Context(ActivityContext):
         return self._info
 
     def heartbeat(self, *details: Any) -> None:
-        asyncio.ensure_future(self._heartbeat_sender.send_heartbeat(*details))
+        task = asyncio.ensure_future(
+            self._heartbeat_sender.send_heartbeat(*details)
+        )
+        task.add_done_callback(_on_heartbeat_done)
 
 
 class _SyncContext(_Context):
@@ -50,16 +56,14 @@ class _SyncContext(_Context):
         activity_def: BaseDefinition[[Any], Any],
         executor: ThreadPoolExecutor,
         heartbeat_sender: _HeartbeatSender,
-        loop: asyncio.AbstractEventLoop,
     ):
         super().__init__(client, info, activity_def, heartbeat_sender)
         self._executor = executor
-        self._loop = loop
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._executor, self._run, params)
+        self._loop = asyncio.get_running_loop()
+        return await self._loop.run_in_executor(self._executor, self._run, params)
 
     def _run(self, args: list[Any]) -> Any:
         with self._activate():
@@ -69,6 +73,13 @@ class _SyncContext(_Context):
         raise RuntimeError("client is only supported in async activities")
 
     def heartbeat(self, *details: Any) -> None:
-        asyncio.run_coroutine_threadsafe(
+        future = asyncio.run_coroutine_threadsafe(
             self._heartbeat_sender.send_heartbeat(*details), self._loop
         )
+        future.add_done_callback(_on_heartbeat_done)
+
+
+def _on_heartbeat_done(task: asyncio.Task | asyncio.Future) -> None:
+    exc = task.exception()
+    if exc is not None:
+        _logger.warning("Heartbeat failed: %s", exc)

@@ -1,13 +1,14 @@
 from typing import Any
 
 from cadence.api.v1.service_worker_pb2 import RecordActivityTaskHeartbeatRequest
+from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 from cadence.data_converter import DataConverter
 
 
 class _HeartbeatSender:
     def __init__(
         self,
-        worker_stub: Any,
+        worker_stub: WorkerAPIStub,
         data_converter: DataConverter,
         task_token: bytes,
         identity: str,

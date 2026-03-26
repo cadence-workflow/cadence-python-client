@@ -1,4 +1,3 @@
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
@@ -66,14 +65,12 @@ class ActivityExecutor:
         if activity_def.strategy == ExecutionStrategy.ASYNC:
             return _Context(self._client, info, activity_def, heartbeat_sender)
         else:
-            loop = asyncio.get_running_loop()
             return _SyncContext(
                 self._client,
                 info,
                 activity_def,
                 self._thread_pool,
                 heartbeat_sender,
-                loop,
             )
 
     async def _report_failure(

@@ -358,8 +358,9 @@ async def test_activity_heartbeat_sync(client):
     executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
 
     await executor.execute(fake_task("activity_type", ""))
-    # Allow the event loop to process the heartbeat scheduled from the thread
-    await asyncio.sleep(0)
+    # run_coroutine_threadsafe schedules the heartbeat from a thread;
+    # the coroutine needs multiple event-loop iterations to complete.
+    await asyncio.sleep(0.1)
 
     worker_stub.RespondActivityTaskCompleted.assert_called_once()
     worker_stub.RecordActivityTaskHeartbeat.assert_called_once_with(

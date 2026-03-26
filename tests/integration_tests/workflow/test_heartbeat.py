@@ -84,12 +84,23 @@ async def test_activity_without_heartbeat_times_out(helper: CadenceHelper):
             execution_start_to_close_timeout=timedelta(seconds=30),
         )
 
+        # Wait for the workflow to close (activity timeout will cause workflow failure)
+        await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
+        )
+
+        # Fetch the full history to verify the activity timed out due to missing heartbeat
         response: GetWorkflowExecutionHistoryResponse = (
             await worker.client.workflow_stub.GetWorkflowExecutionHistory(
                 GetWorkflowExecutionHistoryRequest(
                     domain=DOMAIN_NAME,
                     workflow_execution=execution,
-                    wait_for_new_event=True,
                     skip_archival=True,
                 )
             )

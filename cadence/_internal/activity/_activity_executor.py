@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
-from typing import Any, Callable, cast
+from typing import Any, Callable, Union, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
 
@@ -47,7 +47,9 @@ class ActivityExecutor:
             _logger.exception("Activity failed")
             await self._report_failure(task, e)
 
-    def _create_context(self, task: PollForActivityTaskResponse) -> _Context:
+    def _create_context(
+        self, task: PollForActivityTaskResponse
+    ) -> Union[_Context, _SyncContext]:
         activity_type = task.activity_type.name
         try:
             activity_def = cast(BaseDefinition, self._registry(activity_type))

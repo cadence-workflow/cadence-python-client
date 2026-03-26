@@ -1,6 +1,5 @@
 import asyncio
 from concurrent.futures.thread import ThreadPoolExecutor
-from logging import getLogger
 from typing import Any
 
 from cadence import Client
@@ -8,8 +7,6 @@ from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityContext
 from cadence.api.v1.common_pb2 import Payload
-
-_logger = getLogger(__name__)
 
 
 class _Context(ActivityContext):
@@ -42,10 +39,7 @@ class _Context(ActivityContext):
         return self._info
 
     def heartbeat(self, *details: Any) -> None:
-        task = asyncio.ensure_future(
-            self._heartbeat_sender.send_heartbeat(*details)
-        )
-        task.add_done_callback(_on_heartbeat_done)
+        asyncio.ensure_future(self._heartbeat_sender.send_heartbeat(*details))
 
 
 class _SyncContext(_Context):
@@ -73,13 +67,6 @@ class _SyncContext(_Context):
         raise RuntimeError("client is only supported in async activities")
 
     def heartbeat(self, *details: Any) -> None:
-        future = asyncio.run_coroutine_threadsafe(
+        asyncio.run_coroutine_threadsafe(
             self._heartbeat_sender.send_heartbeat(*details), self._loop
         )
-        future.add_done_callback(_on_heartbeat_done)
-
-
-def _on_heartbeat_done(task: asyncio.Task | asyncio.Future) -> None:
-    exc = task.exception()
-    if exc is not None:
-        _logger.warning("Heartbeat failed: %s", exc)

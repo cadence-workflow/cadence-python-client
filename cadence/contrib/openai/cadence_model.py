@@ -19,6 +19,7 @@ from cadence.contrib.openai.openai_activities import OpenAIActivities
 class CadenceModel(Model):
     def __init__(self, model_name: str):
         self._model_name = model_name
+        self._openai_activities = OpenAIActivities()
 
     async def get_response(
         self,
@@ -37,7 +38,7 @@ class CadenceModel(Model):
         """
         run model inside cadence activity
         """
-        return await OpenAIActivities().invoke_model(
+        return await self._openai_activities.invoke_model(
             model_name=self._model_name,
             system_instructions=system_instructions,
             input=input,

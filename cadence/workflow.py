@@ -44,6 +44,10 @@ async def execute_activity(
     )
 
 
+async def start_timer(duration: timedelta) -> None:
+    return await WorkflowContext.get().start_timer(duration)
+
+
 T = TypeVar("T", bound=Callable[..., Any])
 C = TypeVar("C")
 
@@ -276,6 +280,9 @@ class WorkflowContext(ABC):
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
     ) -> ResultType: ...
+
+    @abstractmethod
+    async def start_timer(self, duration: timedelta) -> None: ...
 
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:

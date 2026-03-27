@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 
 from cadence import Registry, workflow
@@ -21,10 +22,18 @@ async def echo(message: str) -> str:
 class TimerWorkflow:
     @workflow.run
     async def run(self) -> str:
-        await workflow.start_timer(timedelta(seconds=1))
+        await workflow.sleep(timedelta(seconds=1))
         await echo("hello")
         return "hello"
 
+@registry.workflow()
+class TimerCancelWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        task = asyncio.create_task(workflow.sleep(timedelta(seconds=1)))
+        await echo("hello")
+        task.cancel()
+        return "hello"
 
 async def test_timer(helper: CadenceHelper):
     async with helper.worker(registry) as worker:
@@ -73,3 +82,51 @@ async def test_timer(helper: CadenceHelper):
         timer_started_time = timer_started_events[0].event_time.ToDatetime()
         activity_scheduled_time = activity_scheduled_events[0].event_time.ToDatetime()
         assert activity_scheduled_time >= timer_started_time + timedelta(seconds=1)
+
+async def test_timer_cancel(helper: CadenceHelper):
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "TimerCancelWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=10),
+        )
+
+        # wait for close event
+        await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=worker.client.domain,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
+        )
+
+        response: GetWorkflowExecutionHistoryResponse = (
+            await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+                GetWorkflowExecutionHistoryRequest(
+                    domain=worker.client.domain,
+                    workflow_execution=execution,
+                )
+            )
+        )
+
+        events = response.history.events
+
+        timer_started_events = [
+            e for e in events if e.HasField("timer_started_event_attributes")
+        ]
+        timer_canceled_events = [
+            e for e in events if e.HasField("timer_canceled_event_attributes")
+        ]
+        assert len(timer_started_events) == 1
+        assert len(timer_canceled_events) == 1
+
+        activity_scheduled_events = [
+            e for e in events if e.HasField("activity_task_scheduled_event_attributes")
+        ]
+        assert len(activity_scheduled_events) == 1
+
+        timer_started_time = timer_started_events[0].event_time.ToDatetime()
+        activity_scheduled_time = activity_scheduled_events[0].event_time.ToDatetime()
+        assert activity_scheduled_time < timer_started_time + timedelta(seconds=1)

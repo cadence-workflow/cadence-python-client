@@ -44,7 +44,7 @@ async def execute_activity(
     )
 
 
-async def start_timer(duration: timedelta) -> None:
+async def sleep(duration: timedelta) -> None:
     return await WorkflowContext.get().start_timer(duration)
 
 

@@ -26,6 +26,7 @@ class TimerWorkflow:
         await echo("hello")
         return "hello"
 
+
 @registry.workflow()
 class TimerCancelWorkflow:
     @workflow.run
@@ -34,6 +35,7 @@ class TimerCancelWorkflow:
         await echo("hello")
         task.cancel()
         return "hello"
+
 
 async def test_timer(helper: CadenceHelper):
     async with helper.worker(registry) as worker:
@@ -82,6 +84,7 @@ async def test_timer(helper: CadenceHelper):
         timer_started_time = timer_started_events[0].event_time.ToDatetime()
         activity_scheduled_time = activity_scheduled_events[0].event_time.ToDatetime()
         assert activity_scheduled_time >= timer_started_time + timedelta(seconds=1)
+
 
 async def test_timer_cancel(helper: CadenceHelper):
     async with helper.worker(registry) as worker:

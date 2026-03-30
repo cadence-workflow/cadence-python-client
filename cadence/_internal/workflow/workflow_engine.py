@@ -13,16 +13,19 @@ from cadence._internal.workflow.deterministic_event_loop import (
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.api.v1 import history
-from cadence.api.v1.common_pb2 import Failure
+from cadence.api.v1.common_pb2 import Failure, WorkflowType
 from cadence.api.v1.decision_pb2 import (
     Decision,
     FailWorkflowExecutionDecisionAttributes,
     CompleteWorkflowExecutionDecisionAttributes,
+    ContinueAsNewWorkflowExecutionDecisionAttributes,
 )
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     WorkflowExecutionStartedEventAttributes,
 )
+from cadence.api.v1.tasklist_pb2 import TaskList
+from cadence.error import ContinueAsNewError
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
 
 logger = logging.getLogger(__name__)
@@ -187,6 +190,25 @@ class WorkflowEngine:
                 return None
         except (CancelledError, InvalidStateError, FatalDecisionError):
             raise
+        except ContinueAsNewError as e:
+            # Use execution's workflow type and task list when not overridden
+            info = self._context.info()
+            attrs = ContinueAsNewWorkflowExecutionDecisionAttributes(
+                workflow_type=WorkflowType(name=e.workflow_type or info.workflow_type),
+                task_list=TaskList(name=e.task_list or info.workflow_task_list),
+                input=info.data_converter.to_data(list(e.workflow_args)),
+            )
+            if e.execution_start_to_close_timeout is not None:
+                attrs.execution_start_to_close_timeout.FromTimedelta(
+                    e.execution_start_to_close_timeout
+                )
+            if e.task_start_to_close_timeout is not None:
+                attrs.task_start_to_close_timeout.FromTimedelta(
+                    e.task_start_to_close_timeout
+                )
+            return Decision(
+                continue_as_new_workflow_execution_decision_attributes=attrs,
+            )
         except ExceptionGroup as e:
             if e.subgroup((InvalidStateError, FatalDecisionError)):
                 raise

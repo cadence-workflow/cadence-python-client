@@ -14,7 +14,9 @@ from typing import (
     ParamSpec,
     TypeVar,
     Awaitable,
+    Type,
     cast,
+    overload,
     Concatenate,
 )
 
@@ -119,10 +121,13 @@ class SyncMethodImpl(BaseDefinition[P, R], Generic[T, P, R]):
         super().__init__(name, wrapped, ExecutionStrategy.THREAD_POOL, signature)
         update_wrapper(self, wrapped)
 
-    def __get__(self, instance, owner):
+    @overload
+    def __get__(self, instance: None, owner: Type[T]) -> "SyncMethodImpl[T, P, R]": ...
+    @overload
+    def __get__(self, instance: T, owner: Type[T]) -> SyncImpl[P, R]: ...
+    def __get__(self, instance: T | None, owner: Type[T]) -> "SyncImpl[P, R] | Self":
         if instance is None:
             return self
-        # If we bound the method to an instance, then drop the self parameter. It's a normal function again
         return SyncImpl[P, R](
             partial(self._wrapped, instance), self.name, self._signature
         )
@@ -181,10 +186,13 @@ class AsyncMethodImpl(BaseDefinition[P, R], Generic[T, P, R]):
         else:
             self._is_coroutine = _COROUTINE_MARKER
 
-    def __get__(self, instance, owner):
+    @overload
+    def __get__(self, instance: None, owner: Type[T]) -> "AsyncMethodImpl[T, P, R]": ...
+    @overload
+    def __get__(self, instance: T, owner: Type[T]) -> AsyncImpl[P, R]: ...
+    def __get__(self, instance: T | None, owner: Type[T]) -> "AsyncImpl[P, R] | Self":
         if instance is None:
             return self
-        # If we bound the method to an instance, then drop the self parameter. It's a normal function again
         return AsyncImpl[P, R](
             partial(self._wrapped, instance), self.name, self._signature
         )

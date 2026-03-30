@@ -51,10 +51,10 @@ jobs:
         uses: astral-sh/setup-uv@v1
       - name: Install dependencies
         run: |
-          uv sync --extra dev
+          uv sync --extra dev --extra openai
       - name: Run mypy type checker
         run: |
-          uv tool run mypy cadence/
+          uv run mypy cadence/
 
   test:
     name: Unit Tests

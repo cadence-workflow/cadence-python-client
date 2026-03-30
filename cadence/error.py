@@ -1,4 +1,25 @@
+from datetime import timedelta
+from typing import Any
+
 import grpc
+
+
+class ContinueAsNewError(Exception):
+
+    def __init__(
+        self,
+        *args: Any,
+        workflow_type: str | None = None,
+        task_list: str | None = None,
+        execution_start_to_close_timeout: timedelta | None = None,
+        task_start_to_close_timeout: timedelta | None = None,
+    ):
+        super().__init__("ContinueAsNew")
+        self.workflow_args = args
+        self.workflow_type = workflow_type
+        self.task_list = task_list
+        self.execution_start_to_close_timeout = execution_start_to_close_timeout
+        self.task_start_to_close_timeout = task_start_to_close_timeout
 
 
 class ActivityFailure(Exception):

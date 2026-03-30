@@ -15,11 +15,13 @@ from typing import (
     Union,
     Unpack,
     Generic,
+    NoReturn,
 )
 import inspect
 
 from cadence._internal.fn_signature import FnSignature
 from cadence.data_converter import DataConverter
+from cadence.error import ContinueAsNewError
 from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
 ResultType = TypeVar("ResultType")
@@ -46,6 +48,37 @@ async def execute_activity(
 
 async def sleep(duration: timedelta) -> None:
     return await WorkflowContext.get().start_timer(duration)
+
+
+def continue_as_new(
+    *args: Any,
+    workflow_type: str | None = None,
+    task_list: str | None = None,
+    execution_start_to_close_timeout: timedelta | None = None,
+    task_start_to_close_timeout: timedelta | None = None,
+) -> NoReturn:
+    """Continue this workflow as a new execution.
+
+    This function never returns. It raises ContinueAsNewError which
+    propagates out of the workflow to signal the worker to create a
+    continue-as-new decision.
+
+    This is different from go sdk
+
+    Args:
+        *args: Arguments for the new workflow execution.
+        workflow_type: Override workflow type (default: same type).
+        task_list: Override task list (default: same task list).
+        execution_start_to_close_timeout: Override execution timeout.
+        task_start_to_close_timeout: Override task timeout.
+    """
+    raise ContinueAsNewError(
+        *args,
+        workflow_type=workflow_type,
+        task_list=task_list,
+        execution_start_to_close_timeout=execution_start_to_close_timeout,
+        task_start_to_close_timeout=task_start_to_close_timeout,
+    )
 
 
 T = TypeVar("T", bound=Callable[..., Any])

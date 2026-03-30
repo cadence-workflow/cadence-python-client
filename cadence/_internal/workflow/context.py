@@ -5,7 +5,10 @@ from typing import Iterator, Optional, Any, Unpack, Type, cast
 
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1.common_pb2 import ActivityType
-from cadence.api.v1.decision_pb2 import ScheduleActivityTaskDecisionAttributes
+from cadence.api.v1.decision_pb2 import (
+    ScheduleActivityTaskDecisionAttributes,
+    StartTimerDecisionAttributes,
+)
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
 from cadence.workflow import WorkflowContext, WorkflowInfo, ResultType, ActivityOptions
@@ -96,6 +99,15 @@ class Context(WorkflowContext):
         result = self.data_converter().from_data(result_payload, [result_type])[0]
 
         return cast(ResultType, result)
+
+    async def start_timer(self, duration: timedelta):
+        if duration.total_seconds() <= 0:  # shortcut
+            return
+        await self._decision_manager.start_timer(
+            StartTimerDecisionAttributes(
+                start_to_fire_timeout=duration,
+            )
+        )
 
     def set_replay_mode(self, replay: bool) -> None:
         """Set whether the workflow is currently in replay mode."""

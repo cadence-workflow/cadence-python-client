@@ -326,9 +326,6 @@ async def test_activity_heartbeat_async(client):
     executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
 
     await executor.execute(fake_task("activity_type", ""))
-    # ensure_future schedules the heartbeat as a fire-and-forget task;
-    # it needs multiple event-loop iterations to complete.
-    await asyncio.sleep(0.1)
 
     worker_stub.RespondActivityTaskCompleted.assert_called_once()
     worker_stub.RecordActivityTaskHeartbeat.assert_called_once_with(
@@ -359,9 +356,6 @@ async def test_activity_heartbeat_sync(client):
     executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
 
     await executor.execute(fake_task("activity_type", ""))
-    # run_coroutine_threadsafe schedules the heartbeat from a thread;
-    # the coroutine needs multiple event-loop iterations to complete.
-    await asyncio.sleep(0.1)
 
     worker_stub.RespondActivityTaskCompleted.assert_called_once()
     worker_stub.RecordActivityTaskHeartbeat.assert_called_once_with(

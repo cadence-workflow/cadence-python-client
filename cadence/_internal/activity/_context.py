@@ -21,7 +21,7 @@ class _Context(ActivityContext):
         self._info = info
         self._activity_def = activity_def
         self._heartbeat_sender = heartbeat_sender
-        self._heartbeat_tasks: set[asyncio.Task[None]] = set()
+        self._heartbeat_tasks: set[asyncio.Future[None]] = set()
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
@@ -29,14 +29,12 @@ class _Context(ActivityContext):
             with self._activate():
                 return await self._activity_def.impl_fn(*params)
         finally:
-            await self._cancel_pending_heartbeats()
+            await self._wait_pending_heartbeats()
 
-    async def _cancel_pending_heartbeats(self) -> None:
+    async def _wait_pending_heartbeats(self) -> None:
         if not self._heartbeat_tasks:
             return
         tasks = list(self._heartbeat_tasks)
-        for task in tasks:
-            task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
     def _to_params(self, payload: Payload) -> list[Any]:
@@ -73,7 +71,10 @@ class _SyncContext(_Context):
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
         self._loop = asyncio.get_running_loop()
-        return await self._loop.run_in_executor(self._executor, self._run, params)
+        try:
+            return await self._loop.run_in_executor(self._executor, self._run, params)
+        finally:
+            await self._wait_pending_heartbeats()
 
     def _run(self, args: list[Any]) -> Any:
         with self._activate():
@@ -83,6 +84,9 @@ class _SyncContext(_Context):
         raise RuntimeError("client is only supported in async activities")
 
     def heartbeat(self, *details: Any) -> None:
-        asyncio.run_coroutine_threadsafe(
+        future = asyncio.run_coroutine_threadsafe(
             self._heartbeat_sender.send_heartbeat(*details), self._loop
         )
+        wrapped = asyncio.wrap_future(future, loop=self._loop)
+        self._heartbeat_tasks.add(wrapped)
+        wrapped.add_done_callback(self._heartbeat_tasks.discard)

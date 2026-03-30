@@ -5,7 +5,6 @@ import grpc
 
 
 class ContinueAsNewError(Exception):
-
     def __init__(
         self,
         *args: Any,

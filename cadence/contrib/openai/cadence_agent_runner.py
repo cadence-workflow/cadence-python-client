@@ -1,6 +1,7 @@
 import dataclasses
 import sys
-from typing import Any, Unpack, override
+from typing import Any, Unpack
+from typing_extensions import override
 from agents import (
     Agent,
     Handoff,
@@ -114,8 +115,8 @@ class CadenceAgentRunner(AgentRunner):
     def run_sync(
         self,
         starting_agent: Agent[TContext],
-        input: str | list[TResponseInputItem],
-        **kwargs: Any,
+        input: str | list[TResponseInputItem] | RunState[TContext],
+        **kwargs: Unpack[RunOptions[TContext]],
     ) -> RunResult:
         raise RuntimeError("Model run_sync is not yet supported.")
 
@@ -123,8 +124,8 @@ class CadenceAgentRunner(AgentRunner):
     def run_streamed(
         self,
         starting_agent: Agent[TContext],
-        input: str | list[TResponseInputItem],
-        **kwargs: Any,
+        input: str | list[TResponseInputItem] | RunState[TContext],
+        **kwargs: Unpack[RunOptions[TContext]],
     ) -> RunResultStreaming:
         raise RuntimeError("Model run_streamed is not yet supported.")
 

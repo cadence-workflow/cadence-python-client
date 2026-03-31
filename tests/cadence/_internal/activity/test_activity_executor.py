@@ -22,6 +22,8 @@ from cadence.api.v1.service_worker_pb2 import (
     RespondActivityTaskCompletedRequest,
     RespondActivityTaskFailedResponse,
     RespondActivityTaskFailedRequest,
+    RecordActivityTaskHeartbeatResponse,
+    RecordActivityTaskHeartbeatRequest,
 )
 from cadence.data_converter import DefaultDataConverter
 from cadence.worker import Registry
@@ -303,3 +305,63 @@ def from_datetime(time: datetime) -> Timestamp:
     t = Timestamp()
     t.FromDatetime(time)
     return t
+
+
+async def test_activity_heartbeat_async(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse()
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        activity.heartbeat("progress", 50)
+        return "success"
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCompleted.assert_called_once()
+    worker_stub.RecordActivityTaskHeartbeat.assert_called_once_with(
+        RecordActivityTaskHeartbeatRequest(
+            task_token=b"task_token",
+            details=Payload(data=b'"progress" 50'),
+            identity="identity",
+        )
+    )
+
+
+async def test_activity_heartbeat_sync(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse()
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    def activity_fn():
+        activity.heartbeat("sync-progress")
+        return "success"
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCompleted.assert_called_once()
+    worker_stub.RecordActivityTaskHeartbeat.assert_called_once_with(
+        RecordActivityTaskHeartbeatRequest(
+            task_token=b"task_token",
+            details=Payload(data=b'"sync-progress"'),
+            identity="identity",
+        )
+    )

@@ -110,3 +110,5 @@ Desktop.ini
 CLAUDE.md
 settings.local.json
 .python-version
+*.bak
+.mcp.json

@@ -3,7 +3,6 @@ from typing import Any
 
 from agents import Handoff
 from agents.run_context import RunContextWrapper
-from typing import Awaitable
 
 
 @dataclass

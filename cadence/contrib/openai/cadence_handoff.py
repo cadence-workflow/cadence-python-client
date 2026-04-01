@@ -30,7 +30,7 @@ def to_cadence_handoff(handoff: Handoff[Any, Any]) -> CadenceHandoff:
 
 
 def from_cadence_handoff(ch: CadenceHandoff) -> Handoff[Any, Any]:
-    async def noop_invoke(_ctx: RunContextWrapper[Any], _json: str) -> Awaitable[Any]:  # type: ignore[return]
+    async def noop_invoke(_ctx: RunContextWrapper[Any], _json: str):
         raise RuntimeError("Handoff invocation is handled by the runner, not the model")
 
     return Handoff(

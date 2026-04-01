@@ -39,7 +39,7 @@ class DefaultDataConverter(DataConverter):
     ) -> List[Any]:
         results: List[Any] = []
         start, end = 0, len(payload)
-        while start < end and len(results) < len(type_hints):
+        while start < end and (not type_hints or len(results) < len(type_hints)):
             remaining = payload[start:end]
             (value, value_end) = self._decoder.raw_decode(remaining)
             start += value_end + 1
@@ -51,6 +51,8 @@ class DefaultDataConverter(DataConverter):
     def _convert_into(
         values: List[Any], type_hints: Sequence[Type | None]
     ) -> List[Any]:
+        if not type_hints:
+            return list(values)
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
             if not type_hint or type_hint is Any:

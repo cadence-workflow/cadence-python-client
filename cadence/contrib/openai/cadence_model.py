@@ -1,4 +1,4 @@
-from typing import AsyncIterator, cast
+from typing import AsyncIterator
 from agents import (
     Model,
     ModelSettings,
@@ -13,6 +13,7 @@ from agents.items import TResponseStreamEvent
 from openai.types.responses import ResponsePromptParam
 
 from cadence.contrib.openai.cadence_tool import to_cadence_tool
+from cadence.contrib.openai.cadence_handoff import to_cadence_handoff
 from cadence.contrib.openai.openai_activities import OpenAIActivities
 
 
@@ -39,21 +40,18 @@ class CadenceModel(Model):
         run model inside cadence activity
         """
         # cast needed: mypy can't infer R through ParamSpec with complex OpenAI union types
-        return cast(
-            ModelResponse,
-            await self._openai_activities.invoke_model(
-                model_name=self._model_name,
-                system_instructions=system_instructions,
-                input=input,
-                model_settings=model_settings,
-                tools=[to_cadence_tool(tool) for tool in tools],
-                output_schema=output_schema,
-                handoffs=handoffs,
-                tracing=tracing,
-                previous_response_id=previous_response_id,
-                conversation_id=conversation_id,
-                prompt=prompt,
-            ),
+        return await self._openai_activities.invoke_model(
+            model_name=self._model_name,
+            system_instructions=system_instructions,
+            input=input,
+            model_settings=model_settings,
+            tools=[to_cadence_tool(tool) for tool in tools],
+            output_schema=output_schema,
+            handoffs=[to_cadence_handoff(h) for h in handoffs],
+            tracing=tracing,
+            previous_response_id=previous_response_id,
+            conversation_id=conversation_id,
+            prompt=prompt,
         )
 
     def stream_response(

@@ -32,6 +32,7 @@ def sender(worker_stub, data_converter) -> _HeartbeatSender:
         data_converter=data_converter,
         task_token=b"task_token",
         identity="test-identity",
+        previous_details=Payload(),
     )
 
 

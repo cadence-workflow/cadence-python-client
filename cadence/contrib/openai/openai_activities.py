@@ -6,12 +6,12 @@ from agents import (
     TResponseInputItem,
     ModelSettings,
     AgentOutputSchemaBase,
-    Handoff,
     ModelTracing,
     ModelResponse,
 )
 
 from cadence.contrib.openai.cadence_tool import CadenceTool, from_cadence_tool
+from cadence.contrib.openai.cadence_handoff import CadenceHandoff, from_cadence_handoff
 
 
 class OpenAIActivities:
@@ -29,7 +29,7 @@ class OpenAIActivities:
         model_settings: ModelSettings,
         tools: list[CadenceTool],
         output_schema: AgentOutputSchemaBase | None,
-        handoffs: list[Handoff],
+        handoffs: list[CadenceHandoff],
         tracing: ModelTracing,
         previous_response_id: str | None,
         conversation_id: str | None,
@@ -43,7 +43,7 @@ class OpenAIActivities:
             model_settings=model_settings,
             tools=[from_cadence_tool(tool) for tool in tools],
             output_schema=output_schema,
-            handoffs=handoffs,
+            handoffs=[from_cadence_handoff(h) for h in handoffs],
             tracing=tracing,
             previous_response_id=previous_response_id,
             conversation_id=conversation_id,

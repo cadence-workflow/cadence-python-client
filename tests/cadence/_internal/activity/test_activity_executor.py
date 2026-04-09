@@ -281,7 +281,11 @@ def fake_info(activity_type: str) -> ActivityInfo:
     )
 
 
-def fake_task(activity_type: str, input_json: str) -> PollForActivityTaskResponse:
+def fake_task(
+    activity_type: str,
+    input_json: str,
+    heartbeat_details: str = "",
+) -> PollForActivityTaskResponse:
     return PollForActivityTaskResponse(
         task_token=b"task_token",
         workflow_domain="workflow_domain",
@@ -298,6 +302,9 @@ def fake_task(activity_type: str, input_json: str) -> PollForActivityTaskRespons
         scheduled_time=from_datetime(datetime(2020, 1, 2, 3)),
         started_time=from_datetime(datetime(2020, 1, 2, 4)),
         start_to_close_timeout=from_timedelta(timedelta(seconds=2)),
+        heartbeat_details=Payload(data=heartbeat_details.encode())
+        if heartbeat_details
+        else Payload(),
     )
 
 
@@ -365,3 +372,140 @@ async def test_activity_heartbeat_sync(client):
             identity="identity",
         )
     )
+
+
+async def test_heartbeat_details_recovery_async(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        return activity.heartbeat_details(str, int)
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(
+        fake_task("activity_type", "", heartbeat_details='"progress" 42')
+    )
+
+    worker_stub.RespondActivityTaskCompleted.assert_called_once_with(
+        RespondActivityTaskCompletedRequest(
+            task_token=b"task_token",
+            result=Payload(data=b'["progress",42]'),
+            identity="identity",
+        )
+    )
+
+
+async def test_heartbeat_details_recovery_sync(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    def activity_fn():
+        return activity.heartbeat_details(str, int)
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(
+        fake_task("activity_type", "", heartbeat_details='"progress" 42')
+    )
+
+    worker_stub.RespondActivityTaskCompleted.assert_called_once_with(
+        RespondActivityTaskCompletedRequest(
+            task_token=b"task_token",
+            result=Payload(data=b'["progress",42]'),
+            identity="identity",
+        )
+    )
+
+
+async def test_heartbeat_details_empty_when_no_previous_heartbeat(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        return activity.heartbeat_details()
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCompleted.assert_called_once_with(
+        RespondActivityTaskCompletedRequest(
+            task_token=b"task_token",
+            result=Payload(data=b"[]"),
+            identity="identity",
+        )
+    )
+
+
+async def test_heartbeat_details_recovery_across_attempts(client):
+    """Simulate retry: first attempt has no heartbeat details and fails,
+    second attempt receives heartbeat details from the server and succeeds."""
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskFailed = AsyncMock(
+        return_value=RespondActivityTaskFailedResponse()
+    )
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse()
+    )
+
+    attempt_count = 0
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        nonlocal attempt_count
+        attempt_count += 1
+
+        details = activity.heartbeat_details()
+        if not details:
+            activity.heartbeat("step1", 50)
+            raise RuntimeError("simulated failure on first attempt")
+
+        return activity.heartbeat_details(str, int)
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    # First attempt: no heartbeat details, activity heartbeats progress then fails
+    await executor.execute(fake_task("activity_type", ""))
+    worker_stub.RespondActivityTaskFailed.assert_called_once()
+    worker_stub.RecordActivityTaskHeartbeat.assert_called_once_with(
+        RecordActivityTaskHeartbeatRequest(
+            task_token=b"task_token",
+            details=Payload(data=b'"step1" 50'),
+            identity="identity",
+        )
+    )
+
+    # Second attempt: server provides heartbeat details from previous attempt
+    await executor.execute(
+        fake_task("activity_type", "", heartbeat_details='"step1" 50')
+    )
+    worker_stub.RespondActivityTaskCompleted.assert_called_once_with(
+        RespondActivityTaskCompletedRequest(
+            task_token=b"task_token",
+            result=Payload(data=b'["step1",50]'),
+            identity="identity",
+        )
+    )
+
+    assert attempt_count == 2

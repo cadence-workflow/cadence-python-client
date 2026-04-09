@@ -1,6 +1,6 @@
 import asyncio
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import Any
+from typing import Any, Type
 
 from cadence import Client
 from cadence._internal.activity._definition import BaseDefinition
@@ -54,6 +54,9 @@ class _Context(ActivityContext):
         )
         self._heartbeat_tasks.add(heartbeat_task)
         heartbeat_task.add_done_callback(self._heartbeat_tasks.discard)
+
+    def heartbeat_details(self, *types: Type) -> list[Any]:
+        return self._heartbeat_sender.get_details(*types)
 
 
 class _SyncContext(_Context):

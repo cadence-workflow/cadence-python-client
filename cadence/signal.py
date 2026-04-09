@@ -89,7 +89,8 @@ class SignalDefinition(Generic[P, T]):
         type_hints = [p.type_hint for p in self._params]
         if not type_hints:
             return []
-        return data_converter.from_data(payload, type_hints)
+        result: list[Any] = data_converter.from_data(payload, type_hints)
+        return result
 
     @staticmethod
     def wrap(

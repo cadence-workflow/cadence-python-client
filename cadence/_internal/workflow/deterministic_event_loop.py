@@ -169,7 +169,22 @@ class DeterministicEventLoop(AbstractEventLoop):
 
     @staticmethod
     def _run_handle(handle: events.Handle) -> None:
-        handle._context.run(handle._callback, *handle._args)
+        try:
+            ctx = handle._context  # type: ignore[attr-defined]
+            cb = handle._callback  # type: ignore[attr-defined]
+            args = handle._args  # type: ignore[attr-defined]
+            if ctx is not None:
+                ctx.run(cb, *args)
+            else:
+                cb(*args)
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except BaseException as exc:
+            handle._loop.call_exception_handler({  # type: ignore[attr-defined]
+                'message': 'Exception in callback %r' % handle,
+                'exception': exc,
+                'handle': handle,
+            })
 
     def _run_forever_setup(self) -> None:
         self._check_closed()

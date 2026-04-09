@@ -2,7 +2,6 @@
 
 from datetime import timedelta
 
-import pytest
 
 from cadence.api.v1.common_pb2 import ActivityType, Payload
 from cadence.api.v1.history_pb2 import (
@@ -340,7 +339,7 @@ class TestSignalDelivery:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
-    def test_async_signal_handler_raises(self):
+    def test_async_signal_handler_raises(self, caplog):
         engine = make_workflow_engine(AsyncSignalWorkflow)
         events = [
             HistoryEvent(
@@ -362,8 +361,9 @@ class TestSignalDelivery:
             ),
         ]
 
-        with pytest.raises(NotImplementedError, match="Async signal handlers"):
+        with caplog.at_level("ERROR"):
             engine.process_decision(events)
+        assert "Async signal handlers" in caplog.text
 
     def test_multi_param_signal(self):
         """Signal handler with multiple typed parameters decodes correctly."""
@@ -422,8 +422,8 @@ class TestSignalDelivery:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
-    def test_signal_handler_exception_fails_decision(self):
-        """Exception in a signal handler propagates and fails the decision task."""
+    def test_signal_handler_exception_fails_decision(self, caplog):
+        """Exception in a signal handler is caught and logged by the event loop."""
         engine = make_workflow_engine(FailingSignalWorkflow)
         events = [
             HistoryEvent(
@@ -445,8 +445,9 @@ class TestSignalDelivery:
             ),
         ]
 
-        with pytest.raises(ValueError, match="handler failed on: boom"):
+        with caplog.at_level("ERROR"):
             engine.process_decision(events)
+        assert "handler failed on: boom" in caplog.text
 
 
 class TestSameBatchOrdering:

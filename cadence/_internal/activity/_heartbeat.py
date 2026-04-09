@@ -37,5 +37,6 @@ class _HeartbeatSender:
                     identity=self._identity,
                 )
             )
+            self._previous_details = payload
         except Exception:
             _logger.warning("Heartbeat failed", exc_info=True)

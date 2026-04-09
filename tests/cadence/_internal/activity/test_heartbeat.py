@@ -77,7 +77,8 @@ async def test_heartbeat_updates_previous_details(sender, worker_stub):
 
 
 async def test_heartbeat_details_not_updated_on_failure(
-    worker_stub, data_converter,
+    worker_stub,
+    data_converter,
 ):
     worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
         side_effect=Exception("rpc error")

@@ -169,10 +169,7 @@ class DeterministicEventLoop(AbstractEventLoop):
 
     @staticmethod
     def _run_handle(handle: events.Handle) -> None:
-        if handle._context is not None:
-            handle._context.run(handle._callback, *handle._args)
-        else:
-            handle._callback(*handle._args)
+        handle._context.run(handle._callback, *handle._args)
 
     def _run_forever_setup(self) -> None:
         self._check_closed()

@@ -139,6 +139,20 @@ class ActivityCompletionAndSignalWorkflow:
         self.log.append("signal")
 
 
+class FailingSignalWorkflow:
+    def __init__(self):
+        self.signals_received: list[str] = []
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: len(self.signals_received) >= 1)
+        return self.signals_received[0]
+
+    @workflow.signal(name="bad_signal")
+    def handle_signal(self, value: str):
+        raise ValueError(f"handler failed on: {value}")
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 DATA_CONVERTER = DefaultDataConverter()
@@ -407,6 +421,32 @@ class TestSignalDelivery:
         assert engine.is_done()
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
+
+    def test_signal_handler_exception_fails_decision(self):
+        """Exception in a signal handler propagates and fails the decision task."""
+        engine = make_workflow_engine(FailingSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "bad_signal", "boom"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        with pytest.raises(ValueError, match="handler failed on: boom"):
+            engine.process_decision(events)
 
 
 class TestSameBatchOrdering:

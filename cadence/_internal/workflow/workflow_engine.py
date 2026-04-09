@@ -163,8 +163,7 @@ class WorkflowEngine:
                     self._decision_manager.handle_history_event(marker_event)
 
                 # Phase 2: Apply input events in history order. Signal callbacks are enqueued
-                # with higher priority so they run before normal workflow tasks, matching the
-                # Java client's deterministic runner semantics.
+                # with higher priority so they run before normal workflow tasks
                 for event in decision_events.input:
                     if (
                         event.WhichOneof("attributes")

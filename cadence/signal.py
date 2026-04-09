@@ -85,6 +85,12 @@ class SignalDefinition(Generic[P, T]):
         """Get the wrapped signal handler function."""
         return self._wrapped
 
+    def params_from_payload(self, data_converter: Any, payload: Any) -> list[Any]:
+        type_hints = [p.type_hint for p in self._params]
+        if not type_hints:
+            return []
+        return data_converter.from_data(payload, type_hints)
+
     @staticmethod
     def wrap(
         fn: Callable[P, T], opts: SignalDefinitionOptions

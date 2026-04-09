@@ -1,10 +1,12 @@
 import logging
 from asyncio import Task
 from typing import Any, Optional, Callable, Awaitable
+
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
 )
 from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.history_pb2 import HistoryEvent
 
 from cadence.data_converter import DataConverter
 from cadence.workflow import WorkflowDefinition
@@ -51,3 +53,34 @@ class WorkflowInstance:
         if self._task is None or not self._task.done():
             return None
         return self._task.result()
+
+    def handle_signal_event(
+        self, event: HistoryEvent, on_applied: Callable[[], None]
+    ) -> None:
+        attrs = event.workflow_execution_signaled_event_attributes
+        self._loop.call_soon_priority(
+            self._deliver_signal, attrs.signal_name, attrs.input, on_applied
+        )
+
+    def _deliver_signal(
+        self, signal_name: str, payload: Payload, on_applied: Callable[[], None]
+    ) -> None:
+        self._invoke_signal(signal_name, payload)
+        on_applied()
+
+    def _invoke_signal(self, signal_name: str, payload: Payload) -> None:
+        signal_def = self._definition.signals.get(signal_name)
+        if signal_def is None:
+            logger.warning(
+                "Received signal '%s' but no handler registered, dropping",
+                signal_name,
+            )
+            return
+
+        args = signal_def.params_from_payload(self._data_converter, payload)
+        handler = signal_def.wrapped.__get__(self._instance)
+        if signal_def.is_async:
+            raise NotImplementedError(
+                f"Async signal handlers are not yet supported (signal '{signal_name}')"
+            )
+        handler(*args)

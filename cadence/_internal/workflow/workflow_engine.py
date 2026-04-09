@@ -162,9 +162,19 @@ class WorkflowEngine:
                     # Process through state machines (DecisionsHelper now delegates to DecisionManager)
                     self._decision_manager.handle_history_event(marker_event)
 
-                # Phase 2: Process regular input events
+                # Phase 2: Apply input events in history order. Signal callbacks are enqueued
+                # with higher priority so they run before normal workflow tasks, matching the
+                # Java client's deterministic runner semantics.
                 for event in decision_events.input:
-                    self._apply_input_event(event)
+                    if (
+                        event.WhichOneof("attributes")
+                        == "workflow_execution_signaled_event_attributes"
+                    ):
+                        self._workflow_instance.handle_signal_event(
+                            event, ctx.notify_state_changed
+                        )
+                    else:
+                        self._apply_input_event(event)
 
                 # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()

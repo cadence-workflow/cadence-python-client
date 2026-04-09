@@ -50,6 +50,16 @@ async def sleep(duration: timedelta) -> None:
     return await WorkflowContext.get().start_timer(duration)
 
 
+async def wait_condition(predicate: Callable[[], bool]) -> None:
+    """Block until predicate returns True.
+
+    The predicate is re-evaluated after any workflow state change
+    (signal delivery, activity completion, timer firing).
+    If the predicate is already True, returns immediately.
+    """
+    await WorkflowContext.get().wait_condition(predicate)
+
+
 def continue_as_new(
     *args: Any,
     workflow_type: str | None = None,
@@ -317,11 +327,16 @@ class WorkflowContext(ABC):
     @abstractmethod
     async def start_timer(self, duration: timedelta) -> None: ...
 
+    @abstractmethod
+    async def wait_condition(self, predicate: Callable[[], bool]) -> None: ...
+
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:
         token = WorkflowContext._var.set(self)
-        yield self
-        WorkflowContext._var.reset(token)
+        try:
+            yield self
+        finally:
+            WorkflowContext._var.reset(token)
 
     @staticmethod
     def is_set() -> bool:

@@ -13,7 +13,8 @@ from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
-from grpc.aio import Channel, ClientInterceptor, secure_channel, insecure_channel
+import grpc.aio
+from grpc.aio import Channel, ClientInterceptor
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.api.v1.service_workflow_pb2 import (
     SignalWorkflowExecutionRequest,
@@ -421,17 +422,17 @@ def _create_channel(options: ClientOptions) -> Channel:
     interceptors.append(CadenceErrorInterceptor())
 
     if options["credentials"]:
-        return secure_channel(
+        return grpc.aio.secure_channel(
             options["target"],
             options["credentials"],
-            options = options["channel_arguments"],
-            compression = options["compression"],
-            interceptors = interceptors,
+            options=options["channel_arguments"],
+            compression=options["compression"],
+            interceptors=interceptors,
         )
     else:
-        return insecure_channel(
+        return grpc.aio.insecure_channel(
             options["target"],
-            options = options["channel_arguments"],
-            compression = options["compression"],
-            interceptors = interceptors,
+            options=options["channel_arguments"],
+            compression=options["compression"],
+            interceptors=interceptors,
         )

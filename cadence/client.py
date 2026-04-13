@@ -424,14 +424,14 @@ def _create_channel(options: ClientOptions) -> Channel:
         return secure_channel(
             options["target"],
             options["credentials"],
-            options["channel_arguments"],
-            options["compression"],
-            interceptors,
+            options = options["channel_arguments"],
+            compression = options["compression"],
+            interceptors = interceptors,
         )
     else:
         return insecure_channel(
             options["target"],
-            options["channel_arguments"],
-            options["compression"],
-            interceptors,
+            options = options["channel_arguments"],
+            compression = options["compression"],
+            interceptors = interceptors,
         )

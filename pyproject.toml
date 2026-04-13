@@ -32,7 +32,6 @@ dependencies = [
     "protobuf>=6.31.0,<7.0.0",
     "typing-extensions>=4.0.0",
     "prometheus-client>=0.21.0",
-    "opentelemetry-sdk[dev]>=1.39.1",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +47,7 @@ dev = [
     "pre-commit>=3.0.0",
     "pytest-docker>=3.2.3",
     "opentelemetry-instrumentation-grpc==0.60b1",
+    "opentelemetry-sdk>=1.39.1",
 ]
 docs = [
     "sphinx>=6.0.0",

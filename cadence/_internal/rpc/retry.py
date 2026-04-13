@@ -71,8 +71,11 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
             call_details = client_call_details._replace(timeout=remaining)
             rpc_call = await continuation(call_details, request)
             try:
-                # Return the result directly if success. GRPC will wrap it back into a UnaryUnaryCall
-                return await rpc_call
+                await rpc_call
+                # Return the call object (not the raw response) so outer interceptors
+                # that rely on UnaryUnaryCall methods like add_done_callback still work
+                # (e.g. opentelemetry-instrumentation-grpc).
+                return rpc_call
             except CadenceRpcError as e:
                 err = e
 

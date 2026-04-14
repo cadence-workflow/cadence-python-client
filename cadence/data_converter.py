@@ -30,6 +30,9 @@ class DefaultDataConverter(DataConverter):
         if not payload.data:
             return DefaultDataConverter._convert_into([], type_hints)
 
+        if not type_hints:
+            type_hints = [None]
+
         payload_str = payload.data.decode()
 
         return self._decode_whitespace_delimited(payload_str, type_hints)

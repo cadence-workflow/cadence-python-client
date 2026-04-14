@@ -62,6 +62,7 @@ class ActivityExecutor:
             self._data_converter,
             task.task_token,
             self._identity,
+            task.heartbeat_details,
         )
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:

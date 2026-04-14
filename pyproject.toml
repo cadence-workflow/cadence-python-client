@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm[simple]>=9.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cadence-python-client"
-version = "0.2.0"
+dynamic = ["version"] # version is dynamically determined by setuptools-scm by git tags
 description = "Python framework for authoring Cadence workflows and activities"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -48,6 +48,7 @@ dev = [
     "pytest-docker>=3.2.3",
     "opentelemetry-instrumentation-grpc==0.60b1",
     "opentelemetry-sdk>=1.39.1",
+    "setuptools-scm[simple]>=9.2"
 ]
 docs = [
     "sphinx>=6.0.0",

@@ -270,10 +270,30 @@ def signal(name: str | None = None) -> Callable[[T], T]:
     """
     Decorator to mark a method as a workflow signal handler.
 
-    Example:
+    Signal handlers must be **synchronous** functions that mutate workflow
+    state and return ``None``.  They run on the deterministic event loop
+    in the same thread as the workflow; keep them fast and free of I/O.
+
+    Async signal handlers are not supported and will be rejected at
+    definition time.  The SDK's deterministic event loop does not track
+    detached tasks, so an ``async def`` handler could silently diverge
+    from the replay-safe execution model.
+
+    Example::
+
         @workflow.signal(name="approval_channel")
-        async def approve(self, approved: bool):
+        def approve(self, approved: bool) -> None:
             self.approved = approved
+
+    Concurrency constraints:
+        * Do **not** use native threads or ``asyncio`` primitives
+          (``asyncio.Event``, ``asyncio.Lock``, etc.) inside signal
+          handlers — they are not replay-safe.
+        * Do **not** rely on the GIL for thread-safety; CPython now
+          supports free-threaded builds where the GIL can be disabled.
+        * Signal handlers should be short, synchronous, state-mutating
+          functions.  Use :func:`wait_condition` in the main workflow
+          coroutine to react to state changes made by signal handlers.
 
     Args:
         name: The name of the signal
@@ -283,16 +303,23 @@ def signal(name: str | None = None) -> Callable[[T], T]:
 
     Raises:
         ValueError: If name is not provided
+        TypeError: If the handler is async
 
     """
     if name is None:
         raise ValueError("name is required")
 
     def decorator(f: T) -> T:
+        if inspect.iscoroutinefunction(f):
+            raise TypeError(
+                f"Signal handler '{f.__qualname__}' must be synchronous. "
+                f"Async signal handlers are not supported. "
+                f"Use a synchronous handler that mutates workflow state, "
+                f"then use workflow.wait_condition() in the main workflow coroutine."
+            )
         f._workflow_signal = name  # type: ignore
         return f
 
-    # Only allow @workflow.signal(name), require name to be explicitly provided
     return decorator
 
 

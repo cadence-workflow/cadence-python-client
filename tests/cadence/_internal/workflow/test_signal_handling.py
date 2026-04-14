@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+import pytest
 
 from cadence.api.v1.common_pb2 import ActivityType, Payload
 from cadence.api.v1.history_pb2 import (
@@ -66,20 +67,6 @@ class NoArgSignalWorkflow:
         self.notified = True
 
 
-class AsyncSignalWorkflow:
-    def __init__(self):
-        self.signals_received: list[str] = []
-
-    @workflow.run
-    async def run(self):
-        await workflow.wait_condition(lambda: len(self.signals_received) >= 1)
-        return self.signals_received[0]
-
-    @workflow.signal(name="async_signal")
-    async def handle_signal(self, value: str):
-        self.signals_received.append(value)
-
-
 class MultiParamSignalWorkflow:
     def __init__(self):
         self.result: str = ""
@@ -91,6 +78,22 @@ class MultiParamSignalWorkflow:
 
     @workflow.signal(name="set_result")
     def handle_signal(self, name: str, count: int):
+        self.result = f"{name}:{count}"
+
+
+class OptionalParamSignalWorkflow:
+    """Signal handler where some params have Python defaults."""
+
+    def __init__(self):
+        self.result: str = ""
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: self.result != "")
+        return self.result
+
+    @workflow.signal(name="set_result")
+    def handle_signal(self, name: str, count: int = 5):
         self.result = f"{name}:{count}"
 
 
@@ -150,6 +153,22 @@ class FailingSignalWorkflow:
     @workflow.signal(name="bad_signal")
     def handle_signal(self, value: str):
         raise ValueError(f"handler failed on: {value}")
+
+
+class FailingPredicateWorkflow:
+    """Workflow with two wait_conditions; the first predicate raises."""
+
+    def __init__(self):
+        self.flag = False
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: self.flag)
+        return "done"
+
+    @workflow.signal(name="trigger")
+    def handle_trigger(self):
+        self.flag = True
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -339,31 +358,18 @@ class TestSignalDelivery:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
-    def test_async_signal_handler_raises(self, caplog):
-        engine = make_workflow_engine(AsyncSignalWorkflow)
-        events = [
-            HistoryEvent(
-                event_id=1,
-                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
-                    input=Payload(data=b"[]"),
-                ),
-            ),
-            signal_event(2, "async_signal", "async_value"),
-            HistoryEvent(
-                event_id=3,
-                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
-            ),
-            HistoryEvent(
-                event_id=4,
-                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
-                    scheduled_event_id=3,
-                ),
-            ),
-        ]
+    def test_async_signal_handler_rejected_at_definition_time(self):
+        """Async signal handlers are rejected when the decorator is applied."""
+        with pytest.raises(TypeError, match="must be synchronous"):
 
-        with caplog.at_level("ERROR"):
-            engine.process_decision(events)
-        assert "Async signal handlers" in caplog.text
+            class _BadWorkflow:
+                @workflow.run
+                async def run(self):
+                    pass
+
+                @workflow.signal(name="async_signal")
+                async def handle_signal(self, value: str):
+                    pass
 
     def test_multi_param_signal(self):
         """Signal handler with multiple typed parameters decodes correctly."""
@@ -393,7 +399,92 @@ class TestSignalDelivery:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["alice:42"]
 
-    def test_unknown_signal_dropped(self):
+    def test_signal_with_missing_required_args_drops_signal(self, caplog):
+        """Missing required signal args are treated as a decode error and dropped."""
+        engine = make_workflow_engine(MultiParamSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "set_result", "alice"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        with caplog.at_level("WARNING"):
+            result = engine.process_decision(events)
+        assert not engine.is_done()
+        assert len(result.decisions) == 0
+        assert "required parameter 'count'" in caplog.text
+
+    def test_signal_with_missing_optional_args_uses_python_defaults(self):
+        """Optional signal args use Python defaults, not type-based defaults."""
+        engine = make_workflow_engine(OptionalParamSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "set_result", "alice"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == ["alice:5"]
+
+    def test_signal_with_extra_args_ignores_trailing_payload(self):
+        """Extra signal payload entries are ignored once handler args are satisfied."""
+        engine = make_workflow_engine(MultiParamSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "set_result", "alice", 42, "ignored"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == ["alice:42"]
+
+    def test_unknown_signal_dropped(self, caplog):
         """Unknown signal name logs warning and doesn't crash."""
         engine = make_workflow_engine(NoArgSignalWorkflow)
         events = [
@@ -417,13 +508,19 @@ class TestSignalDelivery:
             ),
         ]
 
-        result = engine.process_decision(events)
+        with caplog.at_level("WARNING"):
+            result = engine.process_decision(events)
         assert engine.is_done()
+        assert len(result.decisions) == 1
+        assert (
+            "Received signal 'nonexistent_signal' but no handler registered"
+            in caplog.text
+        )
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
-    def test_signal_handler_exception_fails_decision(self, caplog):
-        """Exception in a signal handler is caught and logged by the event loop."""
+    def test_signal_handler_exception_fails_decision_task(self):
+        """User exception in a signal handler propagates out of process_decision."""
         engine = make_workflow_engine(FailingSignalWorkflow)
         events = [
             HistoryEvent(
@@ -445,9 +542,72 @@ class TestSignalDelivery:
             ),
         ]
 
-        with caplog.at_level("ERROR"):
+        with pytest.raises(ValueError, match="handler failed on: boom"):
             engine.process_decision(events)
-        assert "handler failed on: boom" in caplog.text
+
+    def test_signal_with_invalid_payload_drops_signal(self, caplog):
+        """Malformed signal payloads are logged as warnings and dropped."""
+        engine = make_workflow_engine(MultiParamSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            HistoryEvent(
+                event_id=2,
+                workflow_execution_signaled_event_attributes=WorkflowExecutionSignaledEventAttributes(
+                    signal_name="set_result",
+                    input=Payload(data=b'{"unterminated"'),
+                ),
+            ),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        with caplog.at_level("WARNING"):
+            result = engine.process_decision(events)
+        assert not engine.is_done()
+        assert len(result.decisions) == 0
+        assert "Failed to decode payload for signal 'set_result'" in caplog.text
+
+    def test_signal_with_invalid_type_drops_signal(self, caplog):
+        """Type conversion errors are logged as warnings and dropped."""
+        engine = make_workflow_engine(MultiParamSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "set_result", "alice", "not-an-int"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        with caplog.at_level("WARNING"):
+            result = engine.process_decision(events)
+        assert not engine.is_done()
+        assert len(result.decisions) == 0
+        assert "Failed to decode payload for signal 'set_result'" in caplog.text
 
 
 class TestSameBatchOrdering:
@@ -789,3 +949,133 @@ class TestReplay:
         assert engine.is_done()
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["after_replay"]
+
+
+class TestWaitConditionPredicateFailure:
+    """Tests that a failing predicate isolates its waiter and doesn't block others."""
+
+    def test_failing_predicate_sets_exception_on_waiter(self):
+        """A predicate that raises sets exception on its future, others still evaluate."""
+        from cadence._internal.workflow.deterministic_event_loop import (
+            DeterministicEventLoop,
+        )
+        from cadence._internal.workflow.statemachine.decision_manager import (
+            DecisionManager,
+        )
+        from cadence._internal.workflow.context import Context
+
+        loop = DeterministicEventLoop()
+        dm = DecisionManager(loop)
+        ctx = Context(
+            info=WorkflowInfo(
+                workflow_type="test",
+                workflow_domain="test-domain",
+                workflow_id="test-wf",
+                workflow_run_id="test-run",
+                workflow_task_list="test-tl",
+                data_converter=DATA_CONVERTER,
+            ),
+            decision_manager=dm,
+        )
+
+        future_bad = loop.create_future()
+        future_good = loop.create_future()
+
+        def bad_predicate():
+            raise RuntimeError("predicate bug")
+
+        def good_predicate():
+            return True
+
+        ctx._waiters = [
+            (bad_predicate, future_bad),
+            (good_predicate, future_good),
+        ]
+
+        ctx.notify_state_changed()
+
+        assert future_bad.done()
+        assert future_bad.exception() is not None
+        assert isinstance(future_bad.exception(), RuntimeError)
+        assert future_good.done()
+        assert future_good.result() is None
+
+
+class TestSignalDefinitionValidation:
+    """Tests for signal definition-time validation."""
+
+    def test_async_handler_rejected_by_decorator(self):
+        with pytest.raises(TypeError, match="must be synchronous"):
+
+            @workflow.signal(name="bad")
+            async def bad_handler(self, x: int):
+                pass
+
+    def test_async_handler_rejected_by_signal_definition_wrap(self):
+        from cadence.signal import SignalDefinition, SignalDefinitionOptions
+
+        async def async_fn(self, x: int) -> None:
+            pass
+
+        with pytest.raises(TypeError, match="must be synchronous"):
+            SignalDefinition.wrap(async_fn, SignalDefinitionOptions(name="test"))
+
+
+class TestSignalArityEnforcement:
+    """Tests for the new arity/default-merging behavior in params_from_payload."""
+
+    def test_optional_param_uses_python_default_when_omitted(self):
+        """When payload omits a param with a Python default, the default is used."""
+        engine = make_workflow_engine(OptionalParamSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "set_result", "bob"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == ["bob:5"]
+
+    def test_optional_param_overridden_by_payload(self):
+        """When payload provides a value for an optional param, it overrides the default."""
+        engine = make_workflow_engine(OptionalParamSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "set_result", "bob", 99),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == ["bob:99"]

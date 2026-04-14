@@ -136,12 +136,24 @@ class Context(WorkflowContext):
         await future
 
     def notify_state_changed(self) -> None:
-        """Re-evaluate all wait_condition predicates. Resolve those that are now True."""
+        """Re-evaluate all wait_condition predicates. Resolve those that are now True.
+
+        If a predicate raises, the exception is set on that specific waiter's
+        future so the ``await wait_condition(...)`` call receives a
+        deterministic error.  Other waiters continue to be evaluated
+        normally — one broken predicate does not block or deadlock
+        unrelated waits.
+        """
         remaining: list[tuple[Callable[[], bool], Any]] = []
         for predicate, future in self._waiters:
             if future.done():
                 continue
-            if predicate():
+            try:
+                result = predicate()
+            except Exception as exc:
+                future.set_exception(exc)
+                continue
+            if result:
                 future.set_result(None)
             else:
                 remaining.append((predicate, future))

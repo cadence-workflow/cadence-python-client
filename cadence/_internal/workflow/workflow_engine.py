@@ -178,6 +178,10 @@ class WorkflowEngine:
                 # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()
 
+                # Surface signal handler errors so they deterministically
+                # fail the decision task rather than being silently logged.
+                self._workflow_instance.check_signal_error()
+
                 # If the workflow function returned (or threw an exception), we're done
                 # If it completed early (or late), the nondeterminism tracking will catch that
                 if decision := self._maybe_complete_workflow():

@@ -26,6 +26,7 @@ class WorkflowInstance:
         self._data_converter = data_converter
         self._instance = workflow_definition.cls()  # construct a new workflow object
         self._task: Optional[Task[Payload]] = None
+        self._signal_error: Optional[Exception] = None
 
     def start(self, payload: Payload):
         if self._task is None:
@@ -54,6 +55,18 @@ class WorkflowInstance:
             return None
         return self._task.result()
 
+    def check_signal_error(self) -> None:
+        """Raise the first signal handler exception captured during this tick.
+
+        Called by the engine after ``run_until_yield()`` so that user-handler
+        bugs deterministically fail the decision task instead of being
+        silently swallowed by the event loop's ``call_exception_handler``.
+        """
+        if self._signal_error is not None:
+            error = self._signal_error
+            self._signal_error = None
+            raise error
+
     def handle_signal_event(
         self, event: HistoryEvent, on_applied: Callable[[], None]
     ) -> None:
@@ -65,8 +78,20 @@ class WorkflowInstance:
     def _deliver_signal(
         self, signal_name: str, payload: Payload, on_applied: Callable[[], None]
     ) -> None:
-        self._invoke_signal(signal_name, payload)
-        on_applied()
+        """Dispatch a signal to the handler.
+
+        ``on_applied`` is *always* called (in ``finally``) so that
+        ``wait_condition`` waiters are re-evaluated regardless of handler
+        success.  User-handler exceptions are stored for the engine to
+        surface after ``run_until_yield``.
+        """
+        try:
+            self._invoke_signal(signal_name, payload)
+        except Exception as e:
+            if self._signal_error is None:
+                self._signal_error = e
+        finally:
+            on_applied()
 
     def _invoke_signal(self, signal_name: str, payload: Payload) -> None:
         signal_def = self._definition.signals.get(signal_name)
@@ -77,10 +102,15 @@ class WorkflowInstance:
             )
             return
 
-        args = signal_def.params_from_payload(self._data_converter, payload)
-        handler = signal_def.wrapped.__get__(self._instance)
-        if signal_def.is_async:
-            raise NotImplementedError(
-                f"Async signal handlers are not yet supported (signal '{signal_name}')"
+        try:
+            args = signal_def.params_from_payload(self._data_converter, payload)
+        except Exception as e:
+            logger.warning(
+                "Failed to decode payload for signal '%s', dropping: %s",
+                signal_name,
+                e,
             )
+            return
+
+        handler = signal_def.wrapped.__get__(self._instance)
         handler(*args)

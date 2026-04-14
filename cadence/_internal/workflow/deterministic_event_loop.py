@@ -180,8 +180,8 @@ class DeterministicEventLoop(AbstractEventLoop):
         except (SystemExit, KeyboardInterrupt):
             raise
         except BaseException as exc:
-            handle._loop.call_exception_handler(
-                {  # type: ignore[attr-defined]
+            handle._loop.call_exception_handler(  # type: ignore[attr-defined]
+                {
                     "message": "Exception in callback %r" % handle,
                     "exception": exc,
                     "handle": handle,

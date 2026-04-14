@@ -45,6 +45,7 @@ DEFAULT_RETRY_POLICY = ExponentialRetryPolicy(
     initial_interval=0.02, backoff_coefficient=1.2, max_interval=6, max_attempts=0
 )
 GET_WORKFLOW_HISTORY = b"/uber.cadence.api.v1.WorkflowAPI/GetWorkflowExecutionHistory"
+GET_WORKFLOW_HISTORY_STR = GET_WORKFLOW_HISTORY.decode("ascii")
 
 
 class RetryInterceptor(UnaryUnaryClientInterceptor):
@@ -60,6 +61,8 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
     ) -> Any:
         loop = asyncio.get_running_loop()
         expiration_interval = client_call_details.timeout
+        if expiration_interval is None:
+            expiration_interval = float("inf")
         start_time = loop.time()
         deadline = start_time + expiration_interval
 
@@ -68,7 +71,9 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
             remaining = deadline - loop.time()
             # Namedtuple methods start with an underscore to avoid conflicts and aren't actually private
             # noinspection PyProtectedMember
-            call_details = client_call_details._replace(timeout=remaining)
+            call_details = client_call_details._replace(  # type: ignore[attr-defined]
+                timeout=remaining
+            )
             rpc_call = await continuation(call_details, request)
             try:
                 await rpc_call
@@ -95,7 +100,10 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
 
 def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
     # Handle requests to the passive side, matching the Go and Java Clients
-    if call_details.method == GET_WORKFLOW_HISTORY and isinstance(
+    if call_details.method in (
+        GET_WORKFLOW_HISTORY,
+        GET_WORKFLOW_HISTORY_STR,
+    ) and isinstance(
         err, EntityNotExistsError
     ):
         return (

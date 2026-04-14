@@ -15,6 +15,11 @@ from cadence.api.v1 import error_pb2
 from cadence import error
 
 
+def _rpc_details(e: AioRpcError) -> str:
+    d = e.details()
+    return d if isinstance(d, str) else ""
+
+
 RequestType = TypeVar("RequestType")
 ResponseType = TypeVar("ResponseType")
 DoneCallbackType = Callable[[Any], None]
@@ -81,14 +86,14 @@ class CadenceErrorInterceptor(UnaryUnaryClientInterceptor):
 def map_error(e: AioRpcError) -> error.CadenceRpcError:
     status: Status | None = from_call(e)
     if not status or not status.details:
-        return error.CadenceRpcError(e.details(), e.code())
+        return error.CadenceRpcError(_rpc_details(e), e.code())
 
     details = status.details[0]
     if details.Is(error_pb2.WorkflowExecutionAlreadyStartedError.DESCRIPTOR):
         already_started = error_pb2.WorkflowExecutionAlreadyStartedError()
         details.Unpack(already_started)
         return error.WorkflowExecutionAlreadyStartedError(
-            e.details(),
+            _rpc_details(e),
             e.code(),
             already_started.start_request_id,
             already_started.run_id,
@@ -97,19 +102,21 @@ def map_error(e: AioRpcError) -> error.CadenceRpcError:
         not_exists = error_pb2.EntityNotExistsError()
         details.Unpack(not_exists)
         return error.EntityNotExistsError(
-            e.details(),
+            _rpc_details(e),
             e.code(),
             not_exists.current_cluster,
             not_exists.active_cluster,
             list(not_exists.active_clusters),
         )
     elif details.Is(error_pb2.WorkflowExecutionAlreadyCompletedError.DESCRIPTOR):
-        return error.WorkflowExecutionAlreadyCompletedError(e.details(), e.code())
+        return error.WorkflowExecutionAlreadyCompletedError(
+            _rpc_details(e), e.code()
+        )
     elif details.Is(error_pb2.DomainNotActiveError.DESCRIPTOR):
         not_active = error_pb2.DomainNotActiveError()
         details.Unpack(not_active)
         return error.DomainNotActiveError(
-            e.details(),
+            _rpc_details(e),
             e.code(),
             not_active.domain,
             not_active.current_cluster,
@@ -120,7 +127,7 @@ def map_error(e: AioRpcError) -> error.CadenceRpcError:
         not_supported = error_pb2.ClientVersionNotSupportedError()
         details.Unpack(not_supported)
         return error.ClientVersionNotSupportedError(
-            e.details(),
+            _rpc_details(e),
             e.code(),
             not_supported.feature_version,
             not_supported.client_impl,
@@ -130,19 +137,19 @@ def map_error(e: AioRpcError) -> error.CadenceRpcError:
         not_enabled = error_pb2.FeatureNotEnabledError()
         details.Unpack(not_enabled)
         return error.FeatureNotEnabledError(
-            e.details(), e.code(), not_enabled.feature_flag
+            _rpc_details(e), e.code(), not_enabled.feature_flag
         )
     elif details.Is(error_pb2.CancellationAlreadyRequestedError.DESCRIPTOR):
-        return error.CancellationAlreadyRequestedError(e.details(), e.code())
+        return error.CancellationAlreadyRequestedError(_rpc_details(e), e.code())
     elif details.Is(error_pb2.DomainAlreadyExistsError.DESCRIPTOR):
-        return error.DomainAlreadyExistsError(e.details(), e.code())
+        return error.DomainAlreadyExistsError(_rpc_details(e), e.code())
     elif details.Is(error_pb2.LimitExceededError.DESCRIPTOR):
-        return error.LimitExceededError(e.details(), e.code())
+        return error.LimitExceededError(_rpc_details(e), e.code())
     elif details.Is(error_pb2.QueryFailedError.DESCRIPTOR):
-        return error.QueryFailedError(e.details(), e.code())
+        return error.QueryFailedError(_rpc_details(e), e.code())
     elif details.Is(error_pb2.ServiceBusyError.DESCRIPTOR):
         service_busy = error_pb2.ServiceBusyError()
         details.Unpack(service_busy)
-        return error.ServiceBusyError(e.details(), e.code(), service_busy.reason)
+        return error.ServiceBusyError(_rpc_details(e), e.code(), service_busy.reason)
     else:
-        return error.CadenceRpcError(e.details(), e.code())
+        return error.CadenceRpcError(_rpc_details(e), e.code())

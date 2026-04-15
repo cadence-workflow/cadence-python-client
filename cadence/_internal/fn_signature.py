@@ -53,6 +53,8 @@ class FnSignature:
     def params_from_payload(
         self, data_converter: DataConverter, payload: Payload
     ) -> list[Any]:
+        if not self.params:
+            return []
         type_hints = [param.type_hint for param in self.params]
         return data_converter.from_data(payload, type_hints)
 

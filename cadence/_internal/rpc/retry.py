@@ -103,9 +103,7 @@ def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
     if call_details.method in (
         GET_WORKFLOW_HISTORY,
         GET_WORKFLOW_HISTORY_STR,
-    ) and isinstance(
-        err, EntityNotExistsError
-    ):
+    ) and isinstance(err, EntityNotExistsError):
         return (
             err.active_cluster is not None
             and err.current_cluster is not None

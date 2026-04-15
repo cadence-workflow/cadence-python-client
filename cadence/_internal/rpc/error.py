@@ -109,9 +109,7 @@ def map_error(e: AioRpcError) -> error.CadenceRpcError:
             list(not_exists.active_clusters),
         )
     elif details.Is(error_pb2.WorkflowExecutionAlreadyCompletedError.DESCRIPTOR):
-        return error.WorkflowExecutionAlreadyCompletedError(
-            _rpc_details(e), e.code()
-        )
+        return error.WorkflowExecutionAlreadyCompletedError(_rpc_details(e), e.code())
     elif details.Is(error_pb2.DomainNotActiveError.DESCRIPTOR):
         not_active = error_pb2.DomainNotActiveError()
         details.Unpack(not_active)

@@ -56,7 +56,7 @@ jobs:
         run: |
           uv run mypy cadence/
 
-    type-check-contrib:
+  type-check-contrib:
     name: Type Safety Check (contrib)
     runs-on: ubuntu-latest
     steps:

@@ -96,6 +96,9 @@ exclude = [
     "cadence/api",
     "cadence/api/.*",
     "cadence/sample",
+    # Optional plugins (e.g. OpenAI) use extra deps; omit from default mypy
+    "cadence/contrib",
+    "cadence/contrib/.*",
 ]
 
 # Reduce recursive module checking

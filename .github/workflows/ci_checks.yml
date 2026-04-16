@@ -51,6 +51,26 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Install dependencies
         run: |
+          uv sync --extra dev
+      - name: Run mypy type checker
+        run: |
+          uv run mypy cadence/
+
+    type-check-contrib:
+    name: Type Safety Check (contrib)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: |
           uv sync --extra dev --extra openai
       - name: Run mypy type checker
         run: |

@@ -91,6 +91,9 @@ class TestDeterministicEventLoop:
         self.loop.run_until_yield()
         assert len(self.loop._ready) == 0
 
+        self.loop.run_until_yield()
+        assert len(self.loop._ready) == 0
+
     def test_run_until_yield(self):
         # run until yield will clear the read queue
         task = self.loop.create_task(coro_await_task(3))

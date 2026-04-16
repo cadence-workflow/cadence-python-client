@@ -87,6 +87,9 @@ class TestDeterministicEventLoop:
         self.loop.stop()
         self.loop.run_forever()
         assert len(self.loop._ready) == 10
+        # Drain child tasks so teardown does not drop un-awaited coroutines.
+        self.loop.run_until_yield()
+        assert len(self.loop._ready) == 0
 
     def test_run_until_yield(self):
         # run until yield will clear the read queue

@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil
-from typing import Iterator, Optional, Any, Unpack, Type, cast
+from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1.common_pb2 import ActivityType
@@ -31,6 +31,7 @@ class Context(WorkflowContext):
         self._replay_mode = True
         self._replay_current_time_milliseconds: Optional[int] = None
         self._decision_manager = decision_manager
+        self._waiters: list[tuple[Callable[[], bool], Any]] = []
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -92,9 +93,9 @@ class Context(WorkflowContext):
             request_local_dispatch=False,
         )
 
-        result_payload = await self._decision_manager.schedule_activity(
-            schedule_attributes
-        )
+        future = self._decision_manager.schedule_activity(schedule_attributes)
+        future.add_done_callback(lambda _: self.notify_state_changed())
+        result_payload = await future
 
         result = self.data_converter().from_data(result_payload, [result_type])[0]
 
@@ -103,11 +104,13 @@ class Context(WorkflowContext):
     async def start_timer(self, duration: timedelta):
         if duration.total_seconds() <= 0:  # shortcut
             return
-        await self._decision_manager.start_timer(
+        future = self._decision_manager.start_timer(
             StartTimerDecisionAttributes(
                 start_to_fire_timeout=duration,
             )
         )
+        future.add_done_callback(lambda _: self.notify_state_changed())
+        await future
 
     def set_replay_mode(self, replay: bool) -> None:
         """Set whether the workflow is currently in replay mode."""
@@ -125,11 +128,44 @@ class Context(WorkflowContext):
         """Get the current replay time in milliseconds."""
         return self._replay_current_time_milliseconds
 
+    async def wait_condition(self, predicate: Callable[[], bool]) -> None:
+        if predicate():
+            return
+        future = self._decision_manager._event_loop.create_future()
+        self._waiters.append((predicate, future))
+        await future
+
+    def notify_state_changed(self) -> None:
+        """Re-evaluate all wait_condition predicates. Resolve those that are now True.
+
+        If a predicate raises, the exception is set on that specific waiter's
+        future so the ``await wait_condition(...)`` call receives a
+        deterministic error.  Other waiters continue to be evaluated
+        normally — one broken predicate does not block or deadlock
+        unrelated waits.
+        """
+        remaining: list[tuple[Callable[[], bool], Any]] = []
+        for predicate, future in self._waiters:
+            if future.done():
+                continue
+            try:
+                result = predicate()
+            except Exception as exc:
+                future.set_exception(exc)
+                continue
+            if result:
+                future.set_result(None)
+            else:
+                remaining.append((predicate, future))
+        self._waiters = remaining
+
     @contextmanager
     def _activate(self) -> Iterator["Context"]:
         token = WorkflowContext._var.set(self)
-        yield self
-        WorkflowContext._var.reset(token)
+        try:
+            yield self
+        finally:
+            WorkflowContext._var.reset(token)
 
 
 def _round_to_nearest_second(delta: timedelta) -> timedelta:

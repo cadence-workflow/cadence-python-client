@@ -31,7 +31,9 @@ class DeterministicEventLoop(AbstractEventLoop):
     def __init__(self) -> None:
         self._thread_id: int | None = None  # indicate if the event loop is running
         self._debug: bool = False
-        self._priority_ready: collections.deque[events.Handle] = collections.deque()
+        self._priority_ready: collections.deque[events.Handle] = (
+            collections.deque()
+        )  # used for incoming signal tasks
         self._ready: collections.deque[events.Handle] = collections.deque()
         self._stopping: bool = False
         self._closed: bool = False

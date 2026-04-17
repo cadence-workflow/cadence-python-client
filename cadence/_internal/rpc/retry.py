@@ -45,7 +45,6 @@ DEFAULT_RETRY_POLICY = ExponentialRetryPolicy(
     initial_interval=0.02, backoff_coefficient=1.2, max_interval=6, max_attempts=0
 )
 GET_WORKFLOW_HISTORY = b"/uber.cadence.api.v1.WorkflowAPI/GetWorkflowExecutionHistory"
-GET_WORKFLOW_HISTORY_STR = GET_WORKFLOW_HISTORY.decode("ascii")
 
 
 class RetryInterceptor(UnaryUnaryClientInterceptor):
@@ -100,10 +99,10 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
 
 def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
     # Handle requests to the passive side, matching the Go and Java Clients
-    if call_details.method in (
-        GET_WORKFLOW_HISTORY,
-        GET_WORKFLOW_HISTORY_STR,
-    ) and isinstance(err, EntityNotExistsError):
+    if (
+        call_details.method == GET_WORKFLOW_HISTORY  # type: ignore[comparison-overlap]
+        and isinstance(err, EntityNotExistsError)
+    ):
         return (
             err.active_cluster is not None
             and err.current_cluster is not None

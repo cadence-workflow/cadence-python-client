@@ -15,9 +15,9 @@ from cadence.api.v1 import error_pb2
 from cadence import error
 
 
-def _rpc_details(e: AioRpcError) -> str:
+def _rpc_details(e: AioRpcError) -> str | None:
     d = e.details()
-    return d if isinstance(d, str) else ""
+    return d if isinstance(d, str) else None
 
 
 RequestType = TypeVar("RequestType")

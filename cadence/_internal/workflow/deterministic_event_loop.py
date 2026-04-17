@@ -31,9 +31,6 @@ class DeterministicEventLoop(AbstractEventLoop):
     def __init__(self) -> None:
         self._thread_id: int | None = None  # indicate if the event loop is running
         self._debug: bool = False
-        self._priority_ready: collections.deque[events.Handle] = (
-            collections.deque()
-        )  # used for incoming signal tasks
         self._ready: collections.deque[events.Handle] = collections.deque()
         self._stopping: bool = False
         self._closed: bool = False
@@ -42,7 +39,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         """Run until stop() is called."""
         self._run_forever_setup()
         try:
-            while self._priority_ready or self._ready:
+            while self._ready:
                 self._run_once()
         finally:
             self._run_forever_cleanup()
@@ -64,16 +61,6 @@ class DeterministicEventLoop(AbstractEventLoop):
     ) -> Handle:
         handle = events.Handle(callback, args, self, context)
         self._ready.append(handle)
-        return handle
-
-    def call_soon_priority(
-        self,
-        callback: Callable[[Unpack[_Ts]], object],
-        *args: Unpack[_Ts],
-        context: Context | None = None,
-    ) -> Handle:
-        handle = events.Handle(callback, args, self, context)
-        self._priority_ready.append(handle)
         return handle
 
     def get_debug(self) -> bool:
@@ -155,13 +142,6 @@ class DeterministicEventLoop(AbstractEventLoop):
         return futures.Future(loop=self)
 
     def _run_once(self) -> None:
-        ntodo_priority = len(self._priority_ready)
-        for i in range(ntodo_priority):
-            handle = self._priority_ready.popleft()
-            if handle._cancelled:
-                continue
-            self._run_handle(handle)
-
         ntodo = len(self._ready)
         for i in range(ntodo):
             handle = self._ready.popleft()
@@ -230,7 +210,6 @@ class DeterministicEventLoop(AbstractEventLoop):
         if self._debug:
             logger.debug("Close %r", self)
         self._closed = True
-        self._priority_ready.clear()
         self._ready.clear()
 
     def is_closed(self) -> bool:

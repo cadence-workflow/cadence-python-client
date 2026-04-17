@@ -162,8 +162,7 @@ class WorkflowEngine:
                     # Process through state machines (DecisionsHelper now delegates to DecisionManager)
                     self._decision_manager.handle_history_event(marker_event)
 
-                # Phase 2: Apply input events in history order. Signal callbacks are enqueued
-                # with higher priority so they run before normal workflow tasks
+                # Phase 2: Apply input events in history order.
                 for event in decision_events.input:
                     if (
                         event.WhichOneof("attributes")

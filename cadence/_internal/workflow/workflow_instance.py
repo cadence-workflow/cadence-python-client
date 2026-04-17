@@ -71,7 +71,7 @@ class WorkflowInstance:
         self, event: HistoryEvent, on_applied: Callable[[], None]
     ) -> None:
         attrs = event.workflow_execution_signaled_event_attributes
-        self._loop.call_soon_priority(
+        self._loop.call_soon(
             self._deliver_signal, attrs.signal_name, attrs.input, on_applied
         )
 

@@ -97,8 +97,6 @@ exclude = [
     "cadence/api",
     "cadence/api/.*",
     "cadence/sample",
-    "cadence/contrib/openai",
-    "cadence/contrib/openai/.*",
 ]
 
 # Reduce recursive module checking

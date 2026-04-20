@@ -1,5 +1,6 @@
 """Tests for signal handling in the workflow engine."""
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -169,6 +170,40 @@ class FailingPredicateWorkflow:
     @workflow.signal(name="trigger")
     def handle_trigger(self):
         self.flag = True
+
+
+class StaleWakeupRaceWorkflow:
+    """Two coroutines wait on the same predicate; the first to wake invalidates it.
+
+    Reproduces https://github.com/temporalio/sdk-python/issues/618. With
+    sweep-all semantics, both waiters resolve in one tick — the second
+    coroutine's ``await`` returns and observes ``cond=False`` even though the
+    predicate was True at wakeup time. With one-resolution-per-tick semantics,
+    the first waiter's resume runs before the second's predicate is re-checked,
+    so the second stays parked.
+    """
+
+    def __init__(self):
+        self.cond = False
+        self.observed: list[str] = []
+
+    @workflow.run
+    async def run(self) -> int:
+        async def waiter(label: str) -> None:
+            await workflow.wait_condition(lambda: self.cond)
+            self.observed.append(label)
+            self.cond = False  # invalidate for any sibling waiter
+
+        # Two concurrent waiters. Don't await them; wait for the first
+        # observation to land, then return so we can assert how many fired.
+        asyncio.create_task(waiter("a"))
+        asyncio.create_task(waiter("b"))
+        await workflow.wait_condition(lambda: len(self.observed) >= 1)
+        return len(self.observed)
+
+    @workflow.signal(name="trigger")
+    def trigger(self):
+        self.cond = True
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -862,6 +897,46 @@ class TestWaitCondition:
         assert DATA_CONVERTER.from_data(completion.result, [str]) == [
             "activity:done,signal"
         ]
+
+    def test_stale_wakeup_race_one_resolution_per_tick(self):
+        """Per temporalio/sdk-python#618: when two coroutines wait on the same
+        predicate and the first resume invalidates it, the second must not get
+        a stale wakeup. The loop resolves at most one waiter per tick so the
+        first awakened coroutine runs (and may mutate state) before sibling
+        predicates are re-evaluated.
+        """
+        engine = make_workflow_engine(StaleWakeupRaceWorkflow)
+
+        # First decision: workflow starts, registers all three waiters, blocks.
+        result_1 = engine.process_decision(start_events())
+        assert not engine.is_done()
+        assert len(result_1.decisions) == 0
+
+        # Second decision: trigger flips ``cond``. Only one of the two
+        # sibling waiters should observe the wakeup; the other's predicate
+        # is re-evaluated against the post-resume state (cond=False) and
+        # stays parked.
+        events_2 = [
+            signal_event_no_payload(4, "trigger"),
+            HistoryEvent(
+                event_id=5,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=6,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=5,
+                ),
+            ),
+        ]
+        result_2 = engine.process_decision(events_2)
+        assert engine.is_done()
+        completion = result_2.decisions[
+            0
+        ].complete_workflow_execution_decision_attributes
+        # Sweep-all (broken): would be 2 (second waiter fired with stale state).
+        # One-per-tick (correct): is 1.
+        assert DATA_CONVERTER.from_data(completion.result, [int]) == [1]
 
 
 class TestReplay:

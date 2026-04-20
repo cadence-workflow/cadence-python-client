@@ -43,6 +43,30 @@ class SignalWaitThreeWorkflow(_SignalWaitBase):
         return ",".join(self.received)
 
 
+@registry.workflow()
+class StaleWakeupRaceWorkflow:
+
+    def __init__(self) -> None:
+        self.cond = False
+        self.observed: list[str] = []
+
+    @workflow.run
+    async def run(self) -> int:
+        async def waiter(label: str) -> None:
+            await workflow.wait_condition(lambda: self.cond)
+            self.observed.append(label)
+            self.cond = False  # invalidate for any sibling waiter
+
+        asyncio.create_task(waiter("a"))
+        asyncio.create_task(waiter("b"))
+        await workflow.wait_condition(lambda: len(self.observed) >= 1)
+        return len(self.observed)
+
+    @workflow.signal(name="trigger")
+    def trigger(self):
+        self.cond = True
+
+
 def _scan_workflow_outcome(
     response: GetWorkflowExecutionHistoryResponse,
 ) -> (
@@ -177,3 +201,23 @@ async def test_multiple_signals_preserve_history_order(helper: CadenceHelper):
             if event.HasField("workflow_execution_signaled_event_attributes")
         ]
         assert signal_events == ["append", "append", "append"]
+
+
+async def test_wait_condition_no_stale_wakeup_race(helper: CadenceHelper):
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "StaleWakeupRaceWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=10),
+        )
+
+        await worker.client.signal_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            "trigger",
+        )
+
+        result, _ = await _wait_for_workflow_result(helper, execution)
+        # Buggy sweep-all: "2" (sibling waiter fired with stale state).
+        # Correct one-per-tick: "1".
+        assert "1" == result

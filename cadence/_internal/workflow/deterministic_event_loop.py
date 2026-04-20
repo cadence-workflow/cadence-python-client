@@ -20,7 +20,7 @@ _Ts = TypeVarTuple("_Ts")
 _T = TypeVar("_T")
 
 
-class Waiter:
+class Waiter(Awaitable[None]):
     """Awaitable that resolves when ``predicate()`` becomes truthy.
     """
 
@@ -42,7 +42,7 @@ class Waiter:
     def result(self) -> None:
         self._future.result()
 
-    def _poll(self) -> bool:
+    def poll(self) -> bool:
         """Re-evaluate the predicate. Returns True when settled (and evictable)."""
         if self._future.done():
             return True
@@ -183,7 +183,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         """Register a predicate-driven awaitable.
         """
         waiter = Waiter(predicate, self)
-        if not waiter._poll():
+        if not waiter.poll():
             self._waiters.append(waiter)
         return waiter
 
@@ -195,8 +195,10 @@ class DeterministicEventLoop(AbstractEventLoop):
                 continue
             self._run_handle(handle)
 
-        if self._waiters:
-            self._waiters = [w for w in self._waiters if not w._poll()]
+        for i, w in enumerate(self._waiters):
+            if w.poll():
+                del self._waiters[i]
+                break
 
     @staticmethod
     def _run_handle(handle: events.Handle) -> None:

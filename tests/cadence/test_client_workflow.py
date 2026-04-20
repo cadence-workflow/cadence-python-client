@@ -415,6 +415,48 @@ class TestClientBuildStartWorkflowRequest:
             1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc
         )
 
+    @pytest.mark.parametrize(
+        "policy",
+        [
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING,
+        ],
+        ids=[
+            "allow_duplicate_failed_only",
+            "allow_duplicate",
+            "reject_duplicate",
+            "terminate_if_running",
+        ],
+    )
+    def test_build_request_propagates_workflow_id_reuse_policy(
+        self, policy: workflow_pb2.WorkflowIdReusePolicy
+    ) -> None:
+        """Non-INVALID reuse policies propagate through the builder."""
+        client = Client(domain="test-domain", target="localhost:7933")
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            workflow_id_reuse_policy=policy,
+        )
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+        assert request.workflow_id_reuse_policy == policy
+
+    def test_invalid_workflow_id_reuse_policy_raises_error(self):
+        """Explicit WORKFLOW_ID_REUSE_POLICY_INVALID is rejected."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID,
+        )
+        with pytest.raises(
+            ValueError,
+            match="workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID",
+        ):
+            _validate_and_apply_defaults(options)
+
 
 class TestClientStartWorkflow:
     """Test Client.start_workflow method."""
@@ -560,6 +602,77 @@ class TestClientStartWorkflow:
         # Verify default was applied
         assert captured_options["task_start_to_close_timeout"] == timedelta(seconds=10)
 
+    @pytest.mark.asyncio
+    async def test_start_workflow_defaults_reuse_policy_to_allow_duplicate_failed_only(
+        self, mock_client
+    ):
+        """start_workflow defaults workflow_id_reuse_policy to ALLOW_DUPLICATE_FAILED_ONLY."""
+        response = StartWorkflowExecutionResponse()
+        response.run_id = "test-run-id"
+
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = mock_client.workflow_stub
+
+        await client.start_workflow(
+            "TestWorkflow",
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        request = mock_client.workflow_stub.StartWorkflowExecution.call_args[0][0]
+        assert (
+            request.workflow_id_reuse_policy
+            == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_workflow_respects_explicit_reuse_policy(self, mock_client):
+        """Explicit workflow_id_reuse_policy on start_workflow overrides the default."""
+        response = StartWorkflowExecutionResponse()
+        response.run_id = "test-run-id"
+
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = mock_client.workflow_stub
+
+        await client.start_workflow(
+            "TestWorkflow",
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING,
+        )
+
+        request = mock_client.workflow_stub.StartWorkflowExecution.call_args[0][0]
+        assert (
+            request.workflow_id_reuse_policy
+            == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_workflow_rejects_invalid_reuse_policy(self, mock_client):
+        """Explicit WORKFLOW_ID_REUSE_POLICY_INVALID on start_workflow raises ValueError."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        with pytest.raises(
+            ValueError,
+            match="workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID",
+        ):
+            await client.start_workflow(
+                "TestWorkflow",
+                task_list="test-task-list",
+                execution_start_to_close_timeout=timedelta(minutes=10),
+                task_start_to_close_timeout=timedelta(seconds=30),
+                workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID,
+            )
 
 @pytest.mark.asyncio
 async def test_integration_workflow_invocation():

@@ -20,6 +20,43 @@ _Ts = TypeVarTuple("_Ts")
 _T = TypeVar("_T")
 
 
+class Waiter:
+    """Awaitable that resolves when ``predicate()`` becomes truthy.
+    """
+
+    __slots__ = ("_predicate", "_future")
+
+    def __init__(self, predicate: Callable[[], bool], loop: AbstractEventLoop) -> None:
+        self._predicate = predicate
+        self._future: Future[None] = loop.create_future()
+
+    def __await__(self) -> Generator[Any, None, None]:
+        return self._future.__await__()
+
+    def done(self) -> bool:
+        return self._future.done()
+
+    def exception(self) -> BaseException | None:
+        return self._future.exception()
+
+    def result(self) -> None:
+        self._future.result()
+
+    def _poll(self) -> bool:
+        """Re-evaluate the predicate. Returns True when settled (and evictable)."""
+        if self._future.done():
+            return True
+        try:
+            ready = self._predicate()
+        except BaseException as exc:
+            self._future.set_exception(exc)
+            return True
+        if ready:
+            self._future.set_result(None)
+            return True
+        return False
+
+
 class DeterministicEventLoop(AbstractEventLoop):
     """
     This is a basic FIFO implementation of event loop that does not allow I/O or timer operations.
@@ -32,6 +69,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._thread_id: int | None = None  # indicate if the event loop is running
         self._debug: bool = False
         self._ready: collections.deque[events.Handle] = collections.deque()
+        self._waiters: list[Waiter] = []
         self._stopping: bool = False
         self._closed: bool = False
 
@@ -141,6 +179,14 @@ class DeterministicEventLoop(AbstractEventLoop):
     def create_future(self) -> Future[Any]:
         return futures.Future(loop=self)
 
+    def create_waiter(self, predicate: Callable[[], bool]) -> Waiter:
+        """Register a predicate-driven awaitable.
+        """
+        waiter = Waiter(predicate, self)
+        if not waiter._poll():
+            self._waiters.append(waiter)
+        return waiter
+
     def _run_once(self) -> None:
         ntodo = len(self._ready)
         for i in range(ntodo):
@@ -148,6 +194,9 @@ class DeterministicEventLoop(AbstractEventLoop):
             if handle._cancelled:
                 continue
             self._run_handle(handle)
+
+        if self._waiters:
+            self._waiters = [w for w in self._waiters if not w._poll()]
 
     @staticmethod
     def _run_handle(handle: events.Handle) -> None:
@@ -211,6 +260,7 @@ class DeterministicEventLoop(AbstractEventLoop):
             logger.debug("Close %r", self)
         self._closed = True
         self._ready.clear()
+        self._waiters.clear()
 
     def is_closed(self) -> bool:
         """Returns True if the event loop was closed."""

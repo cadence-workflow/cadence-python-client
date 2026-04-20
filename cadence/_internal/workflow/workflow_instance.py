@@ -67,31 +67,22 @@ class WorkflowInstance:
             self._signal_error = None
             raise error
 
-    def handle_signal_event(
-        self, event: HistoryEvent, on_applied: Callable[[], None]
-    ) -> None:
+    def handle_signal_event(self, event: HistoryEvent) -> None:
         attrs = event.workflow_execution_signaled_event_attributes
-        self._loop.call_soon(
-            self._deliver_signal, attrs.signal_name, attrs.input, on_applied
-        )
+        self._loop.call_soon(self._deliver_signal, attrs.signal_name, attrs.input)
 
-    def _deliver_signal(
-        self, signal_name: str, payload: Payload, on_applied: Callable[[], None]
-    ) -> None:
+    def _deliver_signal(self, signal_name: str, payload: Payload) -> None:
         """Dispatch a signal to the handler.
 
-        ``on_applied`` is *always* called (in ``finally``) so that
-        ``wait_condition`` waiters are re-evaluated regardless of handler
-        success.  User-handler exceptions are stored for the engine to
-        surface after ``run_until_yield``.
+        Handler exceptions are stashed for ``check_signal_error`` to
+        re-raise; the event loop's tick-boundary sweep handles waking
+        any ``wait_condition`` predicates the handler satisfied.
         """
         try:
             self._invoke_signal(signal_name, payload)
         except Exception as e:
             if self._signal_error is None:
                 self._signal_error = e
-        finally:
-            on_applied()
 
     def _invoke_signal(self, signal_name: str, payload: Payload) -> None:
         signal_def = self._definition.signals.get(signal_name)

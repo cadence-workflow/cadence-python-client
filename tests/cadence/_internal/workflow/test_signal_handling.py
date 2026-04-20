@@ -651,7 +651,7 @@ class TestSameBatchOrdering:
         def fake_apply_input_event(event: HistoryEvent) -> None:
             seen.append(event.WhichOneof("attributes"))
 
-        def fake_handle_signal_event(event: HistoryEvent, _on_applied) -> None:
+        def fake_handle_signal_event(event: HistoryEvent) -> None:
             seen.append(event.WhichOneof("attributes"))
 
         monkeypatch.setattr(engine, "_apply_input_event", fake_apply_input_event)
@@ -813,8 +813,8 @@ class TestWaitCondition:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["both_done"]
 
-    def test_signal_callback_preempts_resumed_workflow_task(self):
-        """Signal callbacks run before a workflow task resumed by an earlier activity completion."""
+    def test_signal_after_activity_completion_processed_in_history_order(self):
+        """Callbacks scheduled by input events run in history order (FIFO)."""
         engine = make_workflow_engine(ActivityCompletionAndSignalWorkflow)
         events = [
             HistoryEvent(
@@ -860,7 +860,7 @@ class TestWaitCondition:
         assert engine.is_done()
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == [
-            "signal,activity:done"
+            "activity:done,signal"
         ]
 
 
@@ -959,46 +959,28 @@ class TestWaitConditionPredicateFailure:
         from cadence._internal.workflow.deterministic_event_loop import (
             DeterministicEventLoop,
         )
-        from cadence._internal.workflow.statemachine.decision_manager import (
-            DecisionManager,
-        )
-        from cadence._internal.workflow.context import Context
 
         loop = DeterministicEventLoop()
-        dm = DecisionManager(loop)
-        ctx = Context(
-            info=WorkflowInfo(
-                workflow_type="test",
-                workflow_domain="test-domain",
-                workflow_id="test-wf",
-                workflow_run_id="test-run",
-                workflow_task_list="test-tl",
-                data_converter=DATA_CONVERTER,
-            ),
-            decision_manager=dm,
-        )
-
-        future_bad = loop.create_future()
-        future_good = loop.create_future()
 
         def bad_predicate():
             raise RuntimeError("predicate bug")
 
-        def good_predicate():
-            return True
+        flip = {"v": False}
 
-        ctx._waiters = [
-            (bad_predicate, future_bad),
-            (good_predicate, future_good),
-        ]
+        bad = loop.create_waiter(bad_predicate)
+        good = loop.create_waiter(lambda: flip["v"])
 
-        ctx.notify_state_changed()
+        # Tick once: bad raises (settled), good stays pending.
+        loop._run_once()
+        assert bad.done()
+        assert isinstance(bad.exception(), RuntimeError)
+        assert not good.done()
 
-        assert future_bad.done()
-        assert future_bad.exception() is not None
-        assert isinstance(future_bad.exception(), RuntimeError)
-        assert future_good.done()
-        assert future_good.result() is None
+        # Flip the predicate, tick again: good resolves, bad is no longer tracked.
+        flip["v"] = True
+        loop._run_once()
+        assert good.done()
+        good.result()  # no exception → success
 
 
 class TestSignalDefinitionValidation:

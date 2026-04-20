@@ -2,8 +2,12 @@ import asyncio
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Type, Tuple, ClassVar, List, Iterator
+from typing import Dict, Type, Tuple, ClassVar, List, Iterator, Callable
 
+from cadence._internal.workflow.deterministic_event_loop import (
+    DeterministicEventLoop,
+    Waiter,
+)
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,
@@ -118,6 +122,14 @@ class DecisionManager:
             self._determinism_tracker.validate_action(decision_attributes)
 
         self._add_state_machine(CompletionStateMachine(decision))
+
+    def create_waiter(self, predicate: Callable[[], bool]) -> Waiter:
+        # _event_loop is typed as AbstractEventLoop so tests can pass a
+        # stdlib loop for paths that don't touch waiters; narrow here.
+        assert isinstance(self._event_loop, DeterministicEventLoop), (
+            "create_waiter requires a DeterministicEventLoop"
+        )
+        return self._event_loop.create_waiter(predicate)
 
     def _next_id(self) -> str:
         next_id = self._id_counter

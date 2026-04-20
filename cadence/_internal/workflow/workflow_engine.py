@@ -168,9 +168,7 @@ class WorkflowEngine:
                         event.WhichOneof("attributes")
                         == "workflow_execution_signaled_event_attributes"
                     ):
-                        self._workflow_instance.handle_signal_event(
-                            event, ctx.notify_state_changed
-                        )
+                        self._workflow_instance.handle_signal_event(event)
                     else:
                         self._apply_input_event(event)
 

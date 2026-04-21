@@ -43,10 +43,19 @@ class StartWorkflowOptions(TypedDict, total=False):
     jitter_start: timedelta
     cron_overlap_policy: workflow_pb2.CronOverlapPolicy
     first_run_at: datetime
+    workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
 
 
-def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflowOptions:
-    """Validate required fields and apply defaults to StartWorkflowOptions."""
+def _validate_and_apply_defaults(
+    options: StartWorkflowOptions,
+    default_workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy = workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+) -> StartWorkflowOptions:
+    """Validate required fields and apply defaults to StartWorkflowOptions.
+
+    ``default_workflow_id_reuse_policy`` defaults to the value used by
+    ``start_workflow``. ``signal_with_start_workflow`` passes
+    ``ALLOW_DUPLICATE`` for Go parity.
+    """
     if not options.get("task_list"):
         raise ValueError("task_list is required")
 
@@ -72,6 +81,16 @@ def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflow
     jitter_start = options.get("jitter_start")
     if jitter_start is not None and jitter_start < timedelta(0):
         raise ValueError("jitter_start cannot be negative")
+
+    if options.get("workflow_id_reuse_policy") is None:
+        options["workflow_id_reuse_policy"] = default_workflow_id_reuse_policy
+    elif (
+        options["workflow_id_reuse_policy"]
+        == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID
+    ):
+        raise ValueError(
+            "workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID"
+        )
 
     # Validate first_run_at (must be timezone-aware and not before Unix epoch)
     first_run_at = options.get("first_run_at")
@@ -220,6 +239,8 @@ class Client:
             request.cron_schedule = options["cron_schedule"]
         if options.get("cron_overlap_policy") is not None:
             request.cron_overlap_policy = options["cron_overlap_policy"]
+        if options.get("workflow_id_reuse_policy") is not None:
+            request.workflow_id_reuse_policy = options["workflow_id_reuse_policy"]
 
         # Set delay_start if provided
         delay_start = options.get("delay_start")
@@ -360,7 +381,10 @@ class Client:
             Exception: If the gRPC call fails
         """
         # Convert kwargs to StartWorkflowOptions and validate
-        options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
+        options = _validate_and_apply_defaults(
+            StartWorkflowOptions(**options_kwargs),
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+        )
 
         # Build the start workflow request
         start_request = self._build_start_workflow_request(

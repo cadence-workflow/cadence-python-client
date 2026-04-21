@@ -1,15 +1,20 @@
 import pytest
 from datetime import timedelta
 
+from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.service_domain_pb2 import (
     DescribeDomainRequest,
     DescribeDomainResponse,
 )
-from cadence.error import EntityNotExistsError
+from cadence.error import (
+    EntityNotExistsError,
+    WorkflowExecutionAlreadyStartedError,
+)
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
 from cadence.api.v1.service_workflow_pb2 import (
     DescribeWorkflowExecutionRequest,
     GetWorkflowExecutionHistoryRequest,
+    TerminateWorkflowExecutionRequest,
 )
 from cadence.api.v1.common_pb2 import WorkflowExecution
 
@@ -193,6 +198,80 @@ async def test_signal_workflow(helper: CadenceHelper):
             signal_event.workflow_execution_signaled_event_attributes.signal_name
             == signal_name
         ), f"Expected signal name '{signal_name}'"
+
+
+@pytest.mark.usefixtures("helper")
+async def test_workflow_id_reuse_policy_reject_duplicate(helper: CadenceHelper):
+    """REJECT_DUPLICATE propagates to server and blocks a second start with the same workflow_id.
+
+    This verifies end-to-end that:
+    1. The workflow_id_reuse_policy option reaches the Cadence server.
+    2. REJECT_DUPLICATE actually causes the server to reject a duplicate start.
+    """
+    async with helper.client() as client:
+        workflow_type = "test-workflow-reuse-reject"
+        task_list_name = "test-task-list-reuse-reject"
+        workflow_id = "test-workflow-reuse-reject-id"
+        execution_timeout = timedelta(minutes=5)
+
+        first_execution = await client.start_workflow(
+            workflow_type,
+            task_list=task_list_name,
+            execution_start_to_close_timeout=execution_timeout,
+            workflow_id=workflow_id,
+        )
+
+        # Terminate the first run so the second start fails on reuse-policy
+        # rather than on "workflow already running".
+        await client.workflow_stub.TerminateWorkflowExecution(
+            TerminateWorkflowExecutionRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=WorkflowExecution(
+                    workflow_id=first_execution.workflow_id,
+                    run_id=first_execution.run_id,
+                ),
+                reason="test cleanup for reuse-policy test",
+                identity=client.identity,
+            )
+        )
+
+        with pytest.raises(WorkflowExecutionAlreadyStartedError):
+            await client.start_workflow(
+                workflow_type,
+                task_list=task_list_name,
+                execution_start_to_close_timeout=execution_timeout,
+                workflow_id=workflow_id,
+                workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+            )
+
+
+@pytest.mark.usefixtures("helper")
+async def test_workflow_id_reuse_policy_terminate_if_running(helper: CadenceHelper):
+    """TERMINATE_IF_RUNNING propagates and causes the server to terminate the prior run."""
+    async with helper.client() as client:
+        workflow_type = "test-workflow-reuse-terminate"
+        task_list_name = "test-task-list-reuse-terminate"
+        workflow_id = "test-workflow-reuse-terminate-id"
+        execution_timeout = timedelta(minutes=5)
+
+        first_execution = await client.start_workflow(
+            workflow_type,
+            task_list=task_list_name,
+            execution_start_to_close_timeout=execution_timeout,
+            workflow_id=workflow_id,
+        )
+
+        second_execution = await client.start_workflow(
+            workflow_type,
+            task_list=task_list_name,
+            execution_start_to_close_timeout=execution_timeout,
+            workflow_id=workflow_id,
+            workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING,
+        )
+
+        assert second_execution.workflow_id == workflow_id
+        assert second_execution.run_id != ""
+        assert second_execution.run_id != first_execution.run_id
 
 
 @pytest.mark.usefixtures("helper")

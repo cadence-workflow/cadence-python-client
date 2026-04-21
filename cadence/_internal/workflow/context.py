@@ -3,6 +3,7 @@ from datetime import timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast
 
+from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1.common_pb2 import ActivityType
 from cadence.api.v1.decision_pb2 import (
@@ -11,14 +12,17 @@ from cadence.api.v1.decision_pb2 import (
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
-from cadence.workflow import WorkflowContext, WorkflowInfo, ResultType, ActivityOptions
-
-default_activity_options = ActivityOptions(
-    schedule_to_close_timeout=timedelta(
-        hours=1
-    ),  # more than 1 hour is recommended to set up options explicitly like heartbeat for self recovery
-    schedule_to_start_timeout=timedelta(seconds=10),
+from cadence.workflow import (
+    ActivityOptions,
+    ResultType,
+    WorkflowContext,
+    WorkflowInfo,
 )
+
+_DEFAULT_ACTIVITY_OPTIONS: ActivityOptions = {
+    "schedule_to_close_timeout": timedelta(hours=1),
+    "schedule_to_start_timeout": timedelta(seconds=10),
+}
 
 
 class Context(WorkflowContext):
@@ -45,7 +49,7 @@ class Context(WorkflowContext):
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
     ) -> ResultType:
-        opts: ActivityOptions = {**default_activity_options, **kwargs}
+        opts: ActivityOptions = {**_DEFAULT_ACTIVITY_OPTIONS, **kwargs}
         if "schedule_to_close_timeout" not in opts and (
             "schedule_to_start_timeout" not in opts
             or "start_to_close_timeout" not in opts
@@ -87,7 +91,7 @@ class Context(WorkflowContext):
             schedule_to_start_timeout=_round_to_nearest_second(schedule_to_start),
             start_to_close_timeout=_round_to_nearest_second(start_to_close),
             heartbeat_timeout=_round_to_nearest_second(heartbeat),
-            retry_policy=None,
+            retry_policy=retry_policy_to_proto(opts.get("retry_policy")),
             header=None,
             request_local_dispatch=False,
         )

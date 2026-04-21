@@ -7,7 +7,7 @@ pr: install generate lint type-check test integration-test
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
-	uv sync --extra dev
+	uv sync --all-extras
 
 # Generate idl files
 generate:

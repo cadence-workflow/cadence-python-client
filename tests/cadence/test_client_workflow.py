@@ -674,6 +674,7 @@ class TestClientStartWorkflow:
                 workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID,
             )
 
+
 @pytest.mark.asyncio
 async def test_integration_workflow_invocation():
     """Integration test for workflow invocation flow."""

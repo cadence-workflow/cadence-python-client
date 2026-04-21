@@ -11,7 +11,11 @@ from google.protobuf.duration_pb2 import Duration
 from cadence.api.v1 import common_pb2
 from cadence.workflow import RetryPolicy
 
-_round_to_whole_seconds = lambda delta: timedelta(seconds=ceil(delta.total_seconds()))
+
+def _round_to_whole_seconds(delta: timedelta) -> timedelta:
+    """Ceil-round a ``timedelta`` to whole seconds."""
+    return timedelta(seconds=ceil(delta.total_seconds()))
+
 
 def _set_duration_field(target: Duration, delta: timedelta) -> None:
     """Write ``delta``, ceil-rounded to whole seconds, into a proto ``Duration`` field."""
@@ -34,27 +38,23 @@ def retry_policy_to_proto(
 
     out = common_pb2.RetryPolicy()
 
-    if "initial_interval" in policy:
-        _set_duration_field(
-            out.initial_interval, cast(timedelta, policy["initial_interval"])
-        )
+    if (ii := policy.get("initial_interval")) is not None:
+        _set_duration_field(out.initial_interval, cast(timedelta, ii))
 
-    if "backoff_coefficient" in policy:
-        coef = cast(float, policy["backoff_coefficient"])
-        if coef < 1.0:
+    if (coef := policy.get("backoff_coefficient")) is not None:
+        coef_f = cast(float, coef)
+        if coef_f < 1.0:
             raise ValueError("backoff_coefficient must be >= 1.0 when provided")
-        out.backoff_coefficient = coef
+        out.backoff_coefficient = coef_f
 
     if (mi := policy.get("maximum_interval")) is not None:
         _set_duration_field(out.maximum_interval, cast(timedelta, mi))
 
-    if "maximum_attempts" in policy:
-        out.maximum_attempts = int(cast(int, policy["maximum_attempts"]))
+    if (ma := policy.get("maximum_attempts")) is not None:
+        out.maximum_attempts = int(cast(int, ma))
 
-    if "non_retryable_error_reasons" in policy:
-        out.non_retryable_error_reasons.extend(
-            cast(list[str], policy["non_retryable_error_reasons"])
-        )
+    if (reasons := policy.get("non_retryable_error_reasons")) is not None:
+        out.non_retryable_error_reasons.extend(cast(list[str], reasons))
 
     if (ei := policy.get("expiration_interval")) is not None:
         _set_duration_field(out.expiration_interval, cast(timedelta, ei))

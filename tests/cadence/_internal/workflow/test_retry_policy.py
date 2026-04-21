@@ -64,3 +64,24 @@ def test_retry_policy_backoff_omitted_not_explicitly_set_in_dict():
     assert p is not None
     d = MessageToDict(p, preserving_proto_field_name=True)
     assert "backoff_coefficient" not in d
+
+
+def test_retry_policy_explicit_none_fields_are_omitted():
+    p = retry_policy_to_proto(
+        {
+            "initial_interval": None,
+            "backoff_coefficient": None,
+            "maximum_interval": None,
+            "maximum_attempts": None,
+            "non_retryable_error_reasons": None,
+            "expiration_interval": None,
+        }
+    )
+    assert p is not None
+    assert not p.HasField("initial_interval")
+    assert not p.HasField("maximum_interval")
+    assert not p.HasField("expiration_interval")
+    d = MessageToDict(p, preserving_proto_field_name=True)
+    assert "backoff_coefficient" not in d
+    assert "maximum_attempts" not in d
+    assert "non_retryable_error_reasons" not in d

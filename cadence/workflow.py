@@ -27,12 +27,22 @@ from cadence.signal import SignalDefinition, SignalDefinitionOptions
 ResultType = TypeVar("ResultType")
 
 
+class RetryPolicy(TypedDict, total=False):
+    initial_interval: timedelta
+    backoff_coefficient: float
+    maximum_interval: timedelta
+    maximum_attempts: int
+    non_retryable_error_reasons: list[str]
+    expiration_interval: timedelta
+
+
 class ActivityOptions(TypedDict, total=False):
     task_list: str
     schedule_to_close_timeout: timedelta
     schedule_to_start_timeout: timedelta
     start_to_close_timeout: timedelta
     heartbeat_timeout: timedelta
+    retry_policy: RetryPolicy
 
 
 async def execute_activity(

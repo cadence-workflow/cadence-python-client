@@ -21,8 +21,7 @@ _T = TypeVar("_T")
 
 
 class Waiter(Awaitable[None]):
-    """Awaitable that resolves when ``predicate()`` becomes truthy.
-    """
+    """Awaitable that resolves when ``predicate()`` becomes truthy."""
 
     __slots__ = ("_predicate", "_future")
 
@@ -179,8 +178,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         return futures.Future(loop=self)
 
     def create_waiter(self, predicate: Callable[[], bool]) -> Waiter:
-        """Register a predicate-driven awaitable.
-        """
+        """Register a predicate-driven awaitable."""
         waiter = Waiter(predicate, self)
         if not waiter.poll():
             self._waiters.append(waiter)

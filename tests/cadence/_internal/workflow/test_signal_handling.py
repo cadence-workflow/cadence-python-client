@@ -1139,9 +1139,7 @@ class TestSignalDefinitionValidation:
         async def async_fn(self, x: int) -> None:
             pass
 
-        sig_def = SignalDefinition.wrap(
-            async_fn, SignalDefinitionOptions(name="test")
-        )
+        sig_def = SignalDefinition.wrap(async_fn, SignalDefinitionOptions(name="test"))
         assert sig_def.name == "test"
         assert sig_def.wrapped is async_fn
 

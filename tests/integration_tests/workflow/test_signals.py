@@ -45,7 +45,6 @@ class SignalWaitThreeWorkflow(_SignalWaitBase):
 
 @registry.workflow()
 class StaleWakeupRaceWorkflow:
-
     def __init__(self) -> None:
         self.cond = False
         self.observed: list[str] = []
@@ -56,7 +55,9 @@ class StaleWakeupRaceWorkflow:
             await workflow.wait_condition(lambda: self.cond)
             self.observed.append(label)
             self.cond = False  # consume before yielding
-            await workflow.sleep(timedelta(seconds=1))  # yield after consuming; sibling must not wake
+            await workflow.sleep(
+                timedelta(seconds=1)
+            )  # yield after consuming; sibling must not wake
 
         asyncio.create_task(coro("a"))
         asyncio.create_task(coro("b"))

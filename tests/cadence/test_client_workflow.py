@@ -733,9 +733,7 @@ class TestBuildStartWorkflowRequestRetryPolicy:
     def test_retry_policy_omitted_sets_no_field(self):
         """No retry_policy → request has no retry_policy field."""
         client = self._client()
-        request = client._build_start_workflow_request(
-            "WF", (), self._base_options()
-        )
+        request = client._build_start_workflow_request("WF", (), self._base_options())
         assert not request.HasField("retry_policy")
 
     def test_retry_policy_empty_dict_sets_no_field(self):

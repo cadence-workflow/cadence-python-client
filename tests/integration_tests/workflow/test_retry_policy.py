@@ -234,8 +234,7 @@ async def test_workflow_retries_on_failure(helper: CadenceHelper):
             first_close_event.workflow_execution_continued_as_new_event_attributes
         )
         assert (
-            can_attrs.initiator
-            == workflow_pb2.CONTINUE_AS_NEW_INITIATOR_RETRY_POLICY
+            can_attrs.initiator == workflow_pb2.CONTINUE_AS_NEW_INITIATOR_RETRY_POLICY
         ), f"Expected RETRY_POLICY initiator, got {can_attrs.initiator}"
 
         # Walk to the second run and confirm it ends Failed (no more retries)
@@ -263,9 +262,9 @@ async def test_workflow_no_retry_when_policy_unset(helper: CadenceHelper):
         close = await _wait_for_close(helper, execution)
         close_event = close.history.events[-1]
 
-        assert close_event.HasField(
-            "workflow_execution_failed_event_attributes"
-        ), "Expected single-run failure without retry_policy"
+        assert close_event.HasField("workflow_execution_failed_event_attributes"), (
+            "Expected single-run failure without retry_policy"
+        )
         # No ContinuedAsNew event in history means the server never scheduled a retry
         async with helper.client() as client:
             full: GetWorkflowExecutionHistoryResponse = (
@@ -305,9 +304,9 @@ async def test_workflow_non_retryable_error_skips_retries(helper: CadenceHelper)
         close = await _wait_for_close(helper, execution)
         close_event = close.history.events[-1]
 
-        assert close_event.HasField(
-            "workflow_execution_failed_event_attributes"
-        ), "Expected failure on first attempt"
+        assert close_event.HasField("workflow_execution_failed_event_attributes"), (
+            "Expected failure on first attempt"
+        )
 
         # Verify the failure reason matches the exception class name
         failure_reason = (
@@ -333,6 +332,4 @@ async def test_workflow_non_retryable_error_skips_retries(helper: CadenceHelper)
             for e in full.history.events
             if e.HasField("workflow_execution_continued_as_new_event_attributes")
         ]
-        assert not continued_events, (
-            "Non-retryable error must not trigger a retry"
-        )
+        assert not continued_events, "Non-retryable error must not trigger a retry"

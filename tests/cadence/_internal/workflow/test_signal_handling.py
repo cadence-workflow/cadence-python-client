@@ -206,6 +206,84 @@ class StaleWakeupRaceWorkflow:
         self.cond = True
 
 
+class AsyncSignalWorkflow:
+    """Workflow with an async signal handler that mutates state without awaiting."""
+
+    def __init__(self):
+        self.signals_received: list[str] = []
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: len(self.signals_received) >= 1)
+        return self.signals_received[0]
+
+    @workflow.signal(name="my_signal")
+    async def handle_signal(self, value: str) -> None:
+        self.signals_received.append(value)
+
+
+class AsyncSignalWithAwaitWorkflow:
+    """Workflow whose async signal handler yields to the loop before mutating state."""
+
+    def __init__(self):
+        self.signals_received: list[str] = []
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: len(self.signals_received) >= 1)
+        return self.signals_received[0]
+
+    @workflow.signal(name="my_signal")
+    async def handle_signal(self, value: str) -> None:
+        # Yield once; the main workflow's wait_condition should re-poll
+        # after we land.
+        await asyncio.sleep(0)
+        self.signals_received.append(value)
+
+
+class MixedSyncAsyncSignalWorkflow:
+    """Workflow exposing both a sync and an async signal handler."""
+
+    def __init__(self):
+        self.log: list[str] = []
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: len(self.log) >= 2)
+        return ",".join(self.log)
+
+    @workflow.signal(name="sync_sig")
+    def handle_sync(self, value: str) -> None:
+        self.log.append(f"sync:{value}")
+
+    @workflow.signal(name="async_sig")
+    async def handle_async(self, value: str) -> None:
+        await asyncio.sleep(0)
+        self.log.append(f"async:{value}")
+
+
+class TwoAsyncSignalsWorkflow:
+    """Two distinct async signal handlers that both yield before mutating."""
+
+    def __init__(self):
+        self.log: list[str] = []
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: len(self.log) >= 2)
+        return ",".join(self.log)
+
+    @workflow.signal(name="first")
+    async def first(self, value: str) -> None:
+        await asyncio.sleep(0)
+        self.log.append(f"first:{value}")
+
+    @workflow.signal(name="second")
+    async def second(self, value: str) -> None:
+        await asyncio.sleep(0)
+        self.log.append(f"second:{value}")
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 DATA_CONVERTER = DefaultDataConverter()
@@ -393,19 +471,6 @@ class TestSignalDelivery:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
-    def test_async_signal_handler_rejected_at_definition_time(self):
-        """Async signal handlers are rejected when the decorator is applied."""
-        with pytest.raises(TypeError, match="must be synchronous"):
-
-            class _BadWorkflow:
-                @workflow.run
-                async def run(self):
-                    pass
-
-                @workflow.signal(name="async_signal")
-                async def handle_signal(self, value: str):
-                    pass
-
     def test_multi_param_signal(self):
         """Signal handler with multiple typed parameters decodes correctly."""
         engine = make_workflow_engine(MultiParamSignalWorkflow)
@@ -555,7 +620,7 @@ class TestSignalDelivery:
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
     def test_signal_handler_exception_fails_decision_task(self):
-        """User exception in a signal handler propagates out of process_decision."""
+        """User exception in a signal handler is re-raised to fail the decision task."""
         engine = make_workflow_engine(FailingSignalWorkflow)
         events = [
             HistoryEvent(
@@ -1061,21 +1126,24 @@ class TestWaitConditionPredicateFailure:
 class TestSignalDefinitionValidation:
     """Tests for signal definition-time validation."""
 
-    def test_async_handler_rejected_by_decorator(self):
-        with pytest.raises(TypeError, match="must be synchronous"):
+    def test_async_handler_accepted_by_decorator(self):
+        @workflow.signal(name="ok")
+        async def ok_handler(self, x: int) -> None:
+            pass
 
-            @workflow.signal(name="bad")
-            async def bad_handler(self, x: int):
-                pass
+        assert getattr(ok_handler, "_workflow_signal", None) == "ok"
 
-    def test_async_handler_rejected_by_signal_definition_wrap(self):
+    def test_async_handler_accepted_by_signal_definition_wrap(self):
         from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
         async def async_fn(self, x: int) -> None:
             pass
 
-        with pytest.raises(TypeError, match="must be synchronous"):
-            SignalDefinition.wrap(async_fn, SignalDefinitionOptions(name="test"))
+        sig_def = SignalDefinition.wrap(
+            async_fn, SignalDefinitionOptions(name="test")
+        )
+        assert sig_def.name == "test"
+        assert sig_def.wrapped is async_fn
 
 
 class TestSignalArityEnforcement:
@@ -1136,3 +1204,188 @@ class TestSignalArityEnforcement:
         assert engine.is_done()
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["bob:99"]
+
+
+class TestAsyncSignalHandler:
+    """Tests for async signal handlers scheduled as tasks on the deterministic loop."""
+
+    def test_async_signal_handler_mutates_state(self):
+        """An async handler that mutates state synchronously unblocks wait_condition."""
+        engine = make_workflow_engine(AsyncSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "my_signal", "hello-async"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == ["hello-async"]
+
+    def test_async_signal_handler_with_await_still_completes(self):
+        """An async handler that yields to the loop before mutating state
+        still unblocks wait_condition in the same decision task."""
+        engine = make_workflow_engine(AsyncSignalWithAwaitWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "my_signal", "deferred"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == ["deferred"]
+
+    def test_mixed_sync_and_async_handlers_run_in_history_order(self):
+        """Sync and async signal handlers coexist and are delivered in history order."""
+        engine = make_workflow_engine(MixedSyncAsyncSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "sync_sig", "a"),
+            signal_event(3, "async_sig", "b"),
+            HistoryEvent(
+                event_id=4,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=5,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=4,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == ["sync:a,async:b"]
+
+    def test_async_signal_task_reference_released_after_completion(self):
+        """Completed async signal tasks must be discarded from the tracking set."""
+        engine = make_workflow_engine(AsyncSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "my_signal", "bye"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        engine.process_decision(events)
+        assert engine._workflow_instance._signal_tasks == set()
+
+    def test_async_signal_replay_produces_same_result(self):
+        """Async signal handlers are deterministic across replays."""
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "my_signal", "replayed-async"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        engine1 = make_workflow_engine(AsyncSignalWithAwaitWorkflow)
+        r1 = engine1.process_decision(events)
+        engine2 = make_workflow_engine(AsyncSignalWithAwaitWorkflow)
+        r2 = engine2.process_decision(events)
+
+        c1 = r1.decisions[0].complete_workflow_execution_decision_attributes.result
+        c2 = r2.decisions[0].complete_workflow_execution_decision_attributes.result
+        assert c1 == c2
+        assert DATA_CONVERTER.from_data(c1, [str]) == ["replayed-async"]
+
+    def test_two_async_handlers_both_with_yield_maintain_history_order(self):
+        """Two async handlers that both yield before mutating must run in signal history order.
+
+        Both 'first' and 'second' do ``await asyncio.sleep(0)`` before appending
+        to the log.  The FIFO scheduling of ``call_soon`` guarantees that the
+        handler for 'first' is scheduled before the handler for 'second', so
+        even across yield points the log must be ['first:alpha', 'second:beta'].
+        """
+        engine = make_workflow_engine(TwoAsyncSignalsWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "first", "alpha"),
+            signal_event(3, "second", "beta"),
+            HistoryEvent(
+                event_id=4,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=5,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=4,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+        assert engine.is_done()
+        completion = result.decisions[0].complete_workflow_execution_decision_attributes
+        assert DATA_CONVERTER.from_data(completion.result, [str]) == [
+            "first:alpha,second:beta"
+        ]

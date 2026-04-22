@@ -1,3 +1,4 @@
+import inspect
 import logging
 from asyncio import Task
 from typing import Any, Optional, Callable, Awaitable
@@ -26,6 +27,8 @@ class WorkflowInstance:
         self._data_converter = data_converter
         self._instance = workflow_definition.cls()  # construct a new workflow object
         self._task: Optional[Task[Payload]] = None
+        # Strong references to in-flight async signal handler tasks.
+        self._signal_tasks: set[Task[Any]] = set()
         self._signal_error: Optional[Exception] = None
 
     def start(self, payload: Payload):
@@ -56,11 +59,12 @@ class WorkflowInstance:
         return self._task.result()
 
     def check_signal_error(self) -> None:
-        """Raise the first signal handler exception captured during this tick.
+        """Raise the first signal handler exception captured this tick.
 
-        Called by the engine after ``run_until_yield()`` so that user-handler
-        bugs deterministically fail the decision task instead of being
-        silently swallowed by the event loop's ``call_exception_handler``.
+        Called by the engine after run_until_yield() so handler bugs
+        deterministically fail the decision task rather than being swallowed.
+        Deserialization errors are excluded — those are the caller's fault and
+        are only logged (mirrors Java SDK behaviour).
         """
         if self._signal_error is not None:
             error = self._signal_error
@@ -69,20 +73,7 @@ class WorkflowInstance:
 
     def handle_signal_event(self, event: HistoryEvent) -> None:
         attrs = event.workflow_execution_signaled_event_attributes
-        self._loop.call_soon(self._deliver_signal, attrs.signal_name, attrs.input)
-
-    def _deliver_signal(self, signal_name: str, payload: Payload) -> None:
-        """Dispatch a signal to the handler.
-
-        Handler exceptions are stashed for ``check_signal_error`` to
-        re-raise; the event loop's tick-boundary sweep handles waking
-        any ``wait_condition`` predicates the handler satisfied.
-        """
-        try:
-            self._invoke_signal(signal_name, payload)
-        except Exception as e:
-            if self._signal_error is None:
-                self._signal_error = e
+        self._loop.call_soon(self._invoke_signal, attrs.signal_name, attrs.input)
 
     def _invoke_signal(self, signal_name: str, payload: Payload) -> None:
         signal_def = self._definition.signals.get(signal_name)
@@ -104,4 +95,27 @@ class WorkflowInstance:
             return
 
         handler = signal_def.wrapped.__get__(self._instance)
-        handler(*args)
+        try:
+            result = handler(*args)
+        except Exception as e:
+            if self._signal_error is None:
+                self._signal_error = e
+            return
+
+        # Async handlers return a coroutine; wrap it in a deterministic-loop
+        # task and hold a strong reference until it finishes so asyncio does
+        # not collect it mid-flight.
+        if inspect.iscoroutine(result):
+            task = self._loop.create_task(result)
+            self._signal_tasks.add(task)
+            task.add_done_callback(self._on_signal_task_done)
+
+    def _on_signal_task_done(self, task: Task[Any]) -> None:
+        self._signal_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        # Mirror the sync path: only stash Exception subclasses; let
+        # SystemExit/KeyboardInterrupt propagate naturally.
+        if isinstance(exc, Exception) and self._signal_error is None:
+            self._signal_error = exc

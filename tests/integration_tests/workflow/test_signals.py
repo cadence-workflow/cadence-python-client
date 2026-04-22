@@ -52,19 +52,78 @@ class StaleWakeupRaceWorkflow:
 
     @workflow.run
     async def run(self) -> int:
-        async def waiter(label: str) -> None:
+        async def coro(label: str) -> None:
             await workflow.wait_condition(lambda: self.cond)
             self.observed.append(label)
-            self.cond = False  # invalidate for any sibling waiter
+            self.cond = False  # consume before yielding
+            await workflow.sleep(timedelta(seconds=1))  # yield after consuming; sibling must not wake
 
-        asyncio.create_task(waiter("a"))
-        asyncio.create_task(waiter("b"))
+        asyncio.create_task(coro("a"))
+        asyncio.create_task(coro("b"))
         await workflow.wait_condition(lambda: len(self.observed) >= 1)
         return len(self.observed)
 
     @workflow.signal(name="trigger")
     def trigger(self):
         self.cond = True
+
+
+@registry.workflow()
+class AsyncSignalDirectWorkflow:
+    """Async signal handler that mutates state without yielding."""
+
+    def __init__(self) -> None:
+        self.received: list[str] = []
+
+    @workflow.run
+    async def run(self) -> str:
+        await workflow.wait_condition(lambda: len(self.received) >= 1)
+        return self.received[0]
+
+    @workflow.signal(name="append")
+    async def append(self, value: str) -> None:
+        self.received.append(value)
+
+
+@registry.workflow()
+class AsyncSignalDeferredWorkflow:
+    """Async signal handler that yields (workflow.sleep) before mutating state."""
+
+    def __init__(self) -> None:
+        self.received: list[str] = []
+
+    @workflow.run
+    async def run(self) -> str:
+        await workflow.wait_condition(lambda: len(self.received) >= 1)
+        return self.received[0]
+
+    @workflow.signal(name="append")
+    async def append(self, value: str) -> None:
+        await workflow.sleep(timedelta(seconds=1))
+        self.received.append(value)
+
+
+@registry.workflow()
+class AsyncSignalOrderWorkflow:
+    """Two async signal handlers that both yield; delivery order must match history order."""
+
+    def __init__(self) -> None:
+        self.log: list[str] = []
+
+    @workflow.run
+    async def run(self) -> str:
+        await workflow.wait_condition(lambda: len(self.log) >= 2)
+        return ",".join(self.log)
+
+    @workflow.signal(name="first")
+    async def first(self, value: str) -> None:
+        await workflow.sleep(timedelta(seconds=1))
+        self.log.append(f"first:{value}")
+
+    @workflow.signal(name="second")
+    async def second(self, value: str) -> None:
+        await workflow.sleep(timedelta(seconds=1))
+        self.log.append(f"second:{value}")
 
 
 def _scan_workflow_outcome(
@@ -208,7 +267,7 @@ async def test_wait_condition_no_stale_wakeup_race(helper: CadenceHelper):
         execution = await worker.client.start_workflow(
             "StaleWakeupRaceWorkflow",
             task_list=worker.task_list,
-            execution_start_to_close_timeout=timedelta(seconds=10),
+            execution_start_to_close_timeout=timedelta(seconds=30),
         )
 
         await worker.client.signal_workflow(
@@ -221,3 +280,69 @@ async def test_wait_condition_no_stale_wakeup_race(helper: CadenceHelper):
         # Buggy sweep-all: "2" (sibling waiter fired with stale state).
         # Correct one-per-tick: "1".
         assert "1" == result
+
+
+async def test_async_signal_handler_direct_mutation(helper: CadenceHelper):
+    """Async signal handler that mutates state without yielding completes the workflow."""
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "AsyncSignalDirectWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=10),
+        )
+
+        await worker.client.signal_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            "append",
+            "async-direct",
+        )
+
+        result, _ = await _wait_for_workflow_result(helper, execution)
+        assert '"async-direct"' == result
+
+
+async def test_async_signal_handler_deferred_mutation(helper: CadenceHelper):
+    """Async handler that yields (workflow.sleep) before mutating still completes."""
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "AsyncSignalDeferredWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        await worker.client.signal_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            "append",
+            "async-deferred",
+        )
+
+        result, _ = await _wait_for_workflow_result(helper, execution)
+        assert '"async-deferred"' == result
+
+
+async def test_async_signals_maintain_delivery_order(helper: CadenceHelper):
+    """Two async handlers that both yield (workflow.sleep) must run in signal history order."""
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "AsyncSignalOrderWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        await worker.client.signal_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            "first",
+            "alpha",
+        )
+        await worker.client.signal_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            "second",
+            "beta",
+        )
+
+        result, _ = await _wait_for_workflow_result(helper, execution)
+        assert '"first:alpha,second:beta"' == result

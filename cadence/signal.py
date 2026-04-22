@@ -131,14 +131,8 @@ class SignalDefinition(Generic[P, T]):
             A SignalDefinition instance
 
         Raises:
-            TypeError: If the handler is async
             ValueError: If return type is not None
         """
-        if inspect.iscoroutinefunction(fn):
-            raise TypeError(
-                f"Signal handler '{fn.__qualname__}' must be synchronous. "
-                f"Async signal handlers are not supported."
-            )
         name = opts.get("name") or fn.__qualname__
         params = _get_signal_signature(fn)
         _validate_signal_return_type(fn)
@@ -160,7 +154,13 @@ def _validate_signal_return_type(fn: Callable) -> None:
         hints = get_type_hints(fn)
         ret_type = hints.get("return", inspect.Signature.empty)
 
-        if ret_type is not None and ret_type is not inspect.Signature.empty:
+        # ``get_type_hints`` normalizes the ``None`` annotation to ``type(None)``
+        # (a.k.a. ``NoneType``), so both must be treated as a valid return type.
+        if (
+            ret_type is not None
+            and ret_type is not type(None)
+            and ret_type is not inspect.Signature.empty
+        ):
             raise ValueError(
                 f"Signal handler '{fn.__qualname__}' must return None "
                 f"(signals cannot return values), got {ret_type}"

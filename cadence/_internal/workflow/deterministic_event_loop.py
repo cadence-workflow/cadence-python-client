@@ -47,14 +47,13 @@ class Waiter(Awaitable[None]):
         if self._future.done():
             return True
         try:
-            ready = self._predicate()
+            if self._predicate():
+                self._future.set_result(None)
+                return True
+            return False
         except BaseException as exc:
             self._future.set_exception(exc)
             return True
-        if ready:
-            self._future.set_result(None)
-            return True
-        return False
 
 
 class DeterministicEventLoop(AbstractEventLoop):
@@ -193,33 +192,12 @@ class DeterministicEventLoop(AbstractEventLoop):
             handle = self._ready.popleft()
             if handle._cancelled:
                 continue
-            self._run_handle(handle)
+            handle._run()
 
         for i, w in enumerate(self._waiters):
             if w.poll():
                 del self._waiters[i]
                 break
-
-    @staticmethod
-    def _run_handle(handle: events.Handle) -> None:
-        try:
-            ctx = handle._context  # type: ignore[attr-defined]
-            cb = handle._callback  # type: ignore[attr-defined]
-            args = handle._args  # type: ignore[attr-defined]
-            if ctx is not None:
-                ctx.run(cb, *args)
-            else:
-                cb(*args)
-        except (SystemExit, KeyboardInterrupt):
-            raise
-        except BaseException as exc:
-            handle._loop.call_exception_handler(  # type: ignore[attr-defined]
-                {
-                    "message": "Exception in callback %r" % handle,
-                    "exception": exc,
-                    "handle": handle,
-                }
-            )
 
     def _run_forever_setup(self) -> None:
         self._check_closed()

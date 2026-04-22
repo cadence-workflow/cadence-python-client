@@ -164,19 +164,13 @@ class WorkflowEngine:
 
                 # Phase 2: Apply input events in history order.
                 for event in decision_events.input:
-                    if (
-                        event.WhichOneof("attributes")
-                        == "workflow_execution_signaled_event_attributes"
-                    ):
-                        self._workflow_instance.handle_signal_event(event)
-                    else:
-                        self._apply_input_event(event)
+                    self._apply_input_event(event)
 
                 # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()
 
                 # Surface signal handler errors so they deterministically
-                # fail the decision task rather than being silently logged.
+                # fail the decision task rather than being silently swallowed.
                 self._workflow_instance.check_signal_error()
 
                 # If the workflow function returned (or threw an exception), we're done
@@ -248,17 +242,16 @@ class WorkflowEngine:
                 "replay_mode": self._context.is_replay_mode(),
             },
         )
-        # start workflow on workflow started event
-        if (
-            event.WhichOneof("attributes")
-            == "workflow_execution_started_event_attributes"
-        ):
+        attr = event.WhichOneof("attributes")
+        if attr == "workflow_execution_signaled_event_attributes":
+            self._workflow_instance.handle_signal_event(event)
+            return
+        if attr == "workflow_execution_started_event_attributes":
             started_attrs: WorkflowExecutionStartedEventAttributes = (
                 event.workflow_execution_started_event_attributes
             )
             if started_attrs and hasattr(started_attrs, "input"):
                 self._workflow_instance.start(started_attrs.input)
-
         self._decision_manager.handle_history_event(event)
 
 

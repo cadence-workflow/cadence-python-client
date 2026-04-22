@@ -280,14 +280,10 @@ def signal(name: str | None = None) -> Callable[[T], T]:
     """
     Decorator to mark a method as a workflow signal handler.
 
-    Signal handlers must be **synchronous** functions that mutate workflow
-    state and return ``None``.  They run on the deterministic event loop
-    in the same thread as the workflow; keep them fast and free of I/O.
-
-    Async signal handlers are not supported and will be rejected at
-    definition time.  The SDK's deterministic event loop does not track
-    detached tasks, so an ``async def`` handler could silently diverge
-    from the replay-safe execution model.
+    Signal handlers mutate workflow state in response to signals delivered
+    via history.  Both synchronous (``def``) and asynchronous (``async def``)
+    handlers are supported; they always run on the workflow's deterministic
+    event loop, never on a real thread.
 
     Example::
 
@@ -295,15 +291,19 @@ def signal(name: str | None = None) -> Callable[[T], T]:
         def approve(self, approved: bool) -> None:
             self.approved = approved
 
+        @workflow.signal(name="async_approval")
+        async def approve_async(self, approved: bool) -> None:
+            self.approved = approved
+            await workflow.execute_activity("notify", ...)
+
     Concurrency constraints:
-        * Do **not** use native threads or ``asyncio`` primitives
+        * Do **not** use native threads or real-loop ``asyncio`` primitives
           (``asyncio.Event``, ``asyncio.Lock``, etc.) inside signal
           handlers — they are not replay-safe.
         * Do **not** rely on the GIL for thread-safety; CPython now
           supports free-threaded builds where the GIL can be disabled.
-        * Signal handlers should be short, synchronous, state-mutating
-          functions.  Use :func:`wait_condition` in the main workflow
-          coroutine to react to state changes made by signal handlers.
+        * Signal handlers should return ``None``; any returned value is
+          discarded.
 
     Args:
         name: The name of the signal
@@ -313,20 +313,12 @@ def signal(name: str | None = None) -> Callable[[T], T]:
 
     Raises:
         ValueError: If name is not provided
-        TypeError: If the handler is async
 
     """
     if name is None:
         raise ValueError("name is required")
 
     def decorator(f: T) -> T:
-        if inspect.iscoroutinefunction(f):
-            raise TypeError(
-                f"Signal handler '{f.__qualname__}' must be synchronous. "
-                f"Async signal handlers are not supported. "
-                f"Use a synchronous handler that mutates workflow state, "
-                f"then use workflow.wait_condition() in the main workflow coroutine."
-            )
         f._workflow_signal = name  # type: ignore
         return f
 

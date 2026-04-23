@@ -37,6 +37,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "grpcio-tools>=1.73.1",
+    "grpc-stubs>=1.53.0.6",
     "pytest>=8.4.1",
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.21.0",
@@ -107,6 +108,8 @@ module = [
     "grpcio_tools.*",
     "grpc.*",
     "google.protobuf.*",
+    "google.rpc.*",
+    "grpc_status.*",
     "uber.cadence.*",
     "msgspec.*",
     "cadence.api.*",

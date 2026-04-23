@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Callable, Any
+from typing import Callable, Any, cast
 
 from grpc import StatusCode
 from grpc.aio import UnaryUnaryClientInterceptor, ClientCallDetails
@@ -59,16 +59,24 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
         request: Any,
     ) -> Any:
         loop = asyncio.get_running_loop()
-        expiration_interval = client_call_details.timeout
+        expiration_interval = (
+            client_call_details.timeout
+            if client_call_details.timeout is not None
+            else float("inf")
+        )
         start_time = loop.time()
         deadline = start_time + expiration_interval
 
         attempts = 0
         while True:
             remaining = deadline - loop.time()
-            # Namedtuple methods start with an underscore to avoid conflicts and aren't actually private
-            # noinspection PyProtectedMember
-            call_details = client_call_details._replace(timeout=remaining)
+            call_details = ClientCallDetails(
+                method=client_call_details.method,
+                timeout=remaining,
+                metadata=client_call_details.metadata,
+                credentials=client_call_details.credentials,
+                wait_for_ready=client_call_details.wait_for_ready,
+            )
             rpc_call = await continuation(call_details, request)
             try:
                 await rpc_call
@@ -94,10 +102,10 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
 
 
 def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
-    # Handle requests to the passive side, matching the Go and Java Clients
-    if call_details.method == GET_WORKFLOW_HISTORY and isinstance(
-        err, EntityNotExistsError
-    ):
+    # grpc-stubs types method as str, but grpcio corrected it to bytes in v1.75.0
+    # (grpc/grpc#39405). Cast to bytes to match the actual runtime type.
+    method = cast(bytes, call_details.method)
+    if method == GET_WORKFLOW_HISTORY and isinstance(err, EntityNotExistsError):
         return (
             err.active_cluster is not None
             and err.current_cluster is not None

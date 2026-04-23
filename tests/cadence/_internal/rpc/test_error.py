@@ -1,11 +1,12 @@
 from concurrent import futures
+from typing import Any
 
 import pytest
 from google.protobuf import any_pb2
-from google.rpc import code_pb2, status_pb2  # type: ignore
+from google.rpc import code_pb2, status_pb2
 from grpc import Status, StatusCode, server
 from grpc.aio import insecure_channel
-from grpc_status.rpc_status import to_status  # type: ignore
+from grpc_status.rpc_status import to_status
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence.api.v1 import error_pb2, service_meta_pb2_grpc
@@ -170,8 +171,10 @@ def fake_service():
 async def test_map_error(
     fake_service, err: Message | Status, expected: CadenceRpcError | None
 ):
+    interceptors: list[Any] = [CadenceErrorInterceptor()]
     async with insecure_channel(
-        f"[::]:{fake_service.port}", interceptors=[CadenceErrorInterceptor()]
+        f"[::]:{fake_service.port}",
+        interceptors=interceptors,
     ) as channel:
         stub = service_meta_pb2_grpc.MetaAPIStub(channel)
         if expected is None:

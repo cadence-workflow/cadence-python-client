@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Callable, Any
+from typing import Callable, Any, cast
 
 from grpc import StatusCode
 from grpc.aio import UnaryUnaryClientInterceptor, ClientCallDetails
@@ -102,10 +102,9 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
 
 
 def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
-    method = call_details.method
-    if isinstance(method, bytes):
-        method = method.decode("ascii")
-
+    # grpc-stubs types method as str, but grpcio corrected it to bytes in v1.75.0
+    # (grpc/grpc#39405). Cast to bytes to match the actual runtime type.
+    method = cast(bytes, call_details.method)
     if method == GET_WORKFLOW_HISTORY and isinstance(err, EntityNotExistsError):
         return (
             err.active_cluster is not None

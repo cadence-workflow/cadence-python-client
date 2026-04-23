@@ -7,6 +7,7 @@ from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
+    SignalWithStartWorkflowExecutionResponse,
 )
 from cadence.client import (
     Client,
@@ -713,3 +714,135 @@ async def test_integration_workflow_invocation():
     assert request.task_list.name == "integration-task-list"
     assert request.HasField("input")  # Should have encoded input
     assert request.HasField("execution_start_to_close_timeout")
+
+
+class TestBuildStartWorkflowRequestRetryPolicy:
+    """Tests for retry_policy wiring in _build_start_workflow_request."""
+
+    def _base_options(self, **extra) -> StartWorkflowOptions:
+        return StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            **extra,
+        )
+
+    def _client(self) -> Client:
+        return Client(domain="test-domain", target="localhost:7933")
+
+    def test_retry_policy_omitted_sets_no_field(self):
+        """No retry_policy → request has no retry_policy field."""
+        client = self._client()
+        request = client._build_start_workflow_request("WF", (), self._base_options())
+        assert not request.HasField("retry_policy")
+
+    def test_retry_policy_empty_dict_sets_no_field(self):
+        """Empty dict retry_policy → treated as None, no field set."""
+        client = self._client()
+        request = client._build_start_workflow_request(
+            "WF", (), self._base_options(retry_policy={})
+        )
+        assert not request.HasField("retry_policy")
+
+    def test_retry_policy_populated_sets_field(self):
+        """Populated retry_policy → request.retry_policy is set."""
+        client = self._client()
+        request = client._build_start_workflow_request(
+            "WF",
+            (),
+            self._base_options(
+                retry_policy={
+                    "initial_interval": timedelta(seconds=1),
+                    "backoff_coefficient": 2.0,
+                    "maximum_interval": timedelta(seconds=10),
+                    "maximum_attempts": 3,
+                    "non_retryable_error_reasons": ["FatalError"],
+                    "expiration_interval": timedelta(minutes=5),
+                }
+            ),
+        )
+        assert request.HasField("retry_policy")
+        rp = request.retry_policy
+        assert rp.initial_interval.seconds == 1
+        assert rp.backoff_coefficient == 2.0
+        assert rp.maximum_interval.seconds == 10
+        assert rp.maximum_attempts == 3
+        assert list(rp.non_retryable_error_reasons) == ["FatalError"]
+        assert rp.expiration_interval.seconds == 300
+
+    def test_retry_policy_duration_ceiled_to_seconds(self):
+        """Sub-second durations are ceil-rounded to whole seconds."""
+        client = self._client()
+        request = client._build_start_workflow_request(
+            "WF",
+            (),
+            self._base_options(
+                retry_policy={"initial_interval": timedelta(milliseconds=500)}
+            ),
+        )
+        assert request.HasField("retry_policy")
+        assert request.retry_policy.initial_interval.seconds == 1
+
+    def test_retry_policy_invalid_backoff_raises(self):
+        """backoff_coefficient < 1.0 raises ValueError at build time."""
+        client = self._client()
+        with pytest.raises(ValueError, match="backoff_coefficient"):
+            client._build_start_workflow_request(
+                "WF",
+                (),
+                self._base_options(retry_policy={"backoff_coefficient": 0.5}),
+            )
+
+    @pytest.mark.asyncio
+    async def test_start_workflow_passes_retry_policy_to_server(self):
+        """start_workflow wires retry_policy into the gRPC request sent to the server."""
+        response = StartWorkflowExecutionResponse()
+        response.run_id = "run-1"
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = Mock()
+        client._workflow_stub.StartWorkflowExecution = AsyncMock(return_value=response)
+
+        await client.start_workflow(
+            "WF",
+            task_list="tl",
+            execution_start_to_close_timeout=timedelta(minutes=5),
+            retry_policy={
+                "initial_interval": timedelta(seconds=2),
+                "maximum_attempts": 4,
+            },
+        )
+
+        request = client._workflow_stub.StartWorkflowExecution.call_args[0][0]
+        assert request.HasField("retry_policy")
+        assert request.retry_policy.initial_interval.seconds == 2
+        assert request.retry_policy.maximum_attempts == 4
+
+    @pytest.mark.asyncio
+    async def test_signal_with_start_workflow_passes_retry_policy(self):
+        """signal_with_start_workflow wires retry_policy into the underlying start request."""
+        response = SignalWithStartWorkflowExecutionResponse()
+        response.run_id = "run-2"
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = Mock()
+        client._workflow_stub.SignalWithStartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
+
+        await client.signal_with_start_workflow(
+            "WF",
+            "my-signal",
+            [],
+            task_list="tl",
+            execution_start_to_close_timeout=timedelta(minutes=5),
+            retry_policy={
+                "initial_interval": timedelta(seconds=3),
+                "maximum_attempts": 2,
+            },
+        )
+
+        request = client._workflow_stub.SignalWithStartWorkflowExecution.call_args[0][0]
+        assert request.start_request.HasField("retry_policy")
+        assert request.start_request.retry_policy.initial_interval.seconds == 3
+        assert request.start_request.retry_policy.maximum_attempts == 2

@@ -11,6 +11,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
+from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 import grpc.aio
@@ -28,7 +29,7 @@ from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
-from cadence.workflow import WorkflowDefinition
+from cadence.workflow import RetryPolicy, WorkflowDefinition
 
 
 class StartWorkflowOptions(TypedDict, total=False):
@@ -44,6 +45,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     cron_overlap_policy: workflow_pb2.CronOverlapPolicy
     first_run_at: datetime
     workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
+    retry_policy: RetryPolicy
 
 
 def _validate_and_apply_defaults(
@@ -262,6 +264,11 @@ class Client:
             first_run_timestamp = Timestamp()
             first_run_timestamp.FromDatetime(first_run_at)
             request.first_run_at.CopyFrom(first_run_timestamp)
+
+        # Set retry_policy if provided
+        retry_proto = retry_policy_to_proto(options.get("retry_policy"))
+        if retry_proto is not None:
+            request.retry_policy.CopyFrom(retry_proto)
 
         return request
 

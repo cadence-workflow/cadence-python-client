@@ -28,12 +28,12 @@ ResultType = TypeVar("ResultType")
 
 
 class RetryPolicy(TypedDict, total=False):
-    initial_interval: timedelta
-    backoff_coefficient: float
-    maximum_interval: timedelta
-    maximum_attempts: int
-    non_retryable_error_reasons: list[str]
-    expiration_interval: timedelta
+    initial_interval: timedelta | None
+    backoff_coefficient: float | None
+    maximum_interval: timedelta | None
+    maximum_attempts: int | None
+    non_retryable_error_reasons: list[str] | None
+    expiration_interval: timedelta | None
 
 
 class ActivityOptions(TypedDict, total=False):

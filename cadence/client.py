@@ -177,7 +177,7 @@ class Client:
         await self._channel.channel_ready()
 
     async def close(self) -> None:
-        await self._channel.close()
+        await self._channel.close(None)
 
     async def __aenter__(self) -> "Client":
         await self.ready()
@@ -438,25 +438,27 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
 
 
 def _create_channel(options: ClientOptions) -> Channel:
-    interceptors = list(options["interceptors"])
+    interceptors: list[Any] = list(options["interceptors"])
     interceptors.append(
         YarpcMetadataInterceptor(options["service_name"], options["caller_name"])
     )
     interceptors.append(RetryInterceptor())
     interceptors.append(CadenceErrorInterceptor())
 
+    channel_options = list(options["channel_arguments"].items())
+
     if options["credentials"]:
         return grpc.aio.secure_channel(
             options["target"],
             options["credentials"],
-            options=options["channel_arguments"],
+            options=channel_options,
             compression=options["compression"],
             interceptors=interceptors,
         )
     else:
         return grpc.aio.insecure_channel(
             options["target"],
-            options=options["channel_arguments"],
+            options=channel_options,
             compression=options["compression"],
             interceptors=interceptors,
         )

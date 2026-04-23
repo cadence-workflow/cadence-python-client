@@ -1,12 +1,12 @@
 from concurrent import futures
-from typing import Tuple, Type
+from typing import Any, Tuple, Type
 
 import pytest
 from google.protobuf import any_pb2
-from google.rpc import status_pb2, code_pb2  # type: ignore
+from google.rpc import status_pb2, code_pb2
 from grpc import server
 from grpc.aio import insecure_channel
-from grpc_status.rpc_status import to_status  # type: ignore
+from grpc_status.rpc_status import to_status
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence.api.v1 import error_pb2, service_workflow_pb2_grpc
@@ -60,7 +60,7 @@ def test_next_delay(
 class FakeService(service_workflow_pb2_grpc.WorkflowAPIServicer):
     def __init__(self) -> None:
         super().__init__()
-        self.port = None
+        self.port: int | None = None
         self.counter = 0
 
     # Retryable only because it's GetWorkflowExecutionHistory
@@ -148,9 +148,10 @@ async def test_retryable_error(
     fake_service, case: str, expected_calls: int, expected_err: Type[CadenceRpcError]
 ):
     fake_service.counter = 0
+    interceptors: list[Any] = [RetryInterceptor(TEST_POLICY), CadenceErrorInterceptor()]
     async with insecure_channel(
         f"[::]:{fake_service.port}",
-        interceptors=[RetryInterceptor(TEST_POLICY), CadenceErrorInterceptor()],
+        interceptors=interceptors,
     ) as channel:
         stub = service_workflow_pb2_grpc.WorkflowAPIStub(channel)
         if expected_err:
@@ -177,9 +178,10 @@ async def test_retryable_error(
 @pytest.mark.asyncio
 async def test_workflow_history(fake_service, case: str, expected_calls: int):
     fake_service.counter = 0
+    interceptors: list[Any] = [RetryInterceptor(TEST_POLICY), CadenceErrorInterceptor()]
     async with insecure_channel(
         f"[::]:{fake_service.port}",
-        interceptors=[RetryInterceptor(TEST_POLICY), CadenceErrorInterceptor()],
+        interceptors=interceptors,
     ) as channel:
         stub = service_workflow_pb2_grpc.WorkflowAPIStub(channel)
         with pytest.raises(EntityNotExistsError):

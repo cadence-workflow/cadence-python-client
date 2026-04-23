@@ -1,7 +1,7 @@
-from typing import Callable, Any, Optional, Generator, TypeVar
+from typing import Callable, Any, Optional, Generator, TypeVar, cast
 
 import grpc
-from google.rpc.status_pb2 import Status  # type: ignore
+from google.rpc.status_pb2 import Status
 from grpc.aio import (
     UnaryUnaryClientInterceptor,
     ClientCallDetails,
@@ -9,7 +9,7 @@ from grpc.aio import (
     UnaryUnaryCall,
     Metadata,
 )
-from grpc_status.rpc_status import from_call  # type: ignore
+from grpc_status.rpc_status import from_call
 
 from cadence.api.v1 import error_pb2
 from cadence import error
@@ -46,22 +46,22 @@ class CadenceErrorUnaryUnaryCall(UnaryUnaryCall[RequestType, ResponseType]):
         return await self._wrapped.code()
 
     async def details(self) -> str:
-        return await self._wrapped.details()  # type: ignore
+        return await self._wrapped.details()
 
     async def wait_for_connection(self) -> None:
         await self._wrapped.wait_for_connection()
 
     def cancelled(self) -> bool:
-        return self._wrapped.cancelled()  # type: ignore
+        return self._wrapped.cancelled()
 
     def done(self) -> bool:
-        return self._wrapped.done()  # type: ignore
+        return self._wrapped.done()
 
     def time_remaining(self) -> Optional[float]:
-        return self._wrapped.time_remaining()  # type: ignore
+        return self._wrapped.time_remaining()
 
     def cancel(self) -> bool:
-        return self._wrapped.cancel()  # type: ignore
+        return self._wrapped.cancel()
 
     def add_done_callback(self, callback: DoneCallbackType) -> None:
         self._wrapped.add_done_callback(callback)
@@ -79,16 +79,18 @@ class CadenceErrorInterceptor(UnaryUnaryClientInterceptor):
 
 
 def map_error(e: AioRpcError) -> error.CadenceRpcError:
-    status: Status | None = from_call(e)
+    # AioRpcError implements the grpc.Call interface but doesn't inherit from it in the type stubs
+    status: Status | None = from_call(cast(grpc.Call, e))
+    message = e.details() or ""
     if not status or not status.details:
-        return error.CadenceRpcError(e.details(), e.code())
+        return error.CadenceRpcError(message, e.code())
 
     details = status.details[0]
     if details.Is(error_pb2.WorkflowExecutionAlreadyStartedError.DESCRIPTOR):
         already_started = error_pb2.WorkflowExecutionAlreadyStartedError()
         details.Unpack(already_started)
         return error.WorkflowExecutionAlreadyStartedError(
-            e.details(),
+            message,
             e.code(),
             already_started.start_request_id,
             already_started.run_id,
@@ -97,19 +99,19 @@ def map_error(e: AioRpcError) -> error.CadenceRpcError:
         not_exists = error_pb2.EntityNotExistsError()
         details.Unpack(not_exists)
         return error.EntityNotExistsError(
-            e.details(),
+            message,
             e.code(),
             not_exists.current_cluster,
             not_exists.active_cluster,
             list(not_exists.active_clusters),
         )
     elif details.Is(error_pb2.WorkflowExecutionAlreadyCompletedError.DESCRIPTOR):
-        return error.WorkflowExecutionAlreadyCompletedError(e.details(), e.code())
+        return error.WorkflowExecutionAlreadyCompletedError(message, e.code())
     elif details.Is(error_pb2.DomainNotActiveError.DESCRIPTOR):
         not_active = error_pb2.DomainNotActiveError()
         details.Unpack(not_active)
         return error.DomainNotActiveError(
-            e.details(),
+            message,
             e.code(),
             not_active.domain,
             not_active.current_cluster,
@@ -120,7 +122,7 @@ def map_error(e: AioRpcError) -> error.CadenceRpcError:
         not_supported = error_pb2.ClientVersionNotSupportedError()
         details.Unpack(not_supported)
         return error.ClientVersionNotSupportedError(
-            e.details(),
+            message,
             e.code(),
             not_supported.feature_version,
             not_supported.client_impl,
@@ -129,20 +131,18 @@ def map_error(e: AioRpcError) -> error.CadenceRpcError:
     elif details.Is(error_pb2.FeatureNotEnabledError.DESCRIPTOR):
         not_enabled = error_pb2.FeatureNotEnabledError()
         details.Unpack(not_enabled)
-        return error.FeatureNotEnabledError(
-            e.details(), e.code(), not_enabled.feature_flag
-        )
+        return error.FeatureNotEnabledError(message, e.code(), not_enabled.feature_flag)
     elif details.Is(error_pb2.CancellationAlreadyRequestedError.DESCRIPTOR):
-        return error.CancellationAlreadyRequestedError(e.details(), e.code())
+        return error.CancellationAlreadyRequestedError(message, e.code())
     elif details.Is(error_pb2.DomainAlreadyExistsError.DESCRIPTOR):
-        return error.DomainAlreadyExistsError(e.details(), e.code())
+        return error.DomainAlreadyExistsError(message, e.code())
     elif details.Is(error_pb2.LimitExceededError.DESCRIPTOR):
-        return error.LimitExceededError(e.details(), e.code())
+        return error.LimitExceededError(message, e.code())
     elif details.Is(error_pb2.QueryFailedError.DESCRIPTOR):
-        return error.QueryFailedError(e.details(), e.code())
+        return error.QueryFailedError(message, e.code())
     elif details.Is(error_pb2.ServiceBusyError.DESCRIPTOR):
         service_busy = error_pb2.ServiceBusyError()
         details.Unpack(service_busy)
-        return error.ServiceBusyError(e.details(), e.code(), service_busy.reason)
+        return error.ServiceBusyError(message, e.code(), service_busy.reason)
     else:
-        return error.CadenceRpcError(e.details(), e.code())
+        return error.CadenceRpcError(message, e.code())

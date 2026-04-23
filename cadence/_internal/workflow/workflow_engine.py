@@ -2,7 +2,7 @@ import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
@@ -46,6 +46,14 @@ class WorkflowEngine:
             info.data_converter,
         )
         self._context = Context(info, self._decision_manager)
+        self._input_event_handlers: dict[str, Callable[[HistoryEvent], None]] = {
+            "workflow_execution_signaled_event_attributes": (
+                self._handle_signaled_input_event
+            ),
+            "workflow_execution_started_event_attributes": (
+                self._handle_started_input_event
+            ),
+        }
 
     def process_decision(
         self,
@@ -169,9 +177,10 @@ class WorkflowEngine:
                 # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()
 
-                # Surface signal handler errors so they deterministically
+                # Surface callback / signal handler errors so they deterministically
                 # fail the decision task rather than being silently swallowed.
-                self._workflow_instance.check_signal_error()
+                if exc := self._event_loop.drain_exception():
+                    raise exc
 
                 # If the workflow function returned (or threw an exception), we're done
                 # If it completed early (or late), the nondeterminism tracking will catch that
@@ -243,15 +252,23 @@ class WorkflowEngine:
             },
         )
         attr = event.WhichOneof("attributes")
-        if attr == "workflow_execution_signaled_event_attributes":
-            self._workflow_instance.handle_signal_event(event)
-            return
-        if attr == "workflow_execution_started_event_attributes":
-            started_attrs: WorkflowExecutionStartedEventAttributes = (
-                event.workflow_execution_started_event_attributes
-            )
-            if started_attrs and hasattr(started_attrs, "input"):
-                self._workflow_instance.start(started_attrs.input)
+        handler = self._input_event_handlers.get(
+            attr, self._handle_default_input_event
+        )
+        handler(event)
+
+    def _handle_signaled_input_event(self, event: HistoryEvent) -> None:
+        self._workflow_instance.handle_signal_event(event)
+
+    def _handle_started_input_event(self, event: HistoryEvent) -> None:
+        started_attrs: WorkflowExecutionStartedEventAttributes = (
+            event.workflow_execution_started_event_attributes
+        )
+        if started_attrs and hasattr(started_attrs, "input"):
+            self._workflow_instance.start(started_attrs.input)
+        self._decision_manager.handle_history_event(event)
+
+    def _handle_default_input_event(self, event: HistoryEvent) -> None:
         self._decision_manager.handle_history_event(event)
 
 

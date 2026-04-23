@@ -29,7 +29,6 @@ class WorkflowInstance:
         self._task: Optional[Task[Payload]] = None
         # Strong references to in-flight async signal handler tasks.
         self._signal_tasks: set[Task[Any]] = set()
-        self._signal_error: Optional[Exception] = None
 
     def start(self, payload: Payload):
         if self._task is None:
@@ -58,19 +57,6 @@ class WorkflowInstance:
             return None
         return self._task.result()
 
-    def check_signal_error(self) -> None:
-        """Raise the first signal handler exception captured this tick.
-
-        Called by the engine after run_until_yield() so handler bugs
-        deterministically fail the decision task rather than being swallowed.
-        Deserialization errors are excluded — those are the caller's fault and
-        are only logged (mirrors Java SDK behaviour).
-        """
-        if self._signal_error is not None:
-            error = self._signal_error
-            self._signal_error = None
-            raise error
-
     def handle_signal_event(self, event: HistoryEvent) -> None:
         attrs = event.workflow_execution_signaled_event_attributes
         self._loop.call_soon(self._invoke_signal, attrs.signal_name, attrs.input)
@@ -94,12 +80,15 @@ class WorkflowInstance:
             )
             return
 
-        handler = signal_def.wrapped.__get__(self._instance)
         try:
-            result = handler(*args)
+            result = signal_def(self._instance, *args)
         except Exception as e:
-            if self._signal_error is None:
-                self._signal_error = e
+            self._loop.call_exception_handler(
+                {
+                    "message": "Exception in synchronous signal handler",
+                    "exception": e,
+                }
+            )
             return
 
         # Async handlers return a coroutine; wrap it in a deterministic-loop
@@ -115,7 +104,14 @@ class WorkflowInstance:
         if task.cancelled():
             return
         exc = task.exception()
-        # Mirror the sync path: only stash Exception subclasses; let
-        # SystemExit/KeyboardInterrupt propagate naturally.
-        if isinstance(exc, Exception) and self._signal_error is None:
-            self._signal_error = exc
+        # Tasks only call ``call_exception_handler`` when GC'd if the exception
+        # was never retrieved; report here so the engine fails the decision
+        # task in the same replay tick.
+        if isinstance(exc, Exception):
+            self._loop.call_exception_handler(
+                {
+                    "message": "Exception in async signal handler task",
+                    "exception": exc,
+                    "task": task,
+                }
+            )

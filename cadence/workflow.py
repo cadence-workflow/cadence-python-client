@@ -297,9 +297,13 @@ def signal(name: str | None = None) -> Callable[[T], T]:
             await workflow.execute_activity("notify", ...)
 
     Concurrency constraints:
-        * Do **not** use native threads or real-loop ``asyncio`` primitives
-          (``asyncio.Event``, ``asyncio.Lock``, etc.) inside signal
-          handlers — they are not replay-safe.
+        * Do **not** use native threads inside signal handlers — they are not
+          replay-safe.
+        * Avoid anything that depends on wall-clock time or real I/O —
+          ``asyncio.sleep``, ``asyncio.wait_for(timeout=...)``, ``asyncio.to_thread``.
+          Pure asyncio primitives such as ``asyncio.Event``, ``asyncio.Lock``, and
+          ``asyncio.Queue`` are safe when used on the workflow's deterministic
+          event loop.
         * Do **not** rely on the GIL for thread-safety; CPython now
           supports free-threaded builds where the GIL can be disabled.
         * Signal handlers should return ``None``; any returned value is

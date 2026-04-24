@@ -2,7 +2,7 @@ import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
@@ -11,6 +11,7 @@ from cadence._internal.workflow.deterministic_event_loop import (
     FatalDecisionError,
 )
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
+from cadence._internal.workflow.statemachine.event_dispatcher import EventDispatcher
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.api.v1 import history
 from cadence.api.v1.common_pb2 import Failure, WorkflowType
@@ -23,12 +24,14 @@ from cadence.api.v1.decision_pb2 import (
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     WorkflowExecutionStartedEventAttributes,
+    WorkflowExecutionSignaledEventAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
 
 logger = logging.getLogger(__name__)
+input_events = EventDispatcher()
 
 
 @dataclass
@@ -46,14 +49,6 @@ class WorkflowEngine:
             info.data_converter,
         )
         self._context = Context(info, self._decision_manager)
-        self._input_event_handlers: dict[str, Callable[[HistoryEvent], None]] = {
-            "workflow_execution_signaled_event_attributes": (
-                self._handle_signaled_input_event
-            ),
-            "workflow_execution_started_event_attributes": (
-                self._handle_started_input_event
-            ),
-        }
 
     def process_decision(
         self,
@@ -175,19 +170,11 @@ class WorkflowEngine:
                     self._apply_input_event(event)
 
                 # Phase 3: Execute workflow logic
-                self._workflow_instance.run_until_yield()
-
-                # Surface callback / signal handler errors. FatalDecisionError
-                # and asyncio internals should still fail the decision task so
-                # the server can reschedule and the developer can redeploy.
-                # All other user exceptions should fail the *workflow* — the
-                # signal is in history and will replay identically every time,
-                # so retrying the decision task just loops forever.
-                if exc := self._event_loop.drain_exception():
-                    if isinstance(
-                        exc, (FatalDecisionError, CancelledError, InvalidStateError)
-                    ):
-                        raise exc
+                try:
+                    self._workflow_instance.run_until_yield()
+                except (FatalDecisionError, CancelledError, InvalidStateError):
+                    raise
+                except Exception as exc:
                     failure = _failure_from_exception(exc)
                     self._decision_manager.complete_workflow(
                         Decision(
@@ -267,22 +254,26 @@ class WorkflowEngine:
             },
         )
         attr = event.WhichOneof("attributes")
-        handler = self._input_event_handlers.get(attr, self._handle_default_input_event)
-        handler(event)
+        event_attributes = getattr(event, attr)
+        action = input_events.handlers.get(type(event_attributes))
+        if action is not None:
+            action.fn(self, event_attributes)
+            if isinstance(event_attributes, WorkflowExecutionSignaledEventAttributes):
+                return
+        self._decision_manager.handle_history_event(event)
 
-    def _handle_signaled_input_event(self, event: HistoryEvent) -> None:
-        self._workflow_instance.handle_signal_event(event)
+    @input_events.event()
+    def _handle_signaled_input_event(
+        self, attrs: WorkflowExecutionSignaledEventAttributes
+    ) -> None:
+        self._workflow_instance.handle_signal_attributes(attrs)
 
-    def _handle_started_input_event(self, event: HistoryEvent) -> None:
-        started_attrs: WorkflowExecutionStartedEventAttributes = (
-            event.workflow_execution_started_event_attributes
-        )
+    @input_events.event()
+    def _handle_started_input_event(
+        self, started_attrs: WorkflowExecutionStartedEventAttributes
+    ) -> None:
         if started_attrs and hasattr(started_attrs, "input"):
             self._workflow_instance.start(started_attrs.input)
-        self._decision_manager.handle_history_event(event)
-
-    def _handle_default_input_event(self, event: HistoryEvent) -> None:
-        self._decision_manager.handle_history_event(event)
 
 
 def _failure_from_exception(e: Exception) -> Failure:

@@ -7,7 +7,10 @@ from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
 )
 from cadence.api.v1.common_pb2 import Payload
-from cadence.api.v1.history_pb2 import HistoryEvent
+from cadence.api.v1.history_pb2 import (
+    HistoryEvent,
+    WorkflowExecutionSignaledEventAttributes,
+)
 
 from cadence.data_converter import DataConverter
 from cadence.workflow import WorkflowDefinition
@@ -59,6 +62,11 @@ class WorkflowInstance:
 
     def handle_signal_event(self, event: HistoryEvent) -> None:
         attrs = event.workflow_execution_signaled_event_attributes
+        self.handle_signal_attributes(attrs)
+
+    def handle_signal_attributes(
+        self, attrs: WorkflowExecutionSignaledEventAttributes
+    ) -> None:
         self._loop.call_soon(self._invoke_signal, attrs.signal_name, attrs.input)
 
     def _invoke_signal(self, signal_name: str, payload: Payload) -> None:
@@ -80,16 +88,7 @@ class WorkflowInstance:
             )
             return
 
-        try:
-            result = signal_def(self._instance, *args)
-        except Exception as e:
-            self._loop.call_exception_handler(
-                {
-                    "message": "Exception in synchronous signal handler",
-                    "exception": e,
-                }
-            )
-            return
+        result = signal_def(self._instance, *args)
 
         # Async handlers return a coroutine; wrap it in a deterministic-loop
         # task and hold a strong reference until it finishes so asyncio does
@@ -104,14 +103,5 @@ class WorkflowInstance:
         if task.cancelled():
             return
         exc = task.exception()
-        # Tasks only call ``call_exception_handler`` when GC'd if the exception
-        # was never retrieved; report here so the engine fails the decision
-        # task in the same replay tick.
         if isinstance(exc, Exception):
-            self._loop.call_exception_handler(
-                {
-                    "message": "Exception in async signal handler task",
-                    "exception": exc,
-                    "task": task,
-                }
-            )
+            raise exc

@@ -37,9 +37,6 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._waiters: list[Waiter] = []
         self._stopping: bool = False
         self._closed: bool = False
-        # First user callback / task failure this tick (``Exception`` only;
-        # ``SystemExit`` / ``KeyboardInterrupt`` are not captured).
-        self._first_exception: Exception | None = None
 
     def run_until_yield(self):
         """Run until stop() is called."""
@@ -492,18 +489,8 @@ class DeterministicEventLoop(AbstractEventLoop):
             "Custom exception handlers not supported in deterministic event loop"
         )
 
-    def drain_exception(self) -> Exception | None:
-        """Pop and return the first stashed loop callback exception, if any."""
-        exc = self._first_exception
-        self._first_exception = None
-        return exc
-
     def call_exception_handler(self, context: dict[str, Any]) -> None:
-        # This is called if a task has an unhandled exception. Short term, it's helpful to log these for debugging.
-        # Long term, we need some combination of failing decision tasks or workflows based on these errors.
         exception = context.get("exception")
-        if isinstance(exception, Exception) and self._first_exception is None:
-            self._first_exception = exception
 
         message = context.get("message")
         if not message:
@@ -532,6 +519,9 @@ class DeterministicEventLoop(AbstractEventLoop):
             log_lines.append(f"{key}: {value}")
 
         logger.error("\n".join(log_lines), exc_info=exc_info)
+
+        if isinstance(exception, Exception):
+            raise exception
 
     # Task factory
     def set_task_factory(  # type: ignore[override]

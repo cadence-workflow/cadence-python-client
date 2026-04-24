@@ -28,7 +28,7 @@ class DefaultDataConverter(DataConverter):
         self, payload: Payload, type_hints: Sequence[Type | None]
     ) -> List[Any]:
         if not payload.data:
-            return DefaultDataConverter._convert_into([], type_hints)
+            return []
 
         if not type_hints:
             type_hints = [None]
@@ -56,24 +56,14 @@ class DefaultDataConverter(DataConverter):
     ) -> List[Any]:
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
+            if i >= len(values):
+                break
             if not type_hint or type_hint is Any:
                 value = values[i]
-            elif i < len(values):
-                value = convert(values[i], type_hint)
             else:
-                value = DefaultDataConverter._get_default(type_hint)
-
+                value = convert(values[i], type_hint)
             results.append(value)
-
         return results
-
-    @staticmethod
-    def _get_default(type_hint: Type) -> Any:
-        if type_hint in (int, float):
-            return 0
-        if type_hint is bool:
-            return False
-        return None
 
     def to_data(self, values: List[Any]) -> Payload:
         result = bytearray()

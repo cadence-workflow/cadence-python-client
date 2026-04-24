@@ -102,14 +102,14 @@ class TestDeterministicEventLoop:
         assert task.done() is True
 
     def test_run_once_resolves_one_waiter_per_tick(self):
-        """_run_once pops exactly one ready waiter per tick.
+        """When a waiter settles and schedules a task, waiter polling pauses.
 
-        Contract being tested: when multiple waiters share a predicate that
-        becomes True, only the first one is resolved in a given _run_once call.
-        The second waiter is only evaluated — and potentially resolved — in the
-        *next* tick, after the first waiter's continuation has run (and may have
-        mutated the state the predicate reads).  This is the fix for the
-        Temporal SDK stale-wakeup race (temporalio/sdk-python#618).
+        Contract: if resolving a waiter adds handles to ``_ready`` (someone
+        ``await``s that waiter), ``_run_once`` returns so those handles run
+        before sibling waiters are polled again. That ordering avoids the
+        Temporal stale-wakeup race (temporalio/sdk-python#618). Waiters that
+        settle without scheduling work do not block polling of later waiters
+        in the same tick (Cadence Python review #9).
         """
         flag = [False]
         resolved: list[str] = []
@@ -158,3 +158,33 @@ class TestDeterministicEventLoop:
             self.loop._run_forever_cleanup()
             task_a.cancel()
             task_b.cancel()
+
+    def test_run_once_orphan_waiter_does_not_skip_following_waiters(self):
+        """Orphan waiters that settle without scheduling work must not hide later waiters.
+
+        Regression for review #9: breaking after the first ``poll()``-true waiter
+        could leave a never-polled sibling in the same ``_run_once`` tick.
+        """
+        calls_p1 = {"n": 0}
+
+        def pred1() -> bool:
+            calls_p1["n"] += 1
+            return calls_p1["n"] >= 2
+
+        calls_p2: list[str] = []
+
+        def pred2() -> bool:
+            calls_p2.append("eval")
+            return False
+
+        self.loop._run_forever_setup()
+        try:
+            self.loop.create_waiter(pred1)
+            self.loop.create_waiter(pred2)
+            self.loop._run_once()
+            assert calls_p1["n"] == 2
+            # pred2 is polled at register time and again in _run_once; the bug
+            # would skip the second poll entirely (only the first would exist).
+            assert len(calls_p2) >= 2
+        finally:
+            self.loop._run_forever_cleanup()

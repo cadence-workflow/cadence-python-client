@@ -6,8 +6,8 @@ from typing import Dict, Type, Tuple, ClassVar, List, Iterator, Callable
 
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
-    Waiter,
 )
+from cadence._internal.workflow.waiter import Waiter
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,

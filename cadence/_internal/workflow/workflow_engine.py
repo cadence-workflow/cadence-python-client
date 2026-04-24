@@ -177,10 +177,25 @@ class WorkflowEngine:
                 # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()
 
-                # Surface callback / signal handler errors so they deterministically
-                # fail the decision task rather than being silently swallowed.
+                # Surface callback / signal handler errors. FatalDecisionError
+                # and asyncio internals should still fail the decision task so
+                # the server can reschedule and the developer can redeploy.
+                # All other user exceptions should fail the *workflow* — the
+                # signal is in history and will replay identically every time,
+                # so retrying the decision task just loops forever.
                 if exc := self._event_loop.drain_exception():
-                    raise exc
+                    if isinstance(
+                        exc, (FatalDecisionError, CancelledError, InvalidStateError)
+                    ):
+                        raise exc
+                    failure = _failure_from_exception(exc)
+                    self._decision_manager.complete_workflow(
+                        Decision(
+                            fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes(
+                                failure=failure
+                            )
+                        )
+                    )
 
                 # If the workflow function returned (or threw an exception), we're done
                 # If it completed early (or late), the nondeterminism tracking will catch that
@@ -252,9 +267,7 @@ class WorkflowEngine:
             },
         )
         attr = event.WhichOneof("attributes")
-        handler = self._input_event_handlers.get(
-            attr, self._handle_default_input_event
-        )
+        handler = self._input_event_handlers.get(attr, self._handle_default_input_event)
         handler(event)
 
     def _handle_signaled_input_event(self, event: HistoryEvent) -> None:

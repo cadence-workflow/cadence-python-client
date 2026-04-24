@@ -56,7 +56,17 @@ class FnSignature:
         if not self.params:
             return []
         type_hints = [param.type_hint for param in self.params]
-        return data_converter.from_data(payload, type_hints)
+        decoded: list[Any] = data_converter.from_data(payload, type_hints)
+        for i, param in enumerate(self.params):
+            if i < len(decoded):
+                continue
+            if param.has_default:
+                decoded.append(param.default_value)
+            else:
+                raise ValueError(
+                    f"required parameter '{param.name}' (position {i}) not provided in payload"
+                )
+        return decoded
 
     @staticmethod
     def of(fn: Callable) -> "FnSignature":

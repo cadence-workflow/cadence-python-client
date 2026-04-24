@@ -8,6 +8,8 @@ import threading
 from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator
 from typing_extensions import Unpack, TypeVarTuple
 
+from cadence._internal.workflow.waiter import Waiter
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,41 +20,6 @@ class FatalDecisionError(Exception):
 
 _Ts = TypeVarTuple("_Ts")
 _T = TypeVar("_T")
-
-
-class Waiter(Awaitable[None]):
-    """Awaitable that resolves when ``predicate()`` becomes truthy."""
-
-    __slots__ = ("_predicate", "_future")
-
-    def __init__(self, predicate: Callable[[], bool], loop: AbstractEventLoop) -> None:
-        self._predicate = predicate
-        self._future: Future[None] = loop.create_future()
-
-    def __await__(self) -> Generator[Any, None, None]:
-        return self._future.__await__()
-
-    def done(self) -> bool:
-        return self._future.done()
-
-    def exception(self) -> BaseException | None:
-        return self._future.exception()
-
-    def result(self) -> None:
-        self._future.result()
-
-    def poll(self) -> bool:
-        """Re-evaluate the predicate. Returns True when settled (and evictable)."""
-        if self._future.done():
-            return True
-        try:
-            if self._predicate():
-                self._future.set_result(None)
-                return True
-            return False
-        except BaseException as exc:
-            self._future.set_exception(exc)
-            return True
 
 
 class DeterministicEventLoop(AbstractEventLoop):
@@ -195,10 +162,22 @@ class DeterministicEventLoop(AbstractEventLoop):
                 continue
             handle._run()
 
-        for i, w in enumerate(self._waiters):
+        # Poll every waiter at least once per tick. If settling a waiter
+        # schedules new ``_ready`` work (e.g. a task awaiting it), stop and
+        # let the next ``_run_once`` drain that work first — avoids stale
+        # sibling wakeups (Temporal SDK #618). Orphans that settle without
+        # scheduling anything keep the scan going so later waiters are not
+        # starved (natemort / Cadence Python review #9).
+        i = 0
+        while i < len(self._waiters):
+            w = self._waiters[i]
+            ready_before = len(self._ready)
             if w.poll():
                 del self._waiters[i]
-                break
+                if len(self._ready) > ready_before:
+                    return
+            else:
+                i += 1
 
     def _run_forever_setup(self) -> None:
         self._check_closed()

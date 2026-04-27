@@ -159,12 +159,8 @@ class DeterministicEventLoop(AbstractEventLoop):
                 continue
             handle._run()
 
-        # Poll every waiter at least once per tick. If settling a waiter
-        # schedules new ``_ready`` work (e.g. a task awaiting it), stop and
-        # let the next ``_run_once`` drain that work first — avoids stale
-        # sibling wakeups (Temporal SDK #618). Orphans that settle without
-        # scheduling anything keep the scan going so later waiters are not
-        # starved (natemort / Cadence Python review #9).
+        # Poll waiters; only stop early if settling one schedules new work,
+        # so remaining waiters are not skipped.
         i = 0
         while i < len(self._waiters):
             w = self._waiters[i]
@@ -490,11 +486,11 @@ class DeterministicEventLoop(AbstractEventLoop):
         )
 
     def call_exception_handler(self, context: dict[str, Any]) -> None:
-        exception = context.get("exception")
-
         message = context.get("message")
         if not message:
             message = "Unhandled exception in event loop"
+
+        exception = context.get("exception")
 
         if isinstance(exception, BaseException):
             exc_info = exception
@@ -519,9 +515,6 @@ class DeterministicEventLoop(AbstractEventLoop):
             log_lines.append(f"{key}: {value}")
 
         logger.error("\n".join(log_lines), exc_info=exc_info)
-
-        if isinstance(exception, Exception):
-            raise exception
 
     # Task factory
     def set_task_factory(  # type: ignore[override]

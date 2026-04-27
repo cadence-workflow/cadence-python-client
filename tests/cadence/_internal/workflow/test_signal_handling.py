@@ -758,13 +758,7 @@ class TestSameBatchOrdering:
         def fake_apply_input_event(event: HistoryEvent) -> None:
             seen.append(event.WhichOneof("attributes"))
 
-        def fake_handle_signal_event(event: HistoryEvent) -> None:
-            seen.append(event.WhichOneof("attributes"))
-
         monkeypatch.setattr(engine, "_apply_input_event", fake_apply_input_event)
-        monkeypatch.setattr(
-            engine._workflow_instance, "handle_signal_event", fake_handle_signal_event
-        )
         monkeypatch.setattr(engine._workflow_instance, "run_until_yield", lambda: None)
         monkeypatch.setattr(engine, "_maybe_complete_workflow", lambda: None)
 

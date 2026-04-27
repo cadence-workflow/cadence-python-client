@@ -11,27 +11,22 @@ from cadence._internal.workflow.deterministic_event_loop import (
     FatalDecisionError,
 )
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
-from cadence._internal.workflow.statemachine.event_dispatcher import EventDispatcher
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
-from cadence.api.v1 import history
-from cadence.api.v1.common_pb2 import Failure, WorkflowType
 from cadence.api.v1.decision_pb2 import (
     Decision,
     FailWorkflowExecutionDecisionAttributes,
     CompleteWorkflowExecutionDecisionAttributes,
     ContinueAsNewWorkflowExecutionDecisionAttributes,
 )
+from cadence.api.v1.common_pb2 import Failure, WorkflowType
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
-    WorkflowExecutionStartedEventAttributes,
-    WorkflowExecutionSignaledEventAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
 
 logger = logging.getLogger(__name__)
-input_events = EventDispatcher()
 
 
 @dataclass
@@ -183,11 +178,9 @@ class WorkflowEngine:
                             )
                         )
                     )
-
-                # If the workflow function returned (or threw an exception), we're done
-                # If it completed early (or late), the nondeterminism tracking will catch that
-                if decision := self._maybe_complete_workflow():
-                    self._decision_manager.complete_workflow(decision)
+                else:  # run this only if no exception was raised
+                    if decision := self._maybe_complete_workflow():
+                        self._decision_manager.complete_workflow(decision)
 
             # Phase 4: update state machine with output events
             for event in decision_events.output:
@@ -243,37 +236,8 @@ class WorkflowEngine:
                 )
             )
 
-    def _apply_input_event(self, event: history.HistoryEvent) -> None:
-        logger.debug(
-            "Processing history event",
-            extra={
-                "workflow_id": self._context.info().workflow_id,
-                "event_type": getattr(event, "event_type", "unknown"),
-                "event_id": getattr(event, "event_id", None),
-                "replay_mode": self._context.is_replay_mode(),
-            },
-        )
-        attr = event.WhichOneof("attributes")
-        event_attributes = getattr(event, attr)
-        action = input_events.handlers.get(type(event_attributes))
-        if action is not None:
-            action.fn(self, event_attributes)
-            if isinstance(event_attributes, WorkflowExecutionSignaledEventAttributes):
-                return
-        self._decision_manager.handle_history_event(event)
-
-    @input_events.event()
-    def _handle_signaled_input_event(
-        self, attrs: WorkflowExecutionSignaledEventAttributes
-    ) -> None:
-        self._workflow_instance.handle_signal_attributes(attrs)
-
-    @input_events.event()
-    def _handle_started_input_event(
-        self, started_attrs: WorkflowExecutionStartedEventAttributes
-    ) -> None:
-        if started_attrs and hasattr(started_attrs, "input"):
-            self._workflow_instance.start(started_attrs.input)
+    def _apply_input_event(self, event: HistoryEvent) -> None:
+        self._decision_manager.handle_input_event(event, self._workflow_instance)
 
 
 def _failure_from_exception(e: Exception) -> Failure:

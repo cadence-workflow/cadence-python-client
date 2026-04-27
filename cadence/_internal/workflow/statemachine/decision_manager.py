@@ -8,6 +8,7 @@ from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
 )
 from cadence._internal.workflow.waiter import Waiter
+from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,
@@ -33,8 +34,35 @@ from cadence._internal.workflow.statemachine.timer_state_machine import (
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.history_pb2 import (
+    WorkflowExecutionSignaledEventAttributes,
+    WorkflowExecutionStartedEventAttributes,
+)
 
 DecisionAlias = Tuple[DecisionType, str | int]
+
+# ---------------------------------------------------------------------------
+# Input-event dispatcher
+# Routes workflow lifecycle events (started, signaled) to WorkflowInstance.
+# ---------------------------------------------------------------------------
+
+input_events: EventDispatcher = EventDispatcher()
+
+
+@input_events.event()
+def _handle_signaled_input_event(
+    workflow_instance: WorkflowInstance,
+    attrs: WorkflowExecutionSignaledEventAttributes,
+) -> None:
+    workflow_instance.handle_signal_attributes(attrs)
+
+
+@input_events.event()
+def _handle_started_input_event(
+    workflow_instance: WorkflowInstance,
+    attrs: WorkflowExecutionStartedEventAttributes,
+) -> None:
+    workflow_instance.start(attrs.input)
 
 
 @dataclass(frozen=True)
@@ -148,6 +176,21 @@ class DecisionManager:
             raise ValueError(f"Received duplicate decision: {decision_id}")
         self.state_machines[decision_id] = state
         self.aliases[(decision_id.decision_type, decision_id.id)] = state
+
+    # ----- Input event routing -----
+
+    def handle_input_event(
+        self, event: history.HistoryEvent, workflow_instance: WorkflowInstance
+    ) -> None:
+        attr = event.WhichOneof("attributes")
+        if attr is None:
+            return
+        event_attributes = getattr(event, attr)
+        action = input_events.handlers.get(type(event_attributes))
+        if action is not None:
+            action.fn(workflow_instance, event_attributes)
+            return
+        self.handle_history_event(event)
 
     # ----- History routing -----
 

@@ -63,6 +63,9 @@ openai = [
     "openai>=0.27.10",
     "openai-agents>=0.12.5",
 ]
+airflow = [
+    "apache-airflow>=3.2.1",
+]
 
 [project.urls]
 Homepage = "https://cadenceworkflow.io/"

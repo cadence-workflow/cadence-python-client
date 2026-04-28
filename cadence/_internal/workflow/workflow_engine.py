@@ -165,22 +165,14 @@ class WorkflowEngine:
                     self._apply_input_event(event)
 
                 # Phase 3: Execute workflow logic
-                try:
-                    self._workflow_instance.run_until_yield()
-                except (FatalDecisionError, CancelledError, InvalidStateError):
-                    raise
-                except Exception as exc:
-                    failure = _failure_from_exception(exc)
-                    self._decision_manager.complete_workflow(
-                        Decision(
-                            fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes(
-                                failure=failure
-                            )
-                        )
-                    )
-                else:  # run this only if no exception was raised
-                    if decision := self._maybe_complete_workflow():
-                        self._decision_manager.complete_workflow(decision)
+                self._workflow_instance.run_until_yield()
+
+                # if get_result throw signal failure, only fail the decision task, not the workflow
+                if self._workflow_instance.get_signal_failure() is not None:
+                    raise self._workflow_instance.get_signal_failure()
+
+                if decision := self._maybe_complete_workflow():
+                    self._decision_manager.complete_workflow(decision)
 
             # Phase 4: update state machine with output events
             for event in decision_events.output:

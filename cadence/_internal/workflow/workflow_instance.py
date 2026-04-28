@@ -35,6 +35,9 @@ class WorkflowInstance:
         # fail workflow execution if a signal handler raises an exception
         self._signal_failure: Optional[Exception] = None
 
+    def get_signal_failure(self) -> Optional[Exception]:
+        return self._signal_failure
+
     def start(self, payload: Payload):
         if self._task is None:
             run_method = self._definition.get_run_method(self._instance)
@@ -58,8 +61,6 @@ class WorkflowInstance:
         return self._task is not None and self._task.done()
 
     def get_result(self) -> Optional[Payload]:
-        if self._signal_failure is not None:
-            raise self._signal_failure
         if self._task is None or not self._task.done():
             return None
         return self._task.result()

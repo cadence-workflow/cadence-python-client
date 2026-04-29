@@ -3,7 +3,9 @@
 import asyncio
 from datetime import timedelta
 
+import pytest
 
+from cadence import workflow
 from cadence.api.v1.common_pb2 import ActivityType, Payload
 from cadence.api.v1.history_pb2 import (
     ActivityTaskCompletedEventAttributes,
@@ -17,8 +19,8 @@ from cadence.api.v1.history_pb2 import (
     WorkflowExecutionSignaledEventAttributes,
 )
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
-from cadence import workflow
 from cadence.data_converter import DefaultDataConverter
+from cadence.error import SignalFailure
 from cadence.workflow import WorkflowInfo, WorkflowDefinition, WorkflowDefinitionOptions
 
 
@@ -618,13 +620,8 @@ class TestSignalDelivery:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
-    def test_signal_handler_exception_fails_workflow(self):
-        """User exception in a signal handler emits FailWorkflowExecution — not a decision task failure.
-
-        The signal is in history and will replay identically on every retry, so
-        failing the decision task would loop forever. Failing the workflow is the
-        correct terminal action.
-        """
+    def test_signal_handler_exception_fails_decision_task(self):
+        """User exceptions in signal handlers fail the current decision task."""
         engine = make_workflow_engine(FailingSignalWorkflow)
         events = [
             HistoryEvent(
@@ -646,11 +643,11 @@ class TestSignalDelivery:
             ),
         ]
 
-        result = engine.process_decision(events)
-        assert len(result.decisions) == 1
-        fail_attrs = result.decisions[0].fail_workflow_execution_decision_attributes
-        assert fail_attrs is not None
-        assert "handler failed on: boom" in fail_attrs.failure.details.decode()
+        with pytest.raises(SignalFailure) as err:
+            engine.process_decision(events)
+
+        assert err.value.signal_name == "bad_signal"
+        assert "handler failed on: boom" in str(err.value)
 
     def test_signal_with_invalid_payload_drops_signal(self, caplog):
         """Malformed signal payloads are logged as warnings and dropped."""

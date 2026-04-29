@@ -167,9 +167,11 @@ class WorkflowEngine:
                 # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()
 
-                # if get_result throw signal failure, only fail the decision task, not the workflow
-                if self._workflow_instance.get_signal_failure() is not None:
-                    raise self._workflow_instance.get_signal_failure()
+                # Signal handler failures fail the decision task, not the workflow.
+                if (
+                    signal_failure := self._workflow_instance.get_signal_failure()
+                ) is not None:
+                    raise signal_failure
 
                 if decision := self._maybe_complete_workflow():
                     self._decision_manager.complete_workflow(decision)

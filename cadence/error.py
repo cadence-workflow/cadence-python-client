@@ -31,6 +31,15 @@ class WorkflowFailure(Exception):
         super().__init__(message)
 
 
+class SignalFailure(Exception):
+    def __init__(self, message: str | None, signal_name: str) -> None:
+        if message is None:
+            message = f"Signal {signal_name} failed"
+        super().__init__(message)
+        self.signal_name = signal_name
+        self.message = message
+
+
 class CadenceRpcError(Exception):
     def __init__(self, message: str | None, code: grpc.StatusCode, *args):
         if message is None:

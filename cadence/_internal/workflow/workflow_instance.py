@@ -10,8 +10,8 @@ from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.history_pb2 import (
     WorkflowExecutionSignaledEventAttributes,
 )
-
 from cadence.data_converter import DataConverter
+from cadence.error import SignalFailure
 from cadence.signal import SignalDefinition
 from cadence.workflow import WorkflowDefinition
 
@@ -32,10 +32,10 @@ class WorkflowInstance:
         self._task: Optional[Task[Payload]] = None
         # Strong references to in-flight async signal handler tasks.
         self._signal_tasks: set[Task[Any]] = set()
-        # fail workflow execution if a signal handler raises an exception
-        self._signal_failure: Optional[Exception] = None
+        # Fail the decision task if a signal handler raises an exception.
+        self._signal_failure: Optional[SignalFailure] = None
 
-    def get_signal_failure(self) -> Optional[Exception]:
+    def get_signal_failure(self) -> Optional[SignalFailure]:
         return self._signal_failure
 
     def start(self, payload: Payload):
@@ -91,7 +91,11 @@ class WorkflowInstance:
 
         task = self._loop.create_task(self._run_signal(signal_def, args))
         self._signal_tasks.add(task)
-        task.add_done_callback(self._on_signal_task_done)
+        task.add_done_callback(
+            lambda completed_task: self._on_signal_task_done(
+                completed_task, signal_name
+            )
+        )
 
     async def _run_signal(
         self, signal_def: SignalDefinition[..., Any], args: list[Any]
@@ -100,10 +104,10 @@ class WorkflowInstance:
         if inspect.iscoroutine(result):
             await result
 
-    def _on_signal_task_done(self, task: Task[Any]) -> None:
+    def _on_signal_task_done(self, task: Task[Any], signal_name: str) -> None:
         self._signal_tasks.discard(task)
         if task.cancelled():
             return
         exc = task.exception()
         if isinstance(exc, Exception) and self._signal_failure is None:
-            self._signal_failure = exc
+            self._signal_failure = SignalFailure(str(exc) or None, signal_name)

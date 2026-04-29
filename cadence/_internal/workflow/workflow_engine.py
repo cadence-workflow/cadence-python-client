@@ -46,7 +46,7 @@ class WorkflowEngine:
             workflow_definition,
             info.data_converter,
         )
-        self._context = Context(info, self._decision_manager, self._event_loop)
+        self._context = Context(info, self._decision_manager)
 
     def process_decision(
         self,

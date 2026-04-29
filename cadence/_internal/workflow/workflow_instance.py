@@ -63,9 +63,6 @@ class WorkflowInstance:
         return self._task.result()
 
     def handle_signal(self, signal_name: str, payload: Payload) -> None:
-        self._loop.call_soon(self._invoke_signal, signal_name, payload)
-
-    def _invoke_signal(self, signal_name: str, payload: Payload) -> None:
         signal_def = self._definition.signals.get(signal_name)
         if signal_def is None:
             logger.warning(

@@ -4,6 +4,8 @@ from typing import Callable, Any, Tuple, Sequence, Dict
 import pytest
 
 from cadence._internal.fn_signature import FnSignature, FnParameter
+from cadence.api.v1.common_pb2 import Payload
+from cadence.data_converter import DefaultDataConverter
 
 
 def simple_fn() -> None:
@@ -277,3 +279,27 @@ def test_params_from_call(
         return
 
     assert signature.params_from_call(args, kwargs) == expected
+
+
+def test_params_from_payload_uses_python_defaults_for_omitted_values() -> None:
+    signature = FnSignature.of(with_defaults)
+    converter = DefaultDataConverter()
+    payload = converter.to_data([2])
+
+    assert signature.params_from_payload(converter, payload) == [2, "hello", True]
+
+
+def test_params_from_payload_rejects_omitted_required_values() -> None:
+    signature = FnSignature.of(validation_fn)
+    converter = DefaultDataConverter()
+    payload = converter.to_data([1])
+
+    with pytest.raises(ValueError, match="required parameter 'second_param'"):
+        signature.params_from_payload(converter, payload)
+
+
+def test_params_from_payload_treats_empty_payload_as_no_values() -> None:
+    signature = FnSignature.of(default_param)
+    converter = DefaultDataConverter()
+
+    assert signature.params_from_payload(converter, Payload()) == ["default_value"]

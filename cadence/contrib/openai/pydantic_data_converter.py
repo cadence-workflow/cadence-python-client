@@ -75,6 +75,12 @@ class PydanticDataConverter(DataConverter):
             results.append(value)
         return results
 
+    def _payload_value_count(self, payload: Payload, max_count: int) -> int:
+        if not payload.data or max_count <= 0:
+            return 0
+
+        return len(self._decode_whitespace_delimited(payload.data.decode(), max_count))
+
     def to_data(self, values: List[Any]) -> Payload:
         result = bytearray()
         for index, value in enumerate(values):

@@ -620,7 +620,7 @@ class TestSignalDelivery:
         completion = result.decisions[0].complete_workflow_execution_decision_attributes
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
-    def test_signal_handler_exception_fails_decision_task(self):
+    def test_signal_handler_exception_fails_decision(self):
         """User exceptions in signal handlers fail the current decision task."""
         engine = make_workflow_engine(FailingSignalWorkflow)
         events = [

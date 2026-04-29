@@ -7,9 +7,6 @@ from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
 )
 from cadence.api.v1.common_pb2 import Payload
-from cadence.api.v1.history_pb2 import (
-    WorkflowExecutionSignaledEventAttributes,
-)
 from cadence.data_converter import DataConverter
 from cadence.error import SignalFailure
 from cadence.signal import SignalDefinition
@@ -65,10 +62,8 @@ class WorkflowInstance:
             return None
         return self._task.result()
 
-    def handle_signal_attributes(
-        self, attrs: WorkflowExecutionSignaledEventAttributes
-    ) -> None:
-        self._loop.call_soon(self._invoke_signal, attrs.signal_name, attrs.input)
+    def handle_signal(self, signal_name: str, payload: Payload) -> None:
+        self._loop.call_soon(self._invoke_signal, signal_name, payload)
 
     def _invoke_signal(self, signal_name: str, payload: Payload) -> None:
         signal_def = self._definition.signals.get(signal_name)

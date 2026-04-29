@@ -220,8 +220,6 @@ class TestRegistry:
         signal_def = workflow_def.signals["approval"]
         assert isinstance(signal_def, SignalDefinition)
         assert signal_def.name == "approval"
-        assert len(signal_def.params) == 1
-        assert signal_def.params[0].name == "approved"
 
     def test_workflow_with_multiple_signals(self):
         """Test workflow with multiple signal handlers."""

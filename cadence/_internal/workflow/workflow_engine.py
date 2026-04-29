@@ -2,6 +2,7 @@ import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
 from dataclasses import dataclass
+from functools import singledispatchmethod
 from typing import List, Optional
 
 from cadence._internal.workflow.context import Context
@@ -21,6 +22,8 @@ from cadence.api.v1.decision_pb2 import (
 from cadence.api.v1.common_pb2 import Failure, WorkflowType
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
+    WorkflowExecutionSignaledEventAttributes,
+    WorkflowExecutionStartedEventAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
@@ -43,7 +46,7 @@ class WorkflowEngine:
             workflow_definition,
             info.data_converter,
         )
-        self._context = Context(info, self._decision_manager)
+        self._context = Context(info, self._decision_manager, self._event_loop)
 
     def process_decision(
         self,
@@ -231,7 +234,27 @@ class WorkflowEngine:
             )
 
     def _apply_input_event(self, event: HistoryEvent) -> None:
-        self._decision_manager.handle_input_event(event, self._workflow_instance)
+        attr = event.WhichOneof("attributes")
+        if attr is None:
+            self._decision_manager.handle_history_event(event)
+            return
+        self._handle_input_event(getattr(event, attr), event)
+
+    @singledispatchmethod
+    def _handle_input_event(self, attrs: object, event: HistoryEvent) -> None:
+        self._decision_manager.handle_history_event(event)
+
+    @_handle_input_event.register
+    def _handle_started_input_event(
+        self, attrs: WorkflowExecutionStartedEventAttributes, event: HistoryEvent
+    ) -> None:
+        self._workflow_instance.start(attrs.input)
+
+    @_handle_input_event.register
+    def _handle_signaled_input_event(
+        self, attrs: WorkflowExecutionSignaledEventAttributes, event: HistoryEvent
+    ) -> None:
+        self._workflow_instance.handle_signal(attrs.signal_name, attrs.input)
 
 
 def _failure_from_exception(e: Exception) -> Failure:

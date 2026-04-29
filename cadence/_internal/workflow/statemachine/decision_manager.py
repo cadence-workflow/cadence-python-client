@@ -2,13 +2,8 @@ import asyncio
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Type, Tuple, ClassVar, List, Iterator, Callable
+from typing import Dict, Type, Tuple, ClassVar, List, Iterator
 
-from cadence._internal.workflow.deterministic_event_loop import (
-    DeterministicEventLoop,
-)
-from cadence._internal.workflow.waiter import Waiter
-from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,
@@ -34,35 +29,8 @@ from cadence._internal.workflow.statemachine.timer_state_machine import (
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload
-from cadence.api.v1.history_pb2 import (
-    WorkflowExecutionSignaledEventAttributes,
-    WorkflowExecutionStartedEventAttributes,
-)
 
 DecisionAlias = Tuple[DecisionType, str | int]
-
-# ---------------------------------------------------------------------------
-# Input-event dispatcher
-# Routes workflow lifecycle events (started, signaled) to WorkflowInstance.
-# ---------------------------------------------------------------------------
-
-input_events: EventDispatcher = EventDispatcher()
-
-
-@input_events.event()
-def _handle_signaled_input_event(
-    workflow_instance: WorkflowInstance,
-    attrs: WorkflowExecutionSignaledEventAttributes,
-) -> None:
-    workflow_instance.handle_signal_attributes(attrs)
-
-
-@input_events.event()
-def _handle_started_input_event(
-    workflow_instance: WorkflowInstance,
-    attrs: WorkflowExecutionStartedEventAttributes,
-) -> None:
-    workflow_instance.start(attrs.input)
 
 
 @dataclass(frozen=True)
@@ -151,14 +119,6 @@ class DecisionManager:
 
         self._add_state_machine(CompletionStateMachine(decision))
 
-    def create_waiter(self, predicate: Callable[[], bool]) -> Waiter:
-        # _event_loop is typed as AbstractEventLoop so tests can pass a
-        # stdlib loop for paths that don't touch waiters; narrow here.
-        assert isinstance(self._event_loop, DeterministicEventLoop), (
-            "create_waiter requires a DeterministicEventLoop"
-        )
-        return self._event_loop.create_waiter(predicate)
-
     def _next_id(self) -> str:
         next_id = self._id_counter
         self._id_counter += 1
@@ -176,21 +136,6 @@ class DecisionManager:
             raise ValueError(f"Received duplicate decision: {decision_id}")
         self.state_machines[decision_id] = state
         self.aliases[(decision_id.decision_type, decision_id.id)] = state
-
-    # ----- Input event routing -----
-
-    def handle_input_event(
-        self, event: history.HistoryEvent, workflow_instance: WorkflowInstance
-    ) -> None:
-        attr = event.WhichOneof("attributes")
-        if attr is None:
-            return
-        event_attributes = getattr(event, attr)
-        action = input_events.handlers.get(type(event_attributes))
-        if action is not None:
-            action.fn(workflow_instance, event_attributes)
-            return
-        self.handle_history_event(event)
 
     # ----- History routing -----
 

@@ -3,6 +3,7 @@ from datetime import timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1.common_pb2 import ActivityType
@@ -30,11 +31,13 @@ class Context(WorkflowContext):
         self,
         info: WorkflowInfo,
         decision_manager: DecisionManager,
+        event_loop: DeterministicEventLoop,
     ):
         self._info = info
         self._replay_mode = True
         self._replay_current_time_milliseconds: Optional[int] = None
         self._decision_manager = decision_manager
+        self._event_loop = event_loop
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -130,7 +133,7 @@ class Context(WorkflowContext):
         return self._replay_current_time_milliseconds
 
     async def wait_condition(self, predicate: Callable[[], bool]) -> None:
-        await self._decision_manager.create_waiter(predicate)
+        await self._event_loop.create_waiter(predicate)
 
     @contextmanager
     def _activate(self) -> Iterator["Context"]:

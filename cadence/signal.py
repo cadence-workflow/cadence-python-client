@@ -17,7 +17,7 @@ from typing import (
     TypedDict,
 )
 
-from cadence._internal.fn_signature import FnParameter, FnSignature
+from cadence._internal.fn_signature import FnSignature
 from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DataConverter
 
@@ -60,16 +60,6 @@ class SignalDefinition(Generic[P, T]):
     def name(self) -> str:
         """Get the signal name."""
         return self._name
-
-    @property
-    def signature(self) -> FnSignature:
-        """Parameter and return-type metadata (shared with activities/workflows)."""
-        return self._signature
-
-    @property
-    def params(self) -> list[FnParameter]:
-        """Positional signal parameters (excluding ``self``)."""
-        return self._signature.params
 
     @property
     def wrapped(self) -> Callable[P, T]:

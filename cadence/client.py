@@ -164,8 +164,6 @@ def _validate_and_apply_defaults(
                 "first_run_at cannot be before Unix epoch (January 1, 1970 UTC)"
             )
 
-    _build_active_cluster_selection_policy(options)
-
     return options
 
 

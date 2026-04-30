@@ -196,6 +196,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-docker" },
     { name = "setuptools-scm" },
+    { name = "types-grpcio" },
 ]
 docs = [
     { name = "myst-parser" },
@@ -238,6 +239,7 @@ requires-dist = [
     { name = "setuptools-scm", extras = ["simple"], marker = "extra == 'dev'", specifier = ">=9.2" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=6.0.0" },
     { name = "sphinx-rtd-theme", marker = "extra == 'docs'", specifier = ">=1.2.0" },
+    { name = "types-grpcio", marker = "extra == 'dev'", specifier = ">=1.0.0.20260408" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
 ]
 provides-extras = ["dev", "docs", "examples", "openai"]
@@ -2088,6 +2090,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl", hash = "sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf", size = 78374, upload-time = "2026-02-03T17:35:50.982Z" },
+]
+
+[[package]]
+name = "types-grpcio"
+version = "1.0.0.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6d/5d/e8af15d909e1f7bf46bac6f21e3faa0f16a92b4d5bd685d52e2c25ee26ca/types_grpcio-1.0.0.20260408.tar.gz", hash = "sha256:c8ebe07f91492a32e0f3a3810669d236828d5a2a1e540ab16cca8b5a46f8ee5d", size = 14551, upload-time = "2026-04-08T04:27:51.156Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/b2/965d99a23d94e4697a76c88c17afcaf8013332583087551697a391b972bd/types_grpcio-1.0.0.20260408-py3-none-any.whl", hash = "sha256:256f2738a4a3eb2ebabd6d027f4fc7eace024822afb3b629e82811e0b661fc35", size = 15209, upload-time = "2026-04-08T04:27:50.02Z" },
 ]
 
 [[package]]

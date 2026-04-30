@@ -60,6 +60,16 @@ async def sleep(duration: timedelta) -> None:
     return await WorkflowContext.get().start_timer(duration)
 
 
+async def wait_condition(predicate: Callable[[], bool]) -> None:
+    """Block until predicate returns True.
+
+    The predicate is re-evaluated after any workflow state change
+    (signal delivery, activity completion, timer firing).
+    If the predicate is already True, returns immediately.
+    """
+    await WorkflowContext.get().wait_condition(predicate)
+
+
 def continue_as_new(
     *args: Any,
     workflow_type: str | None = None,
@@ -270,10 +280,34 @@ def signal(name: str | None = None) -> Callable[[T], T]:
     """
     Decorator to mark a method as a workflow signal handler.
 
-    Example:
+    Signal handlers mutate workflow state in response to signals delivered
+    via history.  Both synchronous (``def``) and asynchronous (``async def``)
+    handlers are supported; they always run on the workflow's deterministic
+    event loop, never on a real thread.
+
+    Example::
+
         @workflow.signal(name="approval_channel")
-        async def approve(self, approved: bool):
+        def approve(self, approved: bool) -> None:
             self.approved = approved
+
+        @workflow.signal(name="async_approval")
+        async def approve_async(self, approved: bool) -> None:
+            self.approved = approved
+            await workflow.execute_activity("notify", ...)
+
+    Concurrency constraints:
+        * Do **not** use native threads inside signal handlers — they are not
+          replay-safe.
+        * Avoid anything that depends on wall-clock time or real I/O —
+          ``asyncio.sleep``, ``asyncio.wait_for(timeout=...)``, ``asyncio.to_thread``.
+          Pure asyncio primitives such as ``asyncio.Event``, ``asyncio.Lock``, and
+          ``asyncio.Queue`` are safe when used on the workflow's deterministic
+          event loop.
+        * Do **not** rely on the GIL for thread-safety; CPython now
+          supports free-threaded builds where the GIL can be disabled.
+        * Signal handlers should return ``None``; any returned value is
+          discarded.
 
     Args:
         name: The name of the signal
@@ -292,7 +326,6 @@ def signal(name: str | None = None) -> Callable[[T], T]:
         f._workflow_signal = name  # type: ignore
         return f
 
-    # Only allow @workflow.signal(name), require name to be explicitly provided
     return decorator
 
 
@@ -327,11 +360,16 @@ class WorkflowContext(ABC):
     @abstractmethod
     async def start_timer(self, duration: timedelta) -> None: ...
 
+    @abstractmethod
+    async def wait_condition(self, predicate: Callable[[], bool]) -> None: ...
+
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:
         token = WorkflowContext._var.set(self)
-        yield self
-        WorkflowContext._var.reset(token)
+        try:
+            yield self
+        finally:
+            WorkflowContext._var.reset(token)
 
     @staticmethod
     def is_set() -> bool:

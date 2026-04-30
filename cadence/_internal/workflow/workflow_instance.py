@@ -1,12 +1,15 @@
+import inspect
 import logging
 from asyncio import Task
 from typing import Any, Optional, Callable, Awaitable
+
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
 )
 from cadence.api.v1.common_pb2 import Payload
-
 from cadence.data_converter import DataConverter
+from cadence.error import SignalFailure
+from cadence.signal import SignalDefinition
 from cadence.workflow import WorkflowDefinition
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,13 @@ class WorkflowInstance:
         self._data_converter = data_converter
         self._instance = workflow_definition.cls()  # construct a new workflow object
         self._task: Optional[Task[Payload]] = None
+        # Strong references to in-flight async signal handler tasks.
+        self._signal_tasks: set[Task[Any]] = set()
+        # Fail the decision task if a signal handler raises an exception.
+        self._signal_failure: Optional[SignalFailure] = None
+
+    def get_signal_failure(self) -> Optional[SignalFailure]:
+        return self._signal_failure
 
     def start(self, payload: Payload):
         if self._task is None:
@@ -51,3 +61,45 @@ class WorkflowInstance:
         if self._task is None or not self._task.done():
             return None
         return self._task.result()
+
+    def handle_signal(self, signal_name: str, payload: Payload) -> None:
+        signal_def = self._definition.signals.get(signal_name)
+        if signal_def is None:
+            logger.warning(
+                "Received signal '%s' but no handler registered, dropping",
+                signal_name,
+            )
+            return
+
+        try:
+            args = signal_def.params_from_payload(self._data_converter, payload)
+        except Exception as e:
+            logger.warning(
+                "Failed to decode payload for signal '%s', dropping: %s",
+                signal_name,
+                e,
+            )
+            return
+
+        task = self._loop.create_task(self._run_signal(signal_def, args))
+        self._signal_tasks.add(task)
+        task.add_done_callback(
+            lambda completed_task: self._on_signal_task_done(
+                completed_task, signal_name
+            )
+        )
+
+    async def _run_signal(
+        self, signal_def: SignalDefinition[..., Any], args: list[Any]
+    ) -> None:
+        result = signal_def(self._instance, *args)
+        if inspect.iscoroutine(result):
+            await result
+
+    def _on_signal_task_done(self, task: Task[Any], signal_name: str) -> None:
+        self._signal_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if isinstance(exc, Exception) and self._signal_failure is None:
+            self._signal_failure = SignalFailure(str(exc) or None, signal_name)

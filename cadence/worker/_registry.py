@@ -91,13 +91,13 @@ class Registry:
         """
         options = WorkflowDefinitionOptions(**kwargs)
 
-        decorator = WorkflowDecorator(options, self._register_workflow)
+        decorator = WorkflowDecorator(options, self.register_workflow)
 
         if cls is None:
             return decorator
         return decorator(cls)
 
-    def _register_workflow(self, defn: WorkflowDefinition) -> None:
+    def register_workflow(self, defn: WorkflowDefinition) -> None:
         if defn.name in self._workflows:
             raise KeyError(f"Workflow '{defn.name}' is already registered")
 
@@ -204,9 +204,9 @@ class Registry:
         for name, fn in other._activities.items():
             result._register_activity(fn)
         for name, workflow in self._workflows.items():
-            result._register_workflow(workflow)
+            result.register_workflow(workflow)
         for name, workflow in other._workflows.items():
-            result._register_workflow(workflow)
+            result.register_workflow(workflow)
 
         return result
 

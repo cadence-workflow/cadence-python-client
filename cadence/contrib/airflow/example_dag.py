@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 
 
 def extract(**kwargs):
@@ -11,8 +11,7 @@ def extract(**kwargs):
 
 
 def transform(**kwargs):
-    ti = kwargs["ti"]
-    data = ti.xcom_pull(task_ids="extract")
+    data = {"orders": 42, "revenue": 1234.56}
     result = {**data, "avg_order_value": data["revenue"] / data["orders"]}
     print(f"Transformed data: {result}")
     return result
@@ -25,7 +24,6 @@ with DAG(
     catchup=False,
     tags=["example"],
 ) as dag:
-
     extract_task = PythonOperator(
         task_id="extract",
         python_callable=extract,

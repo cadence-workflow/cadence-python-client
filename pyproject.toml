@@ -64,7 +64,7 @@ openai = [
     "openai-agents>=0.12.5",
 ]
 airflow = [
-    "apache-airflow>=3.2.1",
+    "apache-airflow>=2.10.5",
 ]
 
 [project.urls]

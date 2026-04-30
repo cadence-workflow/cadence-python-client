@@ -40,28 +40,47 @@ class PydanticDataConverter(DataConverter):
     def from_data(
         self, payload: Payload, type_hints: Sequence[Type | None]
     ) -> List[Any]:
+        return self._from_payload(payload, type_hints, fill_missing_defaults=True)
+
+    def _from_payload(
+        self,
+        payload: Payload,
+        type_hints: Sequence[Type | None],
+        *,
+        fill_missing_defaults: bool,
+    ) -> List[Any]:
+        if not type_hints:
+            return []
+
         if not payload.data:
-            return [_get_default(th) for th in type_hints]
+            if fill_missing_defaults:
+                return [_get_default(th) for th in type_hints]
+            return []
 
         raw_values = self._decode_whitespace_delimited(
             payload.data.decode(), len(type_hints)
         )
+        converted = self._convert_provided_values(raw_values, type_hints)
+        if fill_missing_defaults:
+            converted.extend(_get_default(th) for th in type_hints[len(raw_values) :])
+        return converted
 
+    def _convert_provided_values(
+        self, raw_values: List[Any], type_hints: Sequence[Type | None]
+    ) -> List[Any]:
         results: List[Any] = []
-        for i, type_hint in enumerate(type_hints):
-            if i >= len(raw_values):
-                results.append(_get_default(type_hint))
-            elif type_hint is None or type_hint is Any:
-                results.append(raw_values[i])
+        for raw_value, type_hint in zip(raw_values, type_hints):
+            if type_hint is None or type_hint is Any:
+                results.append(raw_value)
             else:
                 adapter = self._get_adapter(type_hint)
                 if adapter is None:
-                    results.append(raw_values[i])
+                    results.append(raw_value)
                 else:
                     try:
-                        results.append(adapter.validate_python(raw_values[i]))
+                        results.append(adapter.validate_python(raw_value))
                     except Exception:
-                        results.append(raw_values[i])
+                        results.append(raw_value)
 
         return results
 
@@ -75,11 +94,10 @@ class PydanticDataConverter(DataConverter):
             results.append(value)
         return results
 
-    def _payload_value_count(self, payload: Payload, max_count: int) -> int:
-        if not payload.data or max_count <= 0:
-            return 0
-
-        return len(self._decode_whitespace_delimited(payload.data.decode(), max_count))
+    def _decode_provided_values(
+        self, payload: Payload, type_hints: Sequence[Type | None]
+    ) -> List[Any]:
+        return self._from_payload(payload, type_hints, fill_missing_defaults=False)
 
     def to_data(self, values: List[Any]) -> Payload:
         result = bytearray()

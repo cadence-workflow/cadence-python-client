@@ -70,17 +70,17 @@ class DefaultDataConverter(DataConverter):
     ) -> List[Any]:
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
-            if not type_hint or type_hint is Any:
+            if i < len(values):
                 value = values[i]
-            elif i < len(values):
-                value = convert(values[i], type_hint)
+                if type_hint and type_hint is not Any:
+                    value = convert(value, type_hint)
             else:
                 value = DefaultDataConverter._get_default(type_hint)
             results.append(value)
         return results
 
     @staticmethod
-    def _get_default(type_hint: Type) -> Any:
+    def _get_default(type_hint: Type | None) -> Any:
         if type_hint in (int, float):
             return 0
         if type_hint is bool:

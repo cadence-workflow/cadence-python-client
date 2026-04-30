@@ -55,11 +55,8 @@ class FnSignature:
     ) -> list[Any]:
         if not self.params:
             return []
-        provided_count = _provided_value_count(
-            data_converter, payload, len(self.params)
-        )
-        type_hints = [param.type_hint for param in self.params[:provided_count]]
-        decoded: list[Any] = data_converter.from_data(payload, type_hints)
+        type_hints = [param.type_hint for param in self.params]
+        decoded = _decode_provided_values(data_converter, payload, type_hints)
         for i, param in enumerate(self.params):
             if i < len(decoded):
                 continue
@@ -105,10 +102,19 @@ class FnSignature:
         return FnSignature(params, return_type)
 
 
-def _provided_value_count(
-    data_converter: DataConverter, payload: Payload, max_count: int
-) -> int:
+def _decode_provided_values(
+    data_converter: DataConverter,
+    payload: Payload,
+    type_hints: Sequence[Type | None],
+) -> list[Any]:
+    decoder = getattr(data_converter, "_decode_provided_values", None)
+    if callable(decoder):
+        return list(decoder(payload, type_hints))
+
     counter = getattr(data_converter, "_payload_value_count", None)
     if callable(counter):
-        return int(counter(payload, max_count))
-    return max_count
+        provided_count = int(counter(payload, len(type_hints)))
+        return data_converter.from_data(payload, list(type_hints[:provided_count]))
+
+    # Backward compatibility
+    return data_converter.from_data(payload, list(type_hints))

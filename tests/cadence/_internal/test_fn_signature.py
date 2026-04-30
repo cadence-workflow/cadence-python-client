@@ -1,5 +1,5 @@
 from types import NoneType
-from typing import Callable, Any, Tuple, Sequence, Dict
+from typing import Callable, Any, Tuple, Sequence, Dict, Type
 
 import pytest
 
@@ -303,3 +303,19 @@ def test_params_from_payload_treats_empty_payload_as_no_values() -> None:
     converter = DefaultDataConverter()
 
     assert signature.params_from_payload(converter, Payload()) == ["default_value"]
+
+
+class LegacyDataConverter:
+    def from_data(self, payload: Payload, type_hints: list[Type | None]) -> list[Any]:
+        return ["legacy"]
+
+    def to_data(self, values: list[Any]) -> Payload:
+        return Payload()
+
+
+def test_params_from_payload_supports_legacy_data_converter() -> None:
+    signature = FnSignature.of(default_param)
+
+    assert signature.params_from_payload(LegacyDataConverter(), Payload()) == [
+        "legacy"
+    ]

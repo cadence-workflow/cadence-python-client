@@ -48,7 +48,8 @@ dev = [
     "pytest-docker>=3.2.3",
     "opentelemetry-instrumentation-grpc==0.60b1",
     "opentelemetry-sdk>=1.39.1",
-    "setuptools-scm[simple]>=9.2"
+    "setuptools-scm[simple]>=9.2",
+    "types-grpcio>=1.0.0.20260408",
 ]
 docs = [
     "sphinx>=6.0.0",

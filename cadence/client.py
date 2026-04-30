@@ -2,7 +2,7 @@ import os
 import socket
 import uuid
 from datetime import datetime, timedelta
-from typing import TypedDict, Unpack, Any, cast, Union
+from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
 from google.protobuf.duration_pb2 import Duration
@@ -452,18 +452,21 @@ def _create_channel(options: ClientOptions) -> Channel:
     interceptors.append(RetryInterceptor())
     interceptors.append(CadenceErrorInterceptor())
 
+    channel_arguments = options.get("channel_arguments") or {}
+    grpc_channel_options: Sequence[tuple[str, Any]] = tuple(channel_arguments.items())
+
     if options["credentials"]:
         return grpc.aio.secure_channel(
             options["target"],
             options["credentials"],
-            options=options["channel_arguments"],
+            options=grpc_channel_options,
             compression=options["compression"],
             interceptors=interceptors,
         )
     else:
         return grpc.aio.insecure_channel(
             options["target"],
-            options=options["channel_arguments"],
+            options=grpc_channel_options,
             compression=options["compression"],
             interceptors=interceptors,
         )

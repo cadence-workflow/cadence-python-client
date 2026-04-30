@@ -3,7 +3,14 @@ import uuid
 from datetime import timedelta, datetime, timezone
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
-from cadence.api.v1.common_pb2 import WorkflowExecution
+from cadence.api.v1.common_pb2 import (
+    ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY,
+    ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
+    ActiveClusterExternalEntityConfig,
+    ActiveClusterSelectionPolicy,
+    ActiveClusterStickyRegionConfig,
+    WorkflowExecution,
+)
 from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
@@ -454,6 +461,137 @@ class TestClientBuildStartWorkflowRequest:
         with pytest.raises(
             ValueError,
             match="workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID",
+        ):
+            _validate_and_apply_defaults(options)
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_active_cluster_sticky_region(self, mock_client):
+        """Test building request with sticky-region active-active routing."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            active_cluster_sticky_region="us-east-1",
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("active_cluster_selection_policy")
+        assert (
+            request.active_cluster_selection_policy.strategy
+            == ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY
+        )
+        assert (
+            request.active_cluster_selection_policy.active_cluster_sticky_region_config.sticky_region
+            == "us-east-1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_active_cluster_external_entity(self, mock_client):
+        """Test building request with external-entity active-active routing."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            active_cluster_external_entity_type="tenant",
+            active_cluster_external_entity_key="tenant-123",
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("active_cluster_selection_policy")
+        assert (
+            request.active_cluster_selection_policy.strategy
+            == ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY
+        )
+        assert (
+            request.active_cluster_selection_policy.active_cluster_external_entity_config.external_entity_type
+            == "tenant"
+        )
+        assert (
+            request.active_cluster_selection_policy.active_cluster_external_entity_config.external_entity_key
+            == "tenant-123"
+        )
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_explicit_active_cluster_selection_policy(
+        self, mock_client
+    ):
+        """Explicit active_cluster_selection_policy should pass through unchanged."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        policy = ActiveClusterSelectionPolicy(
+            strategy=ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
+            active_cluster_sticky_region_config=ActiveClusterStickyRegionConfig(
+                sticky_region="eu-west-1"
+            ),
+        )
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            active_cluster_selection_policy=policy,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.active_cluster_selection_policy == policy
+
+    def test_active_cluster_external_entity_requires_both_fields(self):
+        """External-entity routing requires both type and key."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            active_cluster_external_entity_type="tenant",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="active_cluster_external_entity_type and "
+            "active_cluster_external_entity_key must both be provided",
+        ):
+            _validate_and_apply_defaults(options)
+
+    def test_active_cluster_options_reject_mixed_shortcuts(self):
+        """Sticky-region and external-entity shortcuts are mutually exclusive."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            active_cluster_sticky_region="us-east-1",
+            active_cluster_external_entity_type="tenant",
+            active_cluster_external_entity_key="tenant-123",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="active_cluster_sticky_region cannot be combined with "
+            "active_cluster_external_entity_\\* options",
+        ):
+            _validate_and_apply_defaults(options)
+
+    def test_active_cluster_options_reject_policy_and_shortcuts(self):
+        """Raw policy and shortcut fields cannot be mixed."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            active_cluster_selection_policy=ActiveClusterSelectionPolicy(
+                strategy=ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY,
+                active_cluster_external_entity_config=ActiveClusterExternalEntityConfig(
+                    external_entity_type="tenant",
+                    external_entity_key="tenant-123",
+                ),
+            ),
+            active_cluster_sticky_region="us-east-1",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="active_cluster_selection_policy cannot be combined with "
+            "active_cluster_sticky_region or active_cluster_external_entity_\\* options",
         ):
             _validate_and_apply_defaults(options)
 

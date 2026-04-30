@@ -23,7 +23,15 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionRequest,
     SignalWithStartWorkflowExecutionResponse,
 )
-from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
+from cadence.api.v1.common_pb2 import (
+    ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY,
+    ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
+    ActiveClusterExternalEntityConfig,
+    ActiveClusterSelectionPolicy,
+    ActiveClusterStickyRegionConfig,
+    WorkflowType,
+    WorkflowExecution,
+)
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
@@ -44,6 +52,67 @@ class StartWorkflowOptions(TypedDict, total=False):
     cron_overlap_policy: workflow_pb2.CronOverlapPolicy
     first_run_at: datetime
     workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
+    active_cluster_selection_policy: ActiveClusterSelectionPolicy
+    active_cluster_sticky_region: str
+    active_cluster_external_entity_type: str
+    active_cluster_external_entity_key: str
+
+
+def _build_active_cluster_selection_policy(
+    options: StartWorkflowOptions,
+) -> ActiveClusterSelectionPolicy | None:
+    """Build and validate active-active workflow start options."""
+    policy = options.get("active_cluster_selection_policy")
+    sticky_region = options.get("active_cluster_sticky_region")
+    external_entity_type = options.get("active_cluster_external_entity_type")
+    external_entity_key = options.get("active_cluster_external_entity_key")
+
+    has_external_entity_options = (
+        external_entity_type is not None or external_entity_key is not None
+    )
+
+    if policy is not None and (
+        sticky_region is not None or has_external_entity_options
+    ):
+        raise ValueError(
+            "active_cluster_selection_policy cannot be combined with "
+            "active_cluster_sticky_region or active_cluster_external_entity_* options"
+        )
+
+    if policy is not None:
+        return policy
+
+    if sticky_region is not None and has_external_entity_options:
+        raise ValueError(
+            "active_cluster_sticky_region cannot be combined with "
+            "active_cluster_external_entity_* options"
+        )
+
+    if sticky_region is not None:
+        if not sticky_region:
+            raise ValueError("active_cluster_sticky_region cannot be empty")
+        return ActiveClusterSelectionPolicy(
+            strategy=ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
+            active_cluster_sticky_region_config=ActiveClusterStickyRegionConfig(
+                sticky_region=sticky_region
+            ),
+        )
+
+    if has_external_entity_options:
+        if not external_entity_type or not external_entity_key:
+            raise ValueError(
+                "active_cluster_external_entity_type and "
+                "active_cluster_external_entity_key must both be provided"
+            )
+        return ActiveClusterSelectionPolicy(
+            strategy=ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY,
+            active_cluster_external_entity_config=ActiveClusterExternalEntityConfig(
+                external_entity_type=external_entity_type,
+                external_entity_key=external_entity_key,
+            ),
+        )
+
+    return None
 
 
 def _validate_and_apply_defaults(
@@ -106,6 +175,8 @@ def _validate_and_apply_defaults(
             raise ValueError(
                 "first_run_at cannot be before Unix epoch (January 1, 1970 UTC)"
             )
+
+    _build_active_cluster_selection_policy(options)
 
     return options
 
@@ -262,6 +333,14 @@ class Client:
             first_run_timestamp = Timestamp()
             first_run_timestamp.FromDatetime(first_run_at)
             request.first_run_at.CopyFrom(first_run_timestamp)
+
+        active_cluster_selection_policy = _build_active_cluster_selection_policy(
+            options
+        )
+        if active_cluster_selection_policy is not None:
+            request.active_cluster_selection_policy.CopyFrom(
+                active_cluster_selection_policy
+            )
 
         return request
 

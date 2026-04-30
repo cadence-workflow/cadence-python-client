@@ -316,6 +316,4 @@ class LegacyDataConverter:
 def test_params_from_payload_supports_legacy_data_converter() -> None:
     signature = FnSignature.of(default_param)
 
-    assert signature.params_from_payload(LegacyDataConverter(), Payload()) == [
-        "legacy"
-    ]
+    assert signature.params_from_payload(LegacyDataConverter(), Payload()) == ["legacy"]

@@ -544,9 +544,11 @@ class TestClientBuildStartWorkflowRequest:
 
     def test_active_cluster_external_entity_requires_both_fields(self):
         """External-entity routing requires both type and key."""
+        client = Client(domain="test-domain", target="localhost:7933")
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
             active_cluster_external_entity_type="tenant",
         )
 
@@ -555,13 +557,15 @@ class TestClientBuildStartWorkflowRequest:
             match="active_cluster_external_entity_type and "
             "active_cluster_external_entity_key must both be provided",
         ):
-            _validate_and_apply_defaults(options)
+            client._build_start_workflow_request("TestWorkflow", (), options)
 
     def test_active_cluster_options_reject_mixed_shortcuts(self):
         """Sticky-region and external-entity shortcuts are mutually exclusive."""
+        client = Client(domain="test-domain", target="localhost:7933")
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
             active_cluster_sticky_region="us-east-1",
             active_cluster_external_entity_type="tenant",
             active_cluster_external_entity_key="tenant-123",
@@ -572,13 +576,15 @@ class TestClientBuildStartWorkflowRequest:
             match="active_cluster_sticky_region cannot be combined with "
             "active_cluster_external_entity_\\* options",
         ):
-            _validate_and_apply_defaults(options)
+            client._build_start_workflow_request("TestWorkflow", (), options)
 
     def test_active_cluster_options_reject_policy_and_shortcuts(self):
         """Raw policy and shortcut fields cannot be mixed."""
+        client = Client(domain="test-domain", target="localhost:7933")
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
             active_cluster_selection_policy=ActiveClusterSelectionPolicy(
                 strategy=ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY,
                 active_cluster_external_entity_config=ActiveClusterExternalEntityConfig(
@@ -594,7 +600,7 @@ class TestClientBuildStartWorkflowRequest:
             match="active_cluster_selection_policy cannot be combined with "
             "active_cluster_sticky_region or active_cluster_external_entity_\\* options",
         ):
-            _validate_and_apply_defaults(options)
+            client._build_start_workflow_request("TestWorkflow", (), options)
 
 
 class TestClientStartWorkflow:

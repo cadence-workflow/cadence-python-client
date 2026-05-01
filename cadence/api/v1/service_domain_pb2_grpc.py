@@ -54,6 +54,11 @@ class DomainAPIStub(object):
                 request_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.UpdateDomainRequest.SerializeToString,
                 response_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.UpdateDomainResponse.FromString,
                 _registered_method=True)
+        self.FailoverDomain = channel.unary_unary(
+                '/uber.cadence.api.v1.DomainAPI/FailoverDomain',
+                request_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.FailoverDomainRequest.SerializeToString,
+                response_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.FailoverDomainResponse.FromString,
+                _registered_method=True)
         self.DeprecateDomain = channel.unary_unary(
                 '/uber.cadence.api.v1.DomainAPI/DeprecateDomain',
                 request_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.DeprecateDomainRequest.SerializeToString,
@@ -63,6 +68,11 @@ class DomainAPIStub(object):
                 '/uber.cadence.api.v1.DomainAPI/DeleteDomain',
                 request_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.DeleteDomainRequest.SerializeToString,
                 response_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.DeleteDomainResponse.FromString,
+                _registered_method=True)
+        self.ListFailoverHistory = channel.unary_unary(
+                '/uber.cadence.api.v1.DomainAPI/ListFailoverHistory',
+                request_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.ListFailoverHistoryRequest.SerializeToString,
+                response_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.ListFailoverHistoryResponse.FromString,
                 _registered_method=True)
 
 
@@ -100,6 +110,13 @@ class DomainAPIServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def FailoverDomain(self, request, context):
+        """FailoverDomain is used to failover a registered domain to a different cluster
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def DeprecateDomain(self, request, context):
         """DeprecateDomain us used to update status of a registered domain to DEPRECATED.  Once the domain is deprecated
         it cannot be used to start new workflow executions.  Existing workflow executions will continue to run on
@@ -115,6 +132,13 @@ class DomainAPIServicer(object):
         - Cannot be performed on domains with running workflows
         - Is irreversible and removes all domain data
         - Requires proper permissions and security token
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListFailoverHistory(self, request, context):
+        """ListFailoverHistory returns the history of failover events for a domain.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -143,6 +167,11 @@ def add_DomainAPIServicer_to_server(servicer, server):
                     request_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.UpdateDomainRequest.FromString,
                     response_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.UpdateDomainResponse.SerializeToString,
             ),
+            'FailoverDomain': grpc.unary_unary_rpc_method_handler(
+                    servicer.FailoverDomain,
+                    request_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.FailoverDomainRequest.FromString,
+                    response_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.FailoverDomainResponse.SerializeToString,
+            ),
             'DeprecateDomain': grpc.unary_unary_rpc_method_handler(
                     servicer.DeprecateDomain,
                     request_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.DeprecateDomainRequest.FromString,
@@ -152,6 +181,11 @@ def add_DomainAPIServicer_to_server(servicer, server):
                     servicer.DeleteDomain,
                     request_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.DeleteDomainRequest.FromString,
                     response_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.DeleteDomainResponse.SerializeToString,
+            ),
+            'ListFailoverHistory': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListFailoverHistory,
+                    request_deserializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.ListFailoverHistoryRequest.FromString,
+                    response_serializer=cadence_dot_api_dot_v1_dot_service__domain__pb2.ListFailoverHistoryResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -273,6 +307,33 @@ class DomainAPI(object):
             _registered_method=True)
 
     @staticmethod
+    def FailoverDomain(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/uber.cadence.api.v1.DomainAPI/FailoverDomain',
+            cadence_dot_api_dot_v1_dot_service__domain__pb2.FailoverDomainRequest.SerializeToString,
+            cadence_dot_api_dot_v1_dot_service__domain__pb2.FailoverDomainResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def DeprecateDomain(request,
             target,
             options=(),
@@ -316,6 +377,33 @@ class DomainAPI(object):
             '/uber.cadence.api.v1.DomainAPI/DeleteDomain',
             cadence_dot_api_dot_v1_dot_service__domain__pb2.DeleteDomainRequest.SerializeToString,
             cadence_dot_api_dot_v1_dot_service__domain__pb2.DeleteDomainResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListFailoverHistory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/uber.cadence.api.v1.DomainAPI/ListFailoverHistory',
+            cadence_dot_api_dot_v1_dot_service__domain__pb2.ListFailoverHistoryRequest.SerializeToString,
+            cadence_dot_api_dot_v1_dot_service__domain__pb2.ListFailoverHistoryResponse.FromString,
             options,
             channel_credentials,
             insecure,

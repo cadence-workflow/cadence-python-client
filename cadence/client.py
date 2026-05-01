@@ -25,7 +25,7 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionResponse,
 )
 from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
-from cadence.api.v1 import workflow_pb2
+from cadence.api.v1 import common_pb2, workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
@@ -46,6 +46,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     first_run_at: datetime
     workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
     retry_policy: RetryPolicy
+    active_cluster_selection_policy: common_pb2.ActiveClusterSelectionPolicy
 
 
 def _validate_and_apply_defaults(
@@ -269,6 +270,12 @@ class Client:
         retry_proto = retry_policy_to_proto(options.get("retry_policy"))
         if retry_proto is not None:
             request.retry_policy.CopyFrom(retry_proto)
+
+        active_cluster_selection_policy = options.get("active_cluster_selection_policy")
+        if active_cluster_selection_policy is not None:
+            request.active_cluster_selection_policy.CopyFrom(
+                active_cluster_selection_policy
+            )
 
         return request
 

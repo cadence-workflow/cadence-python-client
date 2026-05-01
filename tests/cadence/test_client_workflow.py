@@ -3,7 +3,11 @@ import uuid
 from datetime import timedelta, datetime, timezone
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
-from cadence.api.v1.common_pb2 import WorkflowExecution
+from cadence.api.v1.common_pb2 import (
+    ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
+    ActiveClusterSelectionPolicy,
+    WorkflowExecution,
+)
 from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
@@ -457,6 +461,27 @@ class TestClientBuildStartWorkflowRequest:
             match="workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID",
         ):
             _validate_and_apply_defaults(options)
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_explicit_active_cluster_selection_policy(
+        self, mock_client
+    ):
+        """Explicit active_cluster_selection_policy should pass through unchanged."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        policy = ActiveClusterSelectionPolicy(
+            strategy=ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
+        )
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            active_cluster_selection_policy=policy,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.active_cluster_selection_policy == policy
 
 
 class TestClientStartWorkflow:

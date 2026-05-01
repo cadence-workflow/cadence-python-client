@@ -56,6 +56,18 @@ class WorkflowExecutionCloseStatus(int, metaclass=_enum_type_wrapper.EnumTypeWra
     WORKFLOW_EXECUTION_CLOSE_STATUS_CONTINUED_AS_NEW: _ClassVar[WorkflowExecutionCloseStatus]
     WORKFLOW_EXECUTION_CLOSE_STATUS_TIMED_OUT: _ClassVar[WorkflowExecutionCloseStatus]
 
+class WorkflowExecutionStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    WORKFLOW_EXECUTION_STATUS_INVALID: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_PENDING: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_STARTED: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_COMPLETED: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_FAILED: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_CANCELED: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_TERMINATED: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW: _ClassVar[WorkflowExecutionStatus]
+    WORKFLOW_EXECUTION_STATUS_TIMED_OUT: _ClassVar[WorkflowExecutionStatus]
+
 class ContinueAsNewInitiator(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     CONTINUE_AS_NEW_INITIATOR_INVALID: _ClassVar[ContinueAsNewInitiator]
@@ -146,6 +158,15 @@ WORKFLOW_EXECUTION_CLOSE_STATUS_CANCELED: WorkflowExecutionCloseStatus
 WORKFLOW_EXECUTION_CLOSE_STATUS_TERMINATED: WorkflowExecutionCloseStatus
 WORKFLOW_EXECUTION_CLOSE_STATUS_CONTINUED_AS_NEW: WorkflowExecutionCloseStatus
 WORKFLOW_EXECUTION_CLOSE_STATUS_TIMED_OUT: WorkflowExecutionCloseStatus
+WORKFLOW_EXECUTION_STATUS_INVALID: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_PENDING: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_STARTED: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_COMPLETED: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_FAILED: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_CANCELED: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_TERMINATED: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW: WorkflowExecutionStatus
+WORKFLOW_EXECUTION_STATUS_TIMED_OUT: WorkflowExecutionStatus
 CONTINUE_AS_NEW_INITIATOR_INVALID: ContinueAsNewInitiator
 CONTINUE_AS_NEW_INITIATOR_DECIDER: ContinueAsNewInitiator
 CONTINUE_AS_NEW_INITIATOR_RETRY_POLICY: ContinueAsNewInitiator
@@ -192,7 +213,7 @@ SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_UNKNOWN_EXTERNAL_WORKFLOW_EXECUT
 SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_COMPLETED: SignalExternalWorkflowExecutionFailedCause
 
 class WorkflowExecutionInfo(_message.Message):
-    __slots__ = ("workflow_execution", "type", "start_time", "close_time", "close_status", "history_length", "parent_execution_info", "execution_time", "memo", "search_attributes", "auto_reset_points", "task_list", "task_list_info", "is_cron", "update_time", "partition_config", "cron_overlap_policy", "active_cluster_selection_policy")
+    __slots__ = ("workflow_execution", "type", "start_time", "close_time", "close_status", "history_length", "parent_execution_info", "execution_time", "memo", "search_attributes", "auto_reset_points", "task_list", "task_list_info", "is_cron", "update_time", "partition_config", "cron_overlap_policy", "active_cluster_selection_policy", "cron_schedule", "execution_status", "scheduled_execution_time")
     class PartitionConfigEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -218,6 +239,9 @@ class WorkflowExecutionInfo(_message.Message):
     PARTITION_CONFIG_FIELD_NUMBER: _ClassVar[int]
     CRON_OVERLAP_POLICY_FIELD_NUMBER: _ClassVar[int]
     ACTIVE_CLUSTER_SELECTION_POLICY_FIELD_NUMBER: _ClassVar[int]
+    CRON_SCHEDULE_FIELD_NUMBER: _ClassVar[int]
+    EXECUTION_STATUS_FIELD_NUMBER: _ClassVar[int]
+    SCHEDULED_EXECUTION_TIME_FIELD_NUMBER: _ClassVar[int]
     workflow_execution: _common_pb2.WorkflowExecution
     type: _common_pb2.WorkflowType
     start_time: _timestamp_pb2.Timestamp
@@ -236,7 +260,10 @@ class WorkflowExecutionInfo(_message.Message):
     partition_config: _containers.ScalarMap[str, str]
     cron_overlap_policy: CronOverlapPolicy
     active_cluster_selection_policy: _common_pb2.ActiveClusterSelectionPolicy
-    def __init__(self, workflow_execution: _Optional[_Union[_common_pb2.WorkflowExecution, _Mapping]] = ..., type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., close_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., close_status: _Optional[_Union[WorkflowExecutionCloseStatus, str]] = ..., history_length: _Optional[int] = ..., parent_execution_info: _Optional[_Union[ParentExecutionInfo, _Mapping]] = ..., execution_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., auto_reset_points: _Optional[_Union[ResetPoints, _Mapping]] = ..., task_list: _Optional[str] = ..., task_list_info: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., is_cron: bool = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., partition_config: _Optional[_Mapping[str, str]] = ..., cron_overlap_policy: _Optional[_Union[CronOverlapPolicy, str]] = ..., active_cluster_selection_policy: _Optional[_Union[_common_pb2.ActiveClusterSelectionPolicy, _Mapping]] = ...) -> None: ...
+    cron_schedule: str
+    execution_status: WorkflowExecutionStatus
+    scheduled_execution_time: _timestamp_pb2.Timestamp
+    def __init__(self, workflow_execution: _Optional[_Union[_common_pb2.WorkflowExecution, _Mapping]] = ..., type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., close_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., close_status: _Optional[_Union[WorkflowExecutionCloseStatus, str]] = ..., history_length: _Optional[int] = ..., parent_execution_info: _Optional[_Union[ParentExecutionInfo, _Mapping]] = ..., execution_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., auto_reset_points: _Optional[_Union[ResetPoints, _Mapping]] = ..., task_list: _Optional[str] = ..., task_list_info: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., is_cron: bool = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., partition_config: _Optional[_Mapping[str, str]] = ..., cron_overlap_policy: _Optional[_Union[CronOverlapPolicy, str]] = ..., active_cluster_selection_policy: _Optional[_Union[_common_pb2.ActiveClusterSelectionPolicy, _Mapping]] = ..., cron_schedule: _Optional[str] = ..., execution_status: _Optional[_Union[WorkflowExecutionStatus, str]] = ..., scheduled_execution_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class WorkflowExecutionConfiguration(_message.Message):
     __slots__ = ("task_list", "execution_start_to_close_timeout", "task_start_to_close_timeout")

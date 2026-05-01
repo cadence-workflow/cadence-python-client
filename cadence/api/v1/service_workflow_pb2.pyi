@@ -379,10 +379,12 @@ class GetWorkflowExecutionHistoryResponse(_message.Message):
     def __init__(self, history: _Optional[_Union[_history_pb2.History, _Mapping]] = ..., raw_history: _Optional[_Iterable[_Union[_common_pb2.DataBlob, _Mapping]]] = ..., next_page_token: _Optional[bytes] = ..., archived: bool = ...) -> None: ...
 
 class FeatureFlags(_message.Message):
-    __slots__ = ("workflow_execution_already_completed_error_enabled",)
+    __slots__ = ("workflow_execution_already_completed_error_enabled", "autoforwarding_enabled")
     WORKFLOW_EXECUTION_ALREADY_COMPLETED_ERROR_ENABLED_FIELD_NUMBER: _ClassVar[int]
+    AUTOFORWARDING_ENABLED_FIELD_NUMBER: _ClassVar[int]
     workflow_execution_already_completed_error_enabled: bool
-    def __init__(self, workflow_execution_already_completed_error_enabled: bool = ...) -> None: ...
+    autoforwarding_enabled: bool
+    def __init__(self, workflow_execution_already_completed_error_enabled: bool = ..., autoforwarding_enabled: bool = ...) -> None: ...
 
 class RefreshWorkflowTasksRequest(_message.Message):
     __slots__ = ("domain", "workflow_execution")

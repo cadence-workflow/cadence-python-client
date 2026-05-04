@@ -1,6 +1,7 @@
 import pytest
 import uuid
 from datetime import timedelta, datetime, timezone
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
 from cadence.api.v1.common_pb2 import (
@@ -744,13 +745,14 @@ async def test_integration_workflow_invocation():
 class TestBuildStartWorkflowRequestRetryPolicy:
     """Tests for retry_policy wiring in _build_start_workflow_request."""
 
-    def _base_options(self, **extra) -> StartWorkflowOptions:
-        return StartWorkflowOptions(
-            task_list="test-task-list",
-            execution_start_to_close_timeout=timedelta(minutes=10),
-            task_start_to_close_timeout=timedelta(seconds=30),
-            **extra,
-        )
+    def _base_options(self, **extra: Any) -> StartWorkflowOptions:
+        merged: dict[str, Any] = {
+            "task_list": "test-task-list",
+            "execution_start_to_close_timeout": timedelta(minutes=10),
+            "task_start_to_close_timeout": timedelta(seconds=30),
+        }
+        merged.update(extra)
+        return cast(StartWorkflowOptions, merged)
 
     def _client(self) -> Client:
         return Client(domain="test-domain", target="localhost:7933")

@@ -36,6 +36,15 @@ class RetryPolicy(TypedDict, total=False):
     expiration_interval: timedelta
 
 
+class ClusterAttribute(TypedDict, total=False):
+    scope: str
+    name: str
+
+
+class ActiveClusterSelectionPolicy(TypedDict, total=False):
+    cluster_attribute: ClusterAttribute
+
+
 class ActivityOptions(TypedDict, total=False):
     task_list: str
     schedule_to_close_timeout: timedelta

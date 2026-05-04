@@ -4,11 +4,7 @@ from datetime import timedelta, datetime, timezone
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
-from cadence.api.v1.common_pb2 import (
-    ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
-    ActiveClusterSelectionPolicy,
-    WorkflowExecution,
-)
+from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
@@ -21,7 +17,11 @@ from cadence.client import (
 )
 from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DefaultDataConverter
-from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
+from cadence.workflow import (
+    ActiveClusterSelectionPolicy,
+    WorkflowDefinition,
+    WorkflowDefinitionOptions,
+)
 
 
 @pytest.fixture
@@ -467,12 +467,12 @@ class TestClientBuildStartWorkflowRequest:
     async def test_build_request_with_explicit_active_cluster_selection_policy(
         self, mock_client
     ):
-        """Explicit active_cluster_selection_policy should pass through unchanged."""
+        """active_cluster_selection_policy TypedDict is converted to the proto field."""
         client = Client(domain="test-domain", target="localhost:7933")
 
-        policy = ActiveClusterSelectionPolicy(
-            strategy=ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY,
-        )
+        policy: ActiveClusterSelectionPolicy = {
+            "cluster_attribute": {"scope": "region", "name": "us-east-1"},
+        }
         options = StartWorkflowOptions(
             task_list="test-task-list",
             execution_start_to_close_timeout=timedelta(minutes=10),
@@ -482,7 +482,14 @@ class TestClientBuildStartWorkflowRequest:
 
         request = client._build_start_workflow_request("TestWorkflow", (), options)
 
-        assert request.active_cluster_selection_policy == policy
+        assert request.HasField("active_cluster_selection_policy")
+        assert (
+            request.active_cluster_selection_policy.cluster_attribute.scope == "region"
+        )
+        assert (
+            request.active_cluster_selection_policy.cluster_attribute.name
+            == "us-east-1"
+        )
 
 
 class TestClientStartWorkflow:

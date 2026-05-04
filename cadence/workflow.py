@@ -36,13 +36,13 @@ class RetryPolicy(TypedDict, total=False):
     expiration_interval: timedelta
 
 
-class ClusterAttribute(TypedDict):
+class ClusterAttribute(TypedDict, total=False):
     scope: str
     name: str
 
 
-class ActiveClusterSelectionPolicy:
-    ClusterAttribute: ClusterAttribute
+class ActiveClusterSelectionPolicy(TypedDict, total=False):
+    cluster_attribute: ClusterAttribute
 
 
 class ActivityOptions(TypedDict, total=False):

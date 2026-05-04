@@ -11,6 +11,9 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
+from cadence._internal.workflow.active_cluster_selection_policy import (
+    active_cluster_selection_policy_to_proto,
+)
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
@@ -24,16 +27,16 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionRequest,
     SignalWithStartWorkflowExecutionResponse,
 )
-from cadence.api.v1.common_pb2 import (
-    ActiveClusterSelectionPolicy,
-    WorkflowType,
-    WorkflowExecution,
-)
+from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
-from cadence.workflow import RetryPolicy, WorkflowDefinition
+from cadence.workflow import (
+    ActiveClusterSelectionPolicy,
+    RetryPolicy,
+    WorkflowDefinition,
+)
 
 
 class StartWorkflowOptions(TypedDict, total=False):
@@ -275,11 +278,11 @@ class Client:
         if retry_proto is not None:
             request.retry_policy.CopyFrom(retry_proto)
 
-        active_cluster_selection_policy = options.get("active_cluster_selection_policy")
-        if active_cluster_selection_policy is not None:
-            request.active_cluster_selection_policy.CopyFrom(
-                active_cluster_selection_policy
-            )
+        acsp_proto = active_cluster_selection_policy_to_proto(
+            options.get("active_cluster_selection_policy")
+        )
+        if acsp_proto is not None:
+            request.active_cluster_selection_policy.CopyFrom(acsp_proto)
 
         return request
 

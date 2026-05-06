@@ -75,6 +75,11 @@ jobs:
       - name: Run unit tests
         run: |
           uv run pytest -v
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: cadence-workflow/cadence-python-client
 
   integration_test:
     name: Integration Tests

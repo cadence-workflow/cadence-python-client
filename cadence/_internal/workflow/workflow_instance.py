@@ -96,6 +96,34 @@ class WorkflowInstance:
         if inspect.iscoroutine(result):
             await result
 
+    def handle_query(self, query_type: str, query_args: Payload) -> Payload:
+        """Execute a query handler and return the serialized result.
+
+        The query runs synchronously against the current workflow state
+        (after replay has caught up). It must not mutate state.
+
+        Args:
+            query_type: The registered query type name.
+            query_args: Serialized query arguments.
+
+        Returns:
+            Serialized query result as a Payload.
+
+        Raises:
+            ValueError: If the query type is not registered.
+            Exception: If the query handler raises.
+        """
+        query_def = self._definition.queries.get(query_type)
+        if query_def is None:
+            raise ValueError(
+                f"Unknown query type '{query_type}'. "
+                f"Known types: {list(self._definition.queries.keys())}"
+            )
+
+        args = query_def.params_from_payload(self._data_converter, query_args)
+        result = query_def(self._instance, *args)
+        return self._data_converter.to_data([result])
+
     def _on_signal_task_done(self, task: Task[Any], signal_name: str) -> None:
         self._signal_tasks.discard(task)
         if task.cancelled():

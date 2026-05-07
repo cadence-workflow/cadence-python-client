@@ -20,7 +20,14 @@ from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 import grpc.aio
 from grpc.aio import Channel, ClientInterceptor
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
+from cadence.api.v1.query_pb2 import (
+    QueryRejectCondition,
+    QueryConsistencyLevel,
+    WorkflowQuery,
+)
 from cadence.api.v1.service_workflow_pb2 import (
+    QueryWorkflowRequest,
+    QueryWorkflowResponse,
     SignalWorkflowExecutionRequest,
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
@@ -375,6 +382,82 @@ class Client:
             signal_request.signal_input.CopyFrom(signal_payload)
 
         await self.workflow_stub.SignalWorkflowExecution(signal_request)
+
+    async def query_workflow(
+        self,
+        workflow_id: str,
+        run_id: str,
+        query_type: str,
+        *query_args: Any,
+        result_type: type = object,
+        query_reject_condition: QueryRejectCondition | None = None,
+        query_consistency_level: QueryConsistencyLevel | None = None,
+    ) -> Any:
+        """
+        Query a running workflow execution's state.
+
+        Queries do not affect workflow execution. They invoke a registered
+        query handler on the workflow and return the result.
+
+        Args:
+            workflow_id: The workflow ID to query.
+            run_id: The run ID (can be empty string to query the current run).
+            query_type: Name of the query type (must match a @workflow.query handler).
+            *query_args: Arguments to pass to the query handler.
+            result_type: The expected return type for deserialization.
+            query_reject_condition: Optional condition to reject the query.
+            query_consistency_level: Optional consistency level for the query.
+
+        Returns:
+            The deserialized query result.
+
+        Raises:
+            ValueError: If query encoding fails.
+            QueryFailedError: If the query was rejected or failed.
+            Exception: If the gRPC call fails.
+        """
+        query_payload = None
+        if query_args:
+            try:
+                query_payload = self.data_converter.to_data(list(query_args))
+            except Exception as e:
+                raise ValueError(f"Failed to encode query arguments: {e}")
+
+        workflow_execution = WorkflowExecution()
+        workflow_execution.workflow_id = workflow_id
+        if run_id:
+            workflow_execution.run_id = run_id
+
+        wf_query = WorkflowQuery(query_type=query_type)
+        if query_payload:
+            wf_query.query_args.CopyFrom(query_payload)
+
+        request = QueryWorkflowRequest(
+            domain=self.domain,
+            workflow_execution=workflow_execution,
+            query=wf_query,
+        )
+
+        if query_reject_condition is not None:
+            request.query_reject_condition = query_reject_condition
+        if query_consistency_level is not None:
+            request.query_consistency_level = query_consistency_level
+
+        response: QueryWorkflowResponse = await self.workflow_stub.QueryWorkflow(
+            request
+        )
+
+        if response.HasField("query_rejected"):
+            from cadence.error import QueryFailedError
+            import grpc
+
+            raise QueryFailedError(
+                f"Query rejected: close_status={response.query_rejected.close_status}",
+                grpc.StatusCode.INVALID_ARGUMENT,
+            )
+
+        results = self.data_converter.from_data(response.query_result, [result_type])
+        return results[0] if results else None
 
     async def signal_with_start_workflow(
         self,

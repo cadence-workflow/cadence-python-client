@@ -1,7 +1,7 @@
 import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatchmethod
 from typing import List, Optional
 
@@ -25,6 +25,12 @@ from cadence.api.v1.history_pb2 import (
     WorkflowExecutionSignaledEventAttributes,
     WorkflowExecutionStartedEventAttributes,
 )
+from cadence.api.v1.query_pb2 import (
+    WorkflowQuery,
+    WorkflowQueryResult,
+    QUERY_RESULT_TYPE_ANSWERED,
+    QUERY_RESULT_TYPE_FAILED,
+)
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
@@ -35,6 +41,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DecisionResult:
     decisions: list[Decision]
+    query_results: dict[str, WorkflowQueryResult] = field(default_factory=dict)
 
 
 class WorkflowEngine:
@@ -51,6 +58,7 @@ class WorkflowEngine:
     def process_decision(
         self,
         events: List[HistoryEvent],
+        queries: Optional[dict[str, WorkflowQuery]] = None,
     ) -> DecisionResult:
         """
         Process a decision task and generate decisions using DecisionEventsIterator.
@@ -59,10 +67,11 @@ class WorkflowEngine:
         to drive the decision processing pipeline with proper replay handling.
 
         Args:
-            decision_task: The PollForDecisionTaskResponse from the service
+            events: The workflow history events.
+            queries: Optional inline queries to answer after replay (from task.queries).
 
         Returns:
-            DecisionResult containing the list of decisions
+            DecisionResult containing the list of decisions and query results
         """
         try:
             # Activate workflow context for the entire decision processing
@@ -86,7 +95,13 @@ class WorkflowEngine:
                 # Collect all pending decisions from state machines
                 decisions = self._decision_manager.collect_pending_decisions()
 
-                return DecisionResult(decisions=decisions)
+                # Execute inline queries after replay (workflow state is now current)
+                query_results: dict[str, WorkflowQueryResult] = {}
+                if queries:
+                    for query_id, wf_query in queries.items():
+                        query_results[query_id] = self._execute_query(wf_query)
+
+                return DecisionResult(decisions=decisions, query_results=query_results)
 
         except Exception as e:
             # Log decision task failure with full context (matches Java ReplayDecisionTaskHandler)
@@ -102,6 +117,61 @@ class WorkflowEngine:
             )
             # Re-raise the exception so the handler can properly handle the failure
             raise
+
+    def execute_query(
+        self, query: WorkflowQuery, events: List[HistoryEvent]
+    ) -> WorkflowQueryResult:
+        """
+        Replay the workflow to the current state and execute a single query.
+
+        Used for the legacy query task path where PollForDecisionTaskResponse.query
+        is set. The worker replays history and then invokes the query handler.
+
+        Args:
+            query: The query to execute.
+            events: The full workflow history.
+
+        Returns:
+            WorkflowQueryResult with the query answer or error.
+        """
+        with self._context._activate() as ctx:
+            logger.info(
+                "Processing query task for workflow",
+                extra={
+                    "workflow_type": ctx.info().workflow_type,
+                    "workflow_id": ctx.info().workflow_id,
+                    "run_id": ctx.info().workflow_run_id,
+                    "query_type": query.query_type,
+                },
+            )
+
+            events_iterator = DecisionEventsIterator(events)
+            self._process_decision_events(ctx, events_iterator)
+            return self._execute_query(query)
+
+    def _execute_query(self, query: WorkflowQuery) -> WorkflowQueryResult:
+        """Execute a single query against the current workflow state."""
+        try:
+            result_payload = self._workflow_instance.handle_query(
+                query.query_type, query.query_args
+            )
+            return WorkflowQueryResult(
+                result_type=QUERY_RESULT_TYPE_ANSWERED,
+                answer=result_payload,
+            )
+        except Exception as e:
+            logger.warning(
+                "Query handler failed",
+                extra={
+                    "query_type": query.query_type,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                },
+            )
+            return WorkflowQueryResult(
+                result_type=QUERY_RESULT_TYPE_FAILED,
+                error_message=str(e),
+            )
 
     def is_done(self) -> bool:
         return self._workflow_instance.is_done()

@@ -5,7 +5,8 @@ import pytest
 
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1 import history, decision
-from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
+from cadence.error import ChildWorkflowError, StartChildWorkflowExecutionFailed
 
 
 async def test_activity_dispatch():
@@ -159,6 +160,174 @@ async def test_collection_decisions_reordering():
     ]
     assert activity1.done() is False
     assert activity2.done() is False
+
+
+async def test_child_workflow_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    execution, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        )
+    )
+
+    decisions.handle_history_event(
+        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
+    )
+    decisions.handle_history_event(
+        child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
+    )
+    decisions.handle_history_event(
+        child_wf_completed(3, started_event_id=1, result=Payload(data=b"done"))
+    )
+
+    assert execution.done() is True
+    assert execution.result() == WorkflowExecution(
+        workflow_id="child-wf-1", run_id="run-1"
+    )
+    assert result.done() is True
+    assert result.result() == Payload(data=b"done")
+
+
+async def test_child_workflow_initiation_failed_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    execution, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        )
+    )
+
+    decisions.handle_history_event(
+        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
+    )
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=2,
+            start_child_workflow_execution_failed_event_attributes=history.StartChildWorkflowExecutionFailedEventAttributes(
+                initiated_event_id=1,
+                workflow_id="child-wf-1",
+                workflow_type=WorkflowType(name="MyWorkflow"),
+            ),
+        )
+    )
+
+    assert execution.done() is True
+    assert result.done() is True
+    with pytest.raises(StartChildWorkflowExecutionFailed):
+        result.result()
+
+
+async def test_child_workflow_cancel_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    execution, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        )
+    )
+
+    decisions.handle_history_event(
+        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
+    )
+    decisions.handle_history_event(
+        child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
+    )
+
+    # Cancel the child workflow
+    result.cancel()
+
+    # cancel_initiated and cancel_failed are dispatched by workflow_execution.workflow_id
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=3,
+            request_cancel_external_workflow_execution_initiated_event_attributes=history.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes(
+                workflow_execution=WorkflowExecution(
+                    workflow_id="child-wf-1", run_id="run-1"
+                ),
+            ),
+        )
+    )
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=4,
+            request_cancel_external_workflow_execution_failed_event_attributes=history.RequestCancelExternalWorkflowExecutionFailedEventAttributes(
+                initiated_event_id=3,
+            ),
+        )
+    )
+
+    # Cancel failed — back to STARTED
+    assert result.done() is False
+
+
+async def test_child_workflow_errors_are_child_workflow_error():
+    """All child workflow errors share a common base class."""
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    _, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        )
+    )
+
+    decisions.handle_history_event(
+        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
+    )
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=2,
+            start_child_workflow_execution_failed_event_attributes=history.StartChildWorkflowExecutionFailedEventAttributes(
+                initiated_event_id=1,
+                workflow_id="child-wf-1",
+                workflow_type=WorkflowType(name="MyWorkflow"),
+            ),
+        )
+    )
+
+    assert result.done() is True
+    with pytest.raises(ChildWorkflowError):
+        result.result()
+
+
+def child_wf_initiated(
+    event_id: int, workflow_id: str, *, initiated_event_id: int
+) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        start_child_workflow_execution_initiated_event_attributes=history.StartChildWorkflowExecutionInitiatedEventAttributes(
+            workflow_id=workflow_id,
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+    )
+
+
+def child_wf_started(
+    event_id: int, *, started_event_id: int, wf_id: str, run_id: str
+) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        child_workflow_execution_started_event_attributes=history.ChildWorkflowExecutionStartedEventAttributes(
+            initiated_event_id=started_event_id,
+            workflow_execution=WorkflowExecution(workflow_id=wf_id, run_id=run_id),
+        ),
+    )
+
+
+def child_wf_completed(
+    event_id: int, *, started_event_id: int, result: Payload
+) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        child_workflow_execution_completed_event_attributes=history.ChildWorkflowExecutionCompletedEventAttributes(
+            initiated_event_id=started_event_id,
+            result=result,
+        ),
+    )
 
 
 def activity_scheduled(event_id: int, activity_id: str) -> history.HistoryEvent:

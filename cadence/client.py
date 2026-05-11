@@ -21,6 +21,7 @@ import grpc.aio
 from grpc.aio import Channel, ClientInterceptor
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.api.v1.service_workflow_pb2 import (
+    RequestCancelWorkflowExecutionRequest,
     SignalWorkflowExecutionRequest,
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
@@ -375,6 +376,35 @@ class Client:
             signal_request.signal_input.CopyFrom(signal_payload)
 
         await self.workflow_stub.SignalWorkflowExecution(signal_request)
+
+    async def request_cancel_workflow(
+        self,
+        workflow_id: str,
+        run_id: str,
+    ) -> None:
+        """
+        Request cancellation of a workflow execution.
+
+        Args:
+            workflow_id: The workflow ID
+            run_id: The run ID (can be empty string to cancel current run)
+
+        Raises:
+            Exception: If the gRPC call fails
+        """
+        workflow_execution = WorkflowExecution()
+        workflow_execution.workflow_id = workflow_id
+        if run_id:
+            workflow_execution.run_id = run_id
+
+        cancel_request = RequestCancelWorkflowExecutionRequest(
+            domain=self.domain,
+            workflow_execution=workflow_execution,
+            identity=self.identity,
+            request_id=str(uuid.uuid4()),
+        )
+
+        await self.workflow_stub.RequestCancelWorkflowExecution(cancel_request)
 
     async def signal_with_start_workflow(
         self,

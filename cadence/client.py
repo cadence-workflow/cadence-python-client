@@ -2,7 +2,7 @@ import os
 import socket
 import uuid
 from datetime import datetime, timedelta
-from typing import TypedDict, Unpack, Any, cast, Union
+from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
 from google.protobuf.duration_pb2 import Duration
@@ -11,6 +11,9 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
+from cadence._internal.workflow.active_cluster_selection_policy import (
+    active_cluster_selection_policy_to_proto,
+)
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
@@ -18,6 +21,7 @@ import grpc.aio
 from grpc.aio import Channel, ClientInterceptor
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
 from cadence.api.v1.service_workflow_pb2 import (
+    RequestCancelWorkflowExecutionRequest,
     SignalWorkflowExecutionRequest,
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
@@ -29,7 +33,11 @@ from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
-from cadence.workflow import RetryPolicy, WorkflowDefinition
+from cadence.workflow import (
+    ActiveClusterSelectionPolicy,
+    RetryPolicy,
+    WorkflowDefinition,
+)
 
 
 class StartWorkflowOptions(TypedDict, total=False):
@@ -46,6 +54,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     first_run_at: datetime
     workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
     retry_policy: RetryPolicy
+    active_cluster_selection_policy: ActiveClusterSelectionPolicy
 
 
 def _validate_and_apply_defaults(
@@ -270,6 +279,12 @@ class Client:
         if retry_proto is not None:
             request.retry_policy.CopyFrom(retry_proto)
 
+        acsp_proto = active_cluster_selection_policy_to_proto(
+            options.get("active_cluster_selection_policy")
+        )
+        if acsp_proto is not None:
+            request.active_cluster_selection_policy.CopyFrom(acsp_proto)
+
         return request
 
     async def start_workflow(
@@ -362,6 +377,35 @@ class Client:
 
         await self.workflow_stub.SignalWorkflowExecution(signal_request)
 
+    async def cancel_workflow(
+        self,
+        workflow_id: str,
+        run_id: str,
+    ) -> None:
+        """
+        Cancel a workflow execution.
+
+        Args:
+            workflow_id: The workflow ID
+            run_id: The run ID (can be empty string to cancel current run)
+
+        Raises:
+            Exception: If the gRPC call fails
+        """
+        workflow_execution = WorkflowExecution()
+        workflow_execution.workflow_id = workflow_id
+        if run_id:
+            workflow_execution.run_id = run_id
+
+        cancel_request = RequestCancelWorkflowExecutionRequest(
+            domain=self.domain,
+            workflow_execution=workflow_execution,
+            identity=self.identity,
+            request_id=str(uuid.uuid4()),
+        )
+
+        await self.workflow_stub.RequestCancelWorkflowExecution(cancel_request)
+
     async def signal_with_start_workflow(
         self,
         workflow: Union[str, WorkflowDefinition],
@@ -452,18 +496,21 @@ def _create_channel(options: ClientOptions) -> Channel:
     interceptors.append(RetryInterceptor())
     interceptors.append(CadenceErrorInterceptor())
 
+    channel_arguments = options.get("channel_arguments") or {}
+    grpc_channel_options: Sequence[tuple[str, Any]] = tuple(channel_arguments.items())
+
     if options["credentials"]:
         return grpc.aio.secure_channel(
             options["target"],
             options["credentials"],
-            options=options["channel_arguments"],
+            options=grpc_channel_options,
             compression=options["compression"],
             interceptors=interceptors,
         )
     else:
         return grpc.aio.insecure_channel(
             options["target"],
-            options=options["channel_arguments"],
+            options=grpc_channel_options,
             compression=options["compression"],
             interceptors=interceptors,
         )

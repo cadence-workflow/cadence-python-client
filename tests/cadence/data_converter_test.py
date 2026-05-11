@@ -58,11 +58,18 @@ class _TestDataClass:
         ),
         pytest.param("", [], [], id="no input expected"),
         pytest.param("", [str], [None], id="no input unexpected"),
+        pytest.param("", [Any], [None], id="no input unexpected any"),
         pytest.param(
             '"hello world" {"foo":"bar"} 7',
             [None, None, None],
             ["hello world", {"foo": "bar"}, 7],
             id="no type hints",
+        ),
+        pytest.param(
+            '"hello"',
+            [str, Any, None],
+            ["hello", None, None],
+            id="short input with untyped hints",
         ),
         pytest.param(
             '"hello" "world" "goodbye"',
@@ -73,7 +80,7 @@ class _TestDataClass:
     ],
 )
 def test_data_converter_from_data(
-    json: str, types: list[Type], expected: list[Any]
+    json: str, types: list[Type | None], expected: list[Any]
 ) -> None:
     converter = DefaultDataConverter()
     actual = converter.from_data(Payload(data=json.encode()), types)

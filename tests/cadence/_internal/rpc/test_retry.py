@@ -60,7 +60,7 @@ def test_next_delay(
 class FakeService(service_workflow_pb2_grpc.WorkflowAPIServicer):
     def __init__(self) -> None:
         super().__init__()
-        self.port = None
+        self.port: int | None = None
         self.counter = 0
 
     # Retryable only because it's GetWorkflowExecutionHistory

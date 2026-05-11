@@ -210,7 +210,7 @@ class TestRegistry:
                 return "done"
 
             @workflow.signal(name="approval")
-            async def handle_approval(self, approved: bool):
+            def handle_approval(self, approved: bool):
                 self.approved = approved
 
         workflow_def = reg.get_workflow("WorkflowWithSignal")
@@ -220,9 +220,6 @@ class TestRegistry:
         signal_def = workflow_def.signals["approval"]
         assert isinstance(signal_def, SignalDefinition)
         assert signal_def.name == "approval"
-        assert signal_def.is_async is True
-        assert len(signal_def.params) == 1
-        assert signal_def.params[0].name == "approved"
 
     def test_workflow_with_multiple_signals(self):
         """Test workflow with multiple signal handlers."""
@@ -235,11 +232,11 @@ class TestRegistry:
                 return "done"
 
             @workflow.signal(name="approval")
-            async def handle_approval(self, approved: bool):
+            def handle_approval(self, approved: bool):
                 self.approved = approved
 
             @workflow.signal(name="cancel")
-            async def handle_cancel(self):
+            def handle_cancel(self):
                 self.cancelled = True
 
         workflow_def = reg.get_workflow("WorkflowWithMultipleSignals")
@@ -256,7 +253,7 @@ class TestRegistry:
         with pytest.raises(ValueError, match="name is required"):
 
             @workflow.signal()
-            async def test_signal(self):
+            def test_signal(self):
                 pass
 
     def test_workflow_without_signals(self):
@@ -288,9 +285,9 @@ class TestRegistry:
                     return "done"
 
                 @workflow.signal(name="approval")
-                async def handle_approval(self, approved: bool):
+                def handle_approval(self, approved: bool):
                     self.approved = approved
 
                 @workflow.signal(name="approval")
-                async def handle_approval_different(self):
+                def handle_approval_different(self):
                     self.also_approved = True

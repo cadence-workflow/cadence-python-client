@@ -24,10 +24,12 @@ _sym_db = _symbol_database.Default()
 
 from google.protobuf import duration_pb2 as google_dot_protobuf_dot_duration__pb2
 from google.protobuf import field_mask_pb2 as google_dot_protobuf_dot_field__mask__pb2
+from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
+from cadence.api.v1 import common_pb2 as cadence_dot_api_dot_v1_dot_common__pb2
 from cadence.api.v1 import domain_pb2 as cadence_dot_api_dot_v1_dot_domain__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#cadence/api/v1/service_domain.proto\x12\x13uber.cadence.api.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1b\x63\x61\x64\x65nce/api/v1/domain.proto\"\x97\x06\n\x15RegisterDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x13\n\x0bowner_email\x18\x04 \x01(\t\x12\x46\n#workflow_execution_retention_period\x18\x05 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x46\n\x08\x63lusters\x18\x06 \x03(\x0b\x32\x34.uber.cadence.api.v1.ClusterReplicationConfiguration\x12\x1b\n\x13\x61\x63tive_cluster_name\x18\x07 \x01(\t\x12\x42\n\x04\x64\x61ta\x18\x08 \x03(\x0b\x32\x34.uber.cadence.api.v1.RegisterDomainRequest.DataEntry\x12\x18\n\x10is_global_domain\x18\t \x01(\x08\x12\x44\n\x17history_archival_status\x18\n \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1c\n\x14history_archival_uri\x18\x0b \x01(\t\x12G\n\x1avisibility_archival_status\x18\x0c \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1f\n\x17visibility_archival_uri\x18\r \x01(\t\x12i\n\x19\x61\x63tive_clusters_by_region\x18\x0e \x03(\x0b\x32\x46.uber.cadence.api.v1.RegisterDomainRequest.ActiveClustersByRegionEntry\x1a+\n\tDataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a=\n\x1b\x41\x63tiveClustersByRegionEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x18\n\x16RegisterDomainResponse\"\xc6\x06\n\x13UpdateDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12/\n\x0bupdate_mask\x18\n \x01(\x0b\x32\x1a.google.protobuf.FieldMask\x12\x13\n\x0b\x64\x65scription\x18\x0b \x01(\t\x12\x13\n\x0bowner_email\x18\x0c \x01(\t\x12@\n\x04\x64\x61ta\x18\r \x03(\x0b\x32\x32.uber.cadence.api.v1.UpdateDomainRequest.DataEntry\x12\x46\n#workflow_execution_retention_period\x18\x0e \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x36\n\x0c\x62\x61\x64_binaries\x18\x0f \x01(\x0b\x32 .uber.cadence.api.v1.BadBinaries\x12\x44\n\x17history_archival_status\x18\x10 \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1c\n\x14history_archival_uri\x18\x11 \x01(\t\x12G\n\x1avisibility_archival_status\x18\x12 \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1f\n\x17visibility_archival_uri\x18\x13 \x01(\t\x12\x1b\n\x13\x61\x63tive_cluster_name\x18\x14 \x01(\t\x12\x46\n\x08\x63lusters\x18\x15 \x03(\x0b\x32\x34.uber.cadence.api.v1.ClusterReplicationConfiguration\x12\x19\n\x11\x64\x65lete_bad_binary\x18\x16 \x01(\t\x12\x33\n\x10\x66\x61ilover_timeout\x18\x17 \x01(\x0b\x32\x19.google.protobuf.Duration\x12<\n\x0f\x61\x63tive_clusters\x18\x18 \x01(\x0b\x32#.uber.cadence.api.v1.ActiveClusters\x1a+\n\tDataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"C\n\x14UpdateDomainResponse\x12+\n\x06\x64omain\x18\x01 \x01(\x0b\x32\x1b.uber.cadence.api.v1.Domain\">\n\x16\x44\x65precateDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\x19\n\x17\x44\x65precateDomainResponse\";\n\x13\x44\x65leteDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\x16\n\x14\x44\x65leteDomainResponse\"D\n\x15\x44\x65scribeDomainRequest\x12\x0c\n\x02id\x18\x01 \x01(\tH\x00\x12\x0e\n\x04name\x18\x02 \x01(\tH\x00\x42\r\n\x0b\x64\x65scribe_by\"E\n\x16\x44\x65scribeDomainResponse\x12+\n\x06\x64omain\x18\x01 \x01(\x0b\x32\x1b.uber.cadence.api.v1.Domain\"@\n\x12ListDomainsRequest\x12\x11\n\tpage_size\x18\x01 \x01(\x05\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\x0c\"\\\n\x13ListDomainsResponse\x12,\n\x07\x64omains\x18\x01 \x03(\x0b\x32\x1b.uber.cadence.api.v1.Domain\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\x0c\x32\xfb\x04\n\tDomainAPI\x12i\n\x0eRegisterDomain\x12*.uber.cadence.api.v1.RegisterDomainRequest\x1a+.uber.cadence.api.v1.RegisterDomainResponse\x12i\n\x0e\x44\x65scribeDomain\x12*.uber.cadence.api.v1.DescribeDomainRequest\x1a+.uber.cadence.api.v1.DescribeDomainResponse\x12`\n\x0bListDomains\x12\'.uber.cadence.api.v1.ListDomainsRequest\x1a(.uber.cadence.api.v1.ListDomainsResponse\x12\x63\n\x0cUpdateDomain\x12(.uber.cadence.api.v1.UpdateDomainRequest\x1a).uber.cadence.api.v1.UpdateDomainResponse\x12l\n\x0f\x44\x65precateDomain\x12+.uber.cadence.api.v1.DeprecateDomainRequest\x1a,.uber.cadence.api.v1.DeprecateDomainResponse\x12\x63\n\x0c\x44\x65leteDomain\x12(.uber.cadence.api.v1.DeleteDomainRequest\x1a).uber.cadence.api.v1.DeleteDomainResponseBb\n\x17\x63om.uber.cadence.api.v1B\x12\x44omainServiceProtoP\x01Z1github.com/uber/cadence-idl/go/proto/api/v1;apiv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#cadence/api/v1/service_domain.proto\x12\x13uber.cadence.api.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1b\x63\x61\x64\x65nce/api/v1/common.proto\x1a\x1b\x63\x61\x64\x65nce/api/v1/domain.proto\"\xd9\x06\n\x15RegisterDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x13\n\x0bowner_email\x18\x04 \x01(\t\x12\x46\n#workflow_execution_retention_period\x18\x05 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x46\n\x08\x63lusters\x18\x06 \x03(\x0b\x32\x34.uber.cadence.api.v1.ClusterReplicationConfiguration\x12\x1b\n\x13\x61\x63tive_cluster_name\x18\x07 \x01(\t\x12\x42\n\x04\x64\x61ta\x18\x08 \x03(\x0b\x32\x34.uber.cadence.api.v1.RegisterDomainRequest.DataEntry\x12\x18\n\x10is_global_domain\x18\t \x01(\x08\x12\x44\n\x17history_archival_status\x18\n \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1c\n\x14history_archival_uri\x18\x0b \x01(\t\x12G\n\x1avisibility_archival_status\x18\x0c \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1f\n\x17visibility_archival_uri\x18\r \x01(\t\x12m\n\x19\x61\x63tive_clusters_by_region\x18\x0e \x03(\x0b\x32\x46.uber.cadence.api.v1.RegisterDomainRequest.ActiveClustersByRegionEntryB\x02\x18\x01\x12<\n\x0f\x61\x63tive_clusters\x18\x0f \x01(\x0b\x32#.uber.cadence.api.v1.ActiveClusters\x1a+\n\tDataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a=\n\x1b\x41\x63tiveClustersByRegionEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x18\n\x16RegisterDomainResponse\"\xc6\x06\n\x13UpdateDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12/\n\x0bupdate_mask\x18\n \x01(\x0b\x32\x1a.google.protobuf.FieldMask\x12\x13\n\x0b\x64\x65scription\x18\x0b \x01(\t\x12\x13\n\x0bowner_email\x18\x0c \x01(\t\x12@\n\x04\x64\x61ta\x18\r \x03(\x0b\x32\x32.uber.cadence.api.v1.UpdateDomainRequest.DataEntry\x12\x46\n#workflow_execution_retention_period\x18\x0e \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x36\n\x0c\x62\x61\x64_binaries\x18\x0f \x01(\x0b\x32 .uber.cadence.api.v1.BadBinaries\x12\x44\n\x17history_archival_status\x18\x10 \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1c\n\x14history_archival_uri\x18\x11 \x01(\t\x12G\n\x1avisibility_archival_status\x18\x12 \x01(\x0e\x32#.uber.cadence.api.v1.ArchivalStatus\x12\x1f\n\x17visibility_archival_uri\x18\x13 \x01(\t\x12\x1b\n\x13\x61\x63tive_cluster_name\x18\x14 \x01(\t\x12\x46\n\x08\x63lusters\x18\x15 \x03(\x0b\x32\x34.uber.cadence.api.v1.ClusterReplicationConfiguration\x12\x19\n\x11\x64\x65lete_bad_binary\x18\x16 \x01(\t\x12\x33\n\x10\x66\x61ilover_timeout\x18\x17 \x01(\x0b\x32\x19.google.protobuf.Duration\x12<\n\x0f\x61\x63tive_clusters\x18\x18 \x01(\x0b\x32#.uber.cadence.api.v1.ActiveClusters\x1a+\n\tDataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"C\n\x14UpdateDomainResponse\x12+\n\x06\x64omain\x18\x01 \x01(\x0b\x32\x1b.uber.cadence.api.v1.Domain\"\x9e\x01\n\x15\x46\x61iloverDomainRequest\x12\x13\n\x0b\x64omain_name\x18\x01 \x01(\t\x12\"\n\x1a\x64omain_active_cluster_name\x18\n \x01(\t\x12<\n\x0f\x61\x63tive_clusters\x18\x1e \x01(\x0b\x32#.uber.cadence.api.v1.ActiveClusters\x12\x0e\n\x06reason\x18( \x01(\t\"E\n\x16\x46\x61iloverDomainResponse\x12+\n\x06\x64omain\x18\x01 \x01(\x0b\x32\x1b.uber.cadence.api.v1.Domain\">\n\x16\x44\x65precateDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\x19\n\x17\x44\x65precateDomainResponse\";\n\x13\x44\x65leteDomainRequest\x12\x16\n\x0esecurity_token\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\x16\n\x14\x44\x65leteDomainResponse\"D\n\x15\x44\x65scribeDomainRequest\x12\x0c\n\x02id\x18\x01 \x01(\tH\x00\x12\x0e\n\x04name\x18\x02 \x01(\tH\x00\x42\r\n\x0b\x64\x65scribe_by\"E\n\x16\x44\x65scribeDomainResponse\x12+\n\x06\x64omain\x18\x01 \x01(\x0b\x32\x1b.uber.cadence.api.v1.Domain\"@\n\x12ListDomainsRequest\x12\x11\n\tpage_size\x18\x01 \x01(\x05\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\x0c\"\\\n\x13ListDomainsResponse\x12,\n\x07\x64omains\x18\x01 \x03(\x0b\x32\x1b.uber.cadence.api.v1.Domain\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\x0c\"\xa1\x01\n\x1aListFailoverHistoryRequest\x12G\n\x07\x66ilters\x18\x01 \x01(\x0b\x32\x36.uber.cadence.api.v1.ListFailoverHistoryRequestFilters\x12:\n\npagination\x18\x02 \x01(\x0b\x32&.uber.cadence.api.v1.PaginationOptions\"6\n!ListFailoverHistoryRequestFilters\x12\x11\n\tdomain_id\x18\x01 \x01(\t\"s\n\x1bListFailoverHistoryResponse\x12;\n\x0f\x66\x61ilover_events\x18\x01 \x03(\x0b\x32\".uber.cadence.api.v1.FailoverEvent\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\x0c\"\xc8\x01\n\rFailoverEvent\x12\n\n\x02id\x18\x01 \x01(\t\x12\x30\n\x0c\x63reated_time\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x38\n\rfailover_type\x18\x03 \x01(\x0e\x32!.uber.cadence.api.v1.FailoverType\x12?\n\x11\x63luster_failovers\x18\x04 \x03(\x0b\x32$.uber.cadence.api.v1.ClusterFailover\"\xcd\x01\n\x0f\x43lusterFailover\x12<\n\x0c\x66rom_cluster\x18\x01 \x01(\x0b\x32&.uber.cadence.api.v1.ActiveClusterInfo\x12:\n\nto_cluster\x18\x02 \x01(\x0b\x32&.uber.cadence.api.v1.ActiveClusterInfo\x12@\n\x11\x63luster_attribute\x18\x03 \x01(\x0b\x32%.uber.cadence.api.v1.ClusterAttribute2\xe0\x06\n\tDomainAPI\x12i\n\x0eRegisterDomain\x12*.uber.cadence.api.v1.RegisterDomainRequest\x1a+.uber.cadence.api.v1.RegisterDomainResponse\x12i\n\x0e\x44\x65scribeDomain\x12*.uber.cadence.api.v1.DescribeDomainRequest\x1a+.uber.cadence.api.v1.DescribeDomainResponse\x12`\n\x0bListDomains\x12\'.uber.cadence.api.v1.ListDomainsRequest\x1a(.uber.cadence.api.v1.ListDomainsResponse\x12\x63\n\x0cUpdateDomain\x12(.uber.cadence.api.v1.UpdateDomainRequest\x1a).uber.cadence.api.v1.UpdateDomainResponse\x12i\n\x0e\x46\x61iloverDomain\x12*.uber.cadence.api.v1.FailoverDomainRequest\x1a+.uber.cadence.api.v1.FailoverDomainResponse\x12l\n\x0f\x44\x65precateDomain\x12+.uber.cadence.api.v1.DeprecateDomainRequest\x1a,.uber.cadence.api.v1.DeprecateDomainResponse\x12\x63\n\x0c\x44\x65leteDomain\x12(.uber.cadence.api.v1.DeleteDomainRequest\x1a).uber.cadence.api.v1.DeleteDomainResponse\x12x\n\x13ListFailoverHistory\x12/.uber.cadence.api.v1.ListFailoverHistoryRequest\x1a\x30.uber.cadence.api.v1.ListFailoverHistoryResponseBb\n\x17\x63om.uber.cadence.api.v1B\x12\x44omainServiceProtoP\x01Z1github.com/uber/cadence-idl/go/proto/api/v1;apiv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -39,38 +41,54 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_REGISTERDOMAINREQUEST_DATAENTRY']._serialized_options = b'8\001'
   _globals['_REGISTERDOMAINREQUEST_ACTIVECLUSTERSBYREGIONENTRY']._loaded_options = None
   _globals['_REGISTERDOMAINREQUEST_ACTIVECLUSTERSBYREGIONENTRY']._serialized_options = b'8\001'
+  _globals['_REGISTERDOMAINREQUEST'].fields_by_name['active_clusters_by_region']._loaded_options = None
+  _globals['_REGISTERDOMAINREQUEST'].fields_by_name['active_clusters_by_region']._serialized_options = b'\030\001'
   _globals['_UPDATEDOMAINREQUEST_DATAENTRY']._loaded_options = None
   _globals['_UPDATEDOMAINREQUEST_DATAENTRY']._serialized_options = b'8\001'
-  _globals['_REGISTERDOMAINREQUEST']._serialized_start=156
-  _globals['_REGISTERDOMAINREQUEST']._serialized_end=947
-  _globals['_REGISTERDOMAINREQUEST_DATAENTRY']._serialized_start=841
-  _globals['_REGISTERDOMAINREQUEST_DATAENTRY']._serialized_end=884
-  _globals['_REGISTERDOMAINREQUEST_ACTIVECLUSTERSBYREGIONENTRY']._serialized_start=886
-  _globals['_REGISTERDOMAINREQUEST_ACTIVECLUSTERSBYREGIONENTRY']._serialized_end=947
-  _globals['_REGISTERDOMAINRESPONSE']._serialized_start=949
-  _globals['_REGISTERDOMAINRESPONSE']._serialized_end=973
-  _globals['_UPDATEDOMAINREQUEST']._serialized_start=976
-  _globals['_UPDATEDOMAINREQUEST']._serialized_end=1814
-  _globals['_UPDATEDOMAINREQUEST_DATAENTRY']._serialized_start=841
-  _globals['_UPDATEDOMAINREQUEST_DATAENTRY']._serialized_end=884
-  _globals['_UPDATEDOMAINRESPONSE']._serialized_start=1816
-  _globals['_UPDATEDOMAINRESPONSE']._serialized_end=1883
-  _globals['_DEPRECATEDOMAINREQUEST']._serialized_start=1885
-  _globals['_DEPRECATEDOMAINREQUEST']._serialized_end=1947
-  _globals['_DEPRECATEDOMAINRESPONSE']._serialized_start=1949
-  _globals['_DEPRECATEDOMAINRESPONSE']._serialized_end=1974
-  _globals['_DELETEDOMAINREQUEST']._serialized_start=1976
-  _globals['_DELETEDOMAINREQUEST']._serialized_end=2035
-  _globals['_DELETEDOMAINRESPONSE']._serialized_start=2037
-  _globals['_DELETEDOMAINRESPONSE']._serialized_end=2059
-  _globals['_DESCRIBEDOMAINREQUEST']._serialized_start=2061
-  _globals['_DESCRIBEDOMAINREQUEST']._serialized_end=2129
-  _globals['_DESCRIBEDOMAINRESPONSE']._serialized_start=2131
-  _globals['_DESCRIBEDOMAINRESPONSE']._serialized_end=2200
-  _globals['_LISTDOMAINSREQUEST']._serialized_start=2202
-  _globals['_LISTDOMAINSREQUEST']._serialized_end=2266
-  _globals['_LISTDOMAINSRESPONSE']._serialized_start=2268
-  _globals['_LISTDOMAINSRESPONSE']._serialized_end=2360
-  _globals['_DOMAINAPI']._serialized_start=2363
-  _globals['_DOMAINAPI']._serialized_end=2998
+  _globals['_REGISTERDOMAINREQUEST']._serialized_start=218
+  _globals['_REGISTERDOMAINREQUEST']._serialized_end=1075
+  _globals['_REGISTERDOMAINREQUEST_DATAENTRY']._serialized_start=969
+  _globals['_REGISTERDOMAINREQUEST_DATAENTRY']._serialized_end=1012
+  _globals['_REGISTERDOMAINREQUEST_ACTIVECLUSTERSBYREGIONENTRY']._serialized_start=1014
+  _globals['_REGISTERDOMAINREQUEST_ACTIVECLUSTERSBYREGIONENTRY']._serialized_end=1075
+  _globals['_REGISTERDOMAINRESPONSE']._serialized_start=1077
+  _globals['_REGISTERDOMAINRESPONSE']._serialized_end=1101
+  _globals['_UPDATEDOMAINREQUEST']._serialized_start=1104
+  _globals['_UPDATEDOMAINREQUEST']._serialized_end=1942
+  _globals['_UPDATEDOMAINREQUEST_DATAENTRY']._serialized_start=969
+  _globals['_UPDATEDOMAINREQUEST_DATAENTRY']._serialized_end=1012
+  _globals['_UPDATEDOMAINRESPONSE']._serialized_start=1944
+  _globals['_UPDATEDOMAINRESPONSE']._serialized_end=2011
+  _globals['_FAILOVERDOMAINREQUEST']._serialized_start=2014
+  _globals['_FAILOVERDOMAINREQUEST']._serialized_end=2172
+  _globals['_FAILOVERDOMAINRESPONSE']._serialized_start=2174
+  _globals['_FAILOVERDOMAINRESPONSE']._serialized_end=2243
+  _globals['_DEPRECATEDOMAINREQUEST']._serialized_start=2245
+  _globals['_DEPRECATEDOMAINREQUEST']._serialized_end=2307
+  _globals['_DEPRECATEDOMAINRESPONSE']._serialized_start=2309
+  _globals['_DEPRECATEDOMAINRESPONSE']._serialized_end=2334
+  _globals['_DELETEDOMAINREQUEST']._serialized_start=2336
+  _globals['_DELETEDOMAINREQUEST']._serialized_end=2395
+  _globals['_DELETEDOMAINRESPONSE']._serialized_start=2397
+  _globals['_DELETEDOMAINRESPONSE']._serialized_end=2419
+  _globals['_DESCRIBEDOMAINREQUEST']._serialized_start=2421
+  _globals['_DESCRIBEDOMAINREQUEST']._serialized_end=2489
+  _globals['_DESCRIBEDOMAINRESPONSE']._serialized_start=2491
+  _globals['_DESCRIBEDOMAINRESPONSE']._serialized_end=2560
+  _globals['_LISTDOMAINSREQUEST']._serialized_start=2562
+  _globals['_LISTDOMAINSREQUEST']._serialized_end=2626
+  _globals['_LISTDOMAINSRESPONSE']._serialized_start=2628
+  _globals['_LISTDOMAINSRESPONSE']._serialized_end=2720
+  _globals['_LISTFAILOVERHISTORYREQUEST']._serialized_start=2723
+  _globals['_LISTFAILOVERHISTORYREQUEST']._serialized_end=2884
+  _globals['_LISTFAILOVERHISTORYREQUESTFILTERS']._serialized_start=2886
+  _globals['_LISTFAILOVERHISTORYREQUESTFILTERS']._serialized_end=2940
+  _globals['_LISTFAILOVERHISTORYRESPONSE']._serialized_start=2942
+  _globals['_LISTFAILOVERHISTORYRESPONSE']._serialized_end=3057
+  _globals['_FAILOVEREVENT']._serialized_start=3060
+  _globals['_FAILOVEREVENT']._serialized_end=3260
+  _globals['_CLUSTERFAILOVER']._serialized_start=3263
+  _globals['_CLUSTERFAILOVER']._serialized_end=3468
+  _globals['_DOMAINAPI']._serialized_start=3471
+  _globals['_DOMAINAPI']._serialized_end=4335
 # @@protoc_insertion_point(module_scope)

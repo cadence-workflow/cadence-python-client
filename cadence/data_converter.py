@@ -50,25 +50,37 @@ class DefaultDataConverter(DataConverter):
 
         return DefaultDataConverter._convert_into(results, type_hints)
 
+    def _payload_value_count(self, payload: Payload, max_count: int) -> int:
+        if not payload.data or max_count <= 0:
+            return 0
+
+        payload_str = payload.data.decode()
+        count = 0
+        start, end = 0, len(payload_str)
+        while start < end and count < max_count:
+            _, value_end = self._decoder.raw_decode(payload_str[start:end])
+            start += value_end + 1
+            count += 1
+
+        return count
+
     @staticmethod
     def _convert_into(
         values: List[Any], type_hints: Sequence[Type | None]
     ) -> List[Any]:
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
-            if not type_hint or type_hint is Any:
+            if i < len(values):
                 value = values[i]
-            elif i < len(values):
-                value = convert(values[i], type_hint)
+                if type_hint and type_hint is not Any:
+                    value = convert(value, type_hint)
             else:
                 value = DefaultDataConverter._get_default(type_hint)
-
             results.append(value)
-
         return results
 
     @staticmethod
-    def _get_default(type_hint: Type) -> Any:
+    def _get_default(type_hint: Type | None) -> Any:
         if type_hint in (int, float):
             return 0
         if type_hint is bool:

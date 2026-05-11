@@ -198,6 +198,13 @@ async def test_signal_workflow(helper: CadenceHelper):
             signal_event.workflow_execution_signaled_event_attributes.signal_name
             == signal_name
         ), f"Expected signal name '{signal_name}'"
+        signal_payload_data = signal_event.workflow_execution_signaled_event_attributes.input.data.decode()
+        assert signal_arg["action"] in signal_payload_data, (
+            f"Expected signal payload to contain '{signal_arg['action']}'"
+        )
+        assert str(signal_arg["value"]) in signal_payload_data, (
+            f"Expected signal payload to contain '{signal_arg['value']}'"
+        )
 
 
 @pytest.mark.usefixtures("helper")

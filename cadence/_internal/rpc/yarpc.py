@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from grpc.aio import Metadata
 from grpc.aio import UnaryUnaryClientInterceptor, ClientCallDetails
@@ -40,6 +40,9 @@ class YarpcMetadataInterceptor(UnaryUnaryClientInterceptor):
 
         # Namedtuple methods start with an underscore to avoid conflicts and aren't actually private
         # noinspection PyProtectedMember
-        return client_call_details._replace(
-            metadata=metadata, timeout=client_call_details.timeout or 60.0
+        return cast(
+            ClientCallDetails,
+            client_call_details._replace(  # type: ignore[attr-defined]
+                metadata=metadata, timeout=client_call_details.timeout or 60.0
+            ),
         )

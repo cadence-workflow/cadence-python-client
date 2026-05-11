@@ -1,8 +1,10 @@
 from contextlib import contextmanager
+from asyncio import get_running_loop
 from datetime import timedelta
 from math import ceil
-from typing import Iterator, Optional, Any, Unpack, Type, cast
+from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1.common_pb2 import ActivityType
@@ -96,9 +98,8 @@ class Context(WorkflowContext):
             request_local_dispatch=False,
         )
 
-        result_payload = await self._decision_manager.schedule_activity(
-            schedule_attributes
-        )
+        future = self._decision_manager.schedule_activity(schedule_attributes)
+        result_payload = await future
 
         result = self.data_converter().from_data(result_payload, [result_type])[0]
 
@@ -107,11 +108,12 @@ class Context(WorkflowContext):
     async def start_timer(self, duration: timedelta):
         if duration.total_seconds() <= 0:  # shortcut
             return
-        await self._decision_manager.start_timer(
+        future = self._decision_manager.start_timer(
             StartTimerDecisionAttributes(
                 start_to_fire_timeout=duration,
             )
         )
+        await future
 
     def set_replay_mode(self, replay: bool) -> None:
         """Set whether the workflow is currently in replay mode."""
@@ -129,11 +131,17 @@ class Context(WorkflowContext):
         """Get the current replay time in milliseconds."""
         return self._replay_current_time_milliseconds
 
+    async def wait_condition(self, predicate: Callable[[], bool]) -> None:
+        loop = cast(DeterministicEventLoop, get_running_loop())
+        await loop.create_waiter(predicate)
+
     @contextmanager
     def _activate(self) -> Iterator["Context"]:
         token = WorkflowContext._var.set(self)
-        yield self
-        WorkflowContext._var.reset(token)
+        try:
+            yield self
+        finally:
+            WorkflowContext._var.reset(token)
 
 
 def _round_to_nearest_second(delta: timedelta) -> timedelta:

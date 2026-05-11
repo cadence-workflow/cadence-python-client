@@ -446,7 +446,7 @@ class CancelTimerFailedEventAttributes(_message.Message):
     def __init__(self, timer_id: _Optional[str] = ..., cause: _Optional[str] = ..., decision_task_completed_event_id: _Optional[int] = ..., identity: _Optional[str] = ...) -> None: ...
 
 class WorkflowExecutionContinuedAsNewEventAttributes(_message.Message):
-    __slots__ = ("new_execution_run_id", "workflow_type", "task_list", "input", "execution_start_to_close_timeout", "task_start_to_close_timeout", "decision_task_completed_event_id", "backoff_start_interval", "initiator", "failure", "last_completion_result", "header", "memo", "search_attributes")
+    __slots__ = ("new_execution_run_id", "workflow_type", "task_list", "input", "execution_start_to_close_timeout", "task_start_to_close_timeout", "decision_task_completed_event_id", "backoff_start_interval", "initiator", "failure", "last_completion_result", "header", "memo", "search_attributes", "cron_overlap_policy", "active_cluster_selection_policy")
     NEW_EXECUTION_RUN_ID_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_TYPE_FIELD_NUMBER: _ClassVar[int]
     TASK_LIST_FIELD_NUMBER: _ClassVar[int]
@@ -461,6 +461,8 @@ class WorkflowExecutionContinuedAsNewEventAttributes(_message.Message):
     HEADER_FIELD_NUMBER: _ClassVar[int]
     MEMO_FIELD_NUMBER: _ClassVar[int]
     SEARCH_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
+    CRON_OVERLAP_POLICY_FIELD_NUMBER: _ClassVar[int]
+    ACTIVE_CLUSTER_SELECTION_POLICY_FIELD_NUMBER: _ClassVar[int]
     new_execution_run_id: str
     workflow_type: _common_pb2.WorkflowType
     task_list: _tasklist_pb2.TaskList
@@ -475,7 +477,9 @@ class WorkflowExecutionContinuedAsNewEventAttributes(_message.Message):
     header: _common_pb2.Header
     memo: _common_pb2.Memo
     search_attributes: _common_pb2.SearchAttributes
-    def __init__(self, new_execution_run_id: _Optional[str] = ..., workflow_type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., task_list: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., input: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., execution_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., task_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., decision_task_completed_event_id: _Optional[int] = ..., backoff_start_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., initiator: _Optional[_Union[_workflow_pb2.ContinueAsNewInitiator, str]] = ..., failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., last_completion_result: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., header: _Optional[_Union[_common_pb2.Header, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ...) -> None: ...
+    cron_overlap_policy: _workflow_pb2.CronOverlapPolicy
+    active_cluster_selection_policy: _common_pb2.ActiveClusterSelectionPolicy
+    def __init__(self, new_execution_run_id: _Optional[str] = ..., workflow_type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., task_list: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., input: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., execution_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., task_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., decision_task_completed_event_id: _Optional[int] = ..., backoff_start_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., initiator: _Optional[_Union[_workflow_pb2.ContinueAsNewInitiator, str]] = ..., failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., last_completion_result: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., header: _Optional[_Union[_common_pb2.Header, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., cron_overlap_policy: _Optional[_Union[_workflow_pb2.CronOverlapPolicy, str]] = ..., active_cluster_selection_policy: _Optional[_Union[_common_pb2.ActiveClusterSelectionPolicy, _Mapping]] = ...) -> None: ...
 
 class WorkflowExecutionCancelRequestedEventAttributes(_message.Message):
     __slots__ = ("cause", "identity", "external_execution_info", "request_id")

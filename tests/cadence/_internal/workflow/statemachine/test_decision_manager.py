@@ -4,6 +4,10 @@ from asyncio import CancelledError
 import pytest
 
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
+from cadence._internal.workflow.statemachine.event_dispatcher import (
+    EventDispatcher,
+    resolve_id_attr,
+)
 from cadence.api.v1 import history, decision
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 from cadence.error import ChildWorkflowError, StartChildWorkflowExecutionFailed
@@ -172,9 +176,7 @@ async def test_child_workflow_dispatch():
         )
     )
 
-    decisions.handle_history_event(
-        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
-    )
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
     decisions.handle_history_event(
         child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
     )
@@ -200,9 +202,7 @@ async def test_child_workflow_initiation_failed_dispatch():
         )
     )
 
-    decisions.handle_history_event(
-        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
-    )
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
     decisions.handle_history_event(
         history.HistoryEvent(
             event_id=2,
@@ -230,9 +230,7 @@ async def test_child_workflow_cancel_dispatch():
         )
     )
 
-    decisions.handle_history_event(
-        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
-    )
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
     decisions.handle_history_event(
         child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
     )
@@ -275,9 +273,7 @@ async def test_child_workflow_errors_are_child_workflow_error():
         )
     )
 
-    decisions.handle_history_event(
-        child_wf_initiated(1, "child-wf-1", initiated_event_id=1)
-    )
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
     decisions.handle_history_event(
         history.HistoryEvent(
             event_id=2,
@@ -294,9 +290,25 @@ async def test_child_workflow_errors_are_child_workflow_error():
         result.result()
 
 
-def child_wf_initiated(
-    event_id: int, workflow_id: str, *, initiated_event_id: int
-) -> history.HistoryEvent:
+def test_resolve_id_attr_empty_path_returns_none():
+    attrs = history.TimerStartedEventAttributes(timer_id="timer-1")
+
+    assert resolve_id_attr(attrs, "") is None
+
+
+def test_event_dispatcher_allows_empty_default_id_attr():
+    dispatcher = EventDispatcher()
+
+    class Handler:
+        @dispatcher.event()
+        def handle(self, _: history.TimerStartedEventAttributes) -> None:
+            pass
+
+    action = dispatcher.handlers[history.TimerStartedEventAttributes]
+    assert action.id_attr == ""
+
+
+def child_wf_initiated(event_id: int, workflow_id: str) -> history.HistoryEvent:
     return history.HistoryEvent(
         event_id=event_id,
         start_child_workflow_execution_initiated_event_attributes=history.StartChildWorkflowExecutionInitiatedEventAttributes(

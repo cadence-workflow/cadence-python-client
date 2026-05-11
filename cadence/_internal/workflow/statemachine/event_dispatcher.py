@@ -50,6 +50,8 @@ def resolve_id_attr(obj: Any, path: str) -> Any:
     For example, resolve_id_attr(attrs, "workflow_execution.workflow_id") will
     return attrs.workflow_execution.workflow_id.
     """
+    if not path:
+        return None
     for part in path.split("."):
         obj = getattr(obj, part)
     return obj

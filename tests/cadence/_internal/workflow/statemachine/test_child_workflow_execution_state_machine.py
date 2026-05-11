@@ -1,4 +1,3 @@
-
 import pytest
 
 from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
@@ -8,7 +7,9 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionFuture,
     DecisionState,
 )
-from cadence._internal.workflow.statemachine.nondeterminism import record_immediate_cancel
+from cadence._internal.workflow.statemachine.nondeterminism import (
+    record_immediate_cancel,
+)
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Failure, Payload, WorkflowExecution, WorkflowType
 from cadence.error import (
@@ -99,9 +100,30 @@ async def test_cancel_after_started():
 
     assert sm.request_cancel() is True
 
-    assert sm.state is DecisionState.CANCELED_AFTER_RECORDED
+    # Once the child has started we know the run_id, so use CANCELED_AFTER_STARTED
+    # (not CANCELED_AFTER_RECORDED) so the cancel decision includes it.
+    assert sm.state is DecisionState.CANCELED_AFTER_STARTED
     assert execution.done() is True
     assert result.done() is False
+
+
+async def test_cancel_after_started_includes_run_id():
+    sm, execution, result = make_sm()
+    sm.handle_initiated(history.StartChildWorkflowExecutionInitiatedEventAttributes())
+    sm.handle_started(
+        history.ChildWorkflowExecutionStartedEventAttributes(
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-42")
+        )
+    )
+    sm.request_cancel()
+
+    cancel_decision = sm.get_decision()
+    assert cancel_decision is not None
+    attrs = (
+        cancel_decision.request_cancel_external_workflow_execution_decision_attributes
+    )
+    assert attrs.workflow_execution.run_id == "run-42"
+    assert attrs.workflow_execution.workflow_id == WF_ID
 
 
 async def test_cancel_returns_false_when_completed():
@@ -151,9 +173,7 @@ async def test_handle_started_resolves_execution_future():
 
     wf_exec = WorkflowExecution(workflow_id=WF_ID, run_id="run-42")
     sm.handle_started(
-        history.ChildWorkflowExecutionStartedEventAttributes(
-            workflow_execution=wf_exec
-        )
+        history.ChildWorkflowExecutionStartedEventAttributes(workflow_execution=wf_exec)
     )
 
     assert sm.state is DecisionState.STARTED
@@ -234,7 +254,9 @@ async def test_handle_timed_out():
     sm.handle_timed_out(history.ChildWorkflowExecutionTimedOutEventAttributes())
 
     assert sm.state is DecisionState.COMPLETED
-    with pytest.raises(ChildWorkflowExecutionTimedOut, match="child workflow timed out"):
+    with pytest.raises(
+        ChildWorkflowExecutionTimedOut, match="child workflow timed out"
+    ):
         result.result()
 
 

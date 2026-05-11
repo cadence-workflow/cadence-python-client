@@ -164,11 +164,6 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         self._transition(DecisionState.COMPLETED)
         self.result.set_exception(ChildWorkflowExecutionTerminated())
 
-    # RequestCancelExternalWorkflowExecution events reference the child workflow by
-    # workflow_execution.workflow_id (a nested field), not by a bare string id.
-    # The dispatcher resolves dotted paths, so "workflow_execution.workflow_id" extracts
-    # the correct key for the alias lookup.  event_id_is_alias=True registers this event's
-    # ID so that the subsequent handle_cancel_failed can look it up via initiated_event_id.
     @child_workflow_events.event(
         "workflow_execution.workflow_id", event_id_is_alias=True
     )

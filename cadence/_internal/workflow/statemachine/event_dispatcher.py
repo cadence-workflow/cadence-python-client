@@ -21,7 +21,7 @@ class Action:
 class EventDispatcher:
     handlers: dict[Type, Action]
 
-    def __init__(self, default_id_attr: str) -> None:
+    def __init__(self, default_id_attr: str = "") -> None:
         self._default_id_attr = default_id_attr
         self.handlers = {}
 
@@ -32,7 +32,8 @@ class EventDispatcher:
             event_type = _find_event_type(func)
             event_id_attr = id_attr if id_attr else self._default_id_attr
 
-            _validate_field(func, event_type, event_id_attr)
+            if event_id_attr:
+                _validate_field(func, event_type, event_id_attr)
             if event_type in self.handlers:
                 raise ValueError(
                     f"Duplicate handler for {event_type}: {func.__qualname__} and {self.handlers[event_type].fn.__qualname__}"
@@ -49,6 +50,8 @@ def resolve_id_attr(obj: Any, path: str) -> Any:
     For example, resolve_id_attr(attrs, "workflow_execution.workflow_id") will
     return attrs.workflow_execution.workflow_id.
     """
+    if not path:
+        return None
     for part in path.split("."):
         obj = getattr(obj, part)
     return obj

@@ -118,13 +118,13 @@ class TestOpenTelemetryGrpcCompatibility:
         )
 
     @pytest.mark.asyncio
-    async def test_request_cancel_workflow_produces_otel_span(
+    async def test_cancel_workflow_produces_otel_span(
         self, otel_setup: InMemorySpanExporter, cadence_server: int
     ):
         """An instrumented client produces an OTel span for RequestCancelWorkflowExecution."""
         client = Client(domain="test-domain", target=f"localhost:{cadence_server}")
         try:
-            await client.request_cancel_workflow("wf-id", "run-id")
+            await client.cancel_workflow("wf-id", "run-id")
         finally:
             await client.close()
 

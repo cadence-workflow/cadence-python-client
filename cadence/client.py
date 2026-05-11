@@ -377,13 +377,13 @@ class Client:
 
         await self.workflow_stub.SignalWorkflowExecution(signal_request)
 
-    async def request_cancel_workflow(
+    async def cancel_workflow(
         self,
         workflow_id: str,
         run_id: str,
     ) -> None:
         """
-        Request cancellation of a workflow execution.
+        Cancel a workflow execution.
 
         Args:
             workflow_id: The workflow ID

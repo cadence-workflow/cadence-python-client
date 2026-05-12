@@ -35,6 +35,7 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionRequest,
     SignalWithStartWorkflowExecutionResponse,
 )
+from cadence.error import QueryFailedError
 from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
@@ -477,9 +478,6 @@ class Client:
         )
 
         if response.HasField("query_rejected"):
-            from cadence.error import QueryFailedError
-            import grpc
-
             raise QueryFailedError(
                 f"Query rejected: close_status={response.query_rejected.close_status}",
                 grpc.StatusCode.INVALID_ARGUMENT,

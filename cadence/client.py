@@ -488,7 +488,6 @@ class Client:
         results = self.data_converter.from_data(response.query_result, [result_type])
         return results[0] if results else None
 
-
     async def signal_with_start_workflow(
         self,
         workflow: Union[str, WorkflowDefinition],

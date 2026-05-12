@@ -400,7 +400,7 @@ def query(name: str | None = None) -> Callable[[T], T]:
         raise ValueError("name is required")
 
     def decorator(f: T) -> T:
-        f._workflow_query = name or f.__qualname__ # type: ignore
+        f._workflow_query = name or f.__qualname__  # type: ignore
         return f
 
     return decorator

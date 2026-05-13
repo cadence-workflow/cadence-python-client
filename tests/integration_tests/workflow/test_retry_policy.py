@@ -1,5 +1,4 @@
 from datetime import timedelta
-from typing import cast
 
 from cadence import workflow, Registry, activity
 from cadence.api.v1 import workflow_pb2
@@ -192,18 +191,16 @@ async def _wait_for_close(
     a close event lands, so there is no client-side sleep or polling loop.
     """
     async with helper.client() as client:
-        return cast(
-            GetWorkflowExecutionHistoryResponse,
-            await client.workflow_stub.GetWorkflowExecutionHistory(
-                GetWorkflowExecutionHistoryRequest(
-                    domain=DOMAIN_NAME,
-                    workflow_execution=execution,
-                    wait_for_new_event=True,
-                    history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
-                    skip_archival=True,
-                )
-            ),
+        response: GetWorkflowExecutionHistoryResponse = await client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
         )
+        return response
 
 
 async def test_workflow_retries_on_failure(helper: CadenceHelper):

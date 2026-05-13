@@ -191,7 +191,7 @@ async def _wait_for_close(
     a close event lands, so there is no client-side sleep or polling loop.
     """
     async with helper.client() as client:
-        return await client.workflow_stub.GetWorkflowExecutionHistory(
+        response: GetWorkflowExecutionHistoryResponse = await client.workflow_stub.GetWorkflowExecutionHistory(
             GetWorkflowExecutionHistoryRequest(
                 domain=DOMAIN_NAME,
                 workflow_execution=execution,
@@ -200,6 +200,7 @@ async def _wait_for_close(
                 skip_archival=True,
             )
         )
+        return response
 
 
 async def test_workflow_retries_on_failure(helper: CadenceHelper):

@@ -54,7 +54,7 @@ jobs:
           uv sync --extra dev --extra openai
       - name: Run mypy type checker
         run: |
-          uv run mypy cadence/
+          uv run mypy cadence/ tests/
 
   test:
     name: Unit Tests

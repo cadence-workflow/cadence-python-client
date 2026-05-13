@@ -9,6 +9,11 @@ from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
     RespondDecisionTaskCompletedRequest,
     RespondDecisionTaskFailedRequest,
+    RespondQueryTaskCompletedRequest,
+)
+from cadence.api.v1.query_pb2 import (
+    WorkflowQueryResult,
+    QUERY_RESULT_TYPE_FAILED,
 )
 from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.client import Client
@@ -57,10 +62,15 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         """
         Handle a decision task implementation.
 
+        Supports two query paths:
+        1. Legacy query task: task.query is set → replay history, execute query,
+           respond with RespondQueryTaskCompleted.
+        2. Inline queries: task.queries is set → process decisions normally,
+           answer queries in RespondDecisionTaskCompleted.query_results.
+
         Args:
             task: The decision task to handle
         """
-        # Extract workflow execution info
         workflow_execution = task.workflow_execution
         workflow_type = task.workflow_type
 
@@ -74,7 +84,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         run_id = workflow_execution.run_id
         workflow_type_name = workflow_type.name
 
-        # This log matches the WorkflowEngine but at task handler level (like Java ReplayDecisionTaskHandler)
+        is_query_task = task.HasField("query")
+
         logger.info(
             "Received decision task for workflow",
             extra={
@@ -83,9 +94,9 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 "run_id": run_id,
                 "started_event_id": task.started_event_id,
                 "attempt": task.attempt,
-                "task_token": task.task_token[:16].hex()
-                if task.task_token
-                else None,  # Log partial token for debugging
+                "is_query_task": is_query_task,
+                "inline_queries_count": len(task.queries),
+                "task_token": task.task_token[:16].hex() if task.task_token else None,
             },
         )
 
@@ -101,15 +112,19 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     "error_type": "workflow_not_registered",
                 },
             )
+            if is_query_task:
+                await self._respond_query_task_failed(
+                    task, f"Workflow type '{workflow_type_name}' not found"
+                )
+                return
             raise KeyError(f"Workflow type '{workflow_type_name}' not found")
 
-        # fetch full workflow history
+        # Fetch full workflow history
         # TODO sticky cache
         workflow_events = [
             event async for event in iterate_history_events(task, self._client)
         ]
 
-        # Create workflow info and get or create workflow engine from cache
         workflow_info = WorkflowInfo(
             workflow_type=workflow_type_name,
             workflow_domain=self._client.domain,
@@ -124,12 +139,25 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_definition=workflow_definition,
         )
 
-        decision_result = await asyncio.get_running_loop().run_in_executor(
-            self._executor, workflow_engine.process_decision, workflow_events
-        )
-
-        # Respond with the decisions
-        await self._respond_decision_task_completed(task, decision_result)
+        if is_query_task:
+            # Legacy query path: replay and execute the single query
+            query_result = await asyncio.get_running_loop().run_in_executor(
+                self._executor,
+                workflow_engine.execute_query,
+                task.query,
+                workflow_events,
+            )
+            await self._respond_query_task_completed(task, query_result)
+        else:
+            # Normal decision path (may include inline queries)
+            inline_queries = dict(task.queries) if task.queries else None
+            decision_result = await asyncio.get_running_loop().run_in_executor(
+                self._executor,
+                workflow_engine.process_decision,
+                workflow_events,
+                inline_queries,
+            )
+            await self._respond_decision_task_completed(task, decision_result)
 
         logger.info(
             "Successfully processed decision task",
@@ -138,6 +166,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 "workflow_id": workflow_id,
                 "run_id": run_id,
                 "started_event_id": task.started_event_id,
+                "is_query_task": is_query_task,
             },
         )
 
@@ -147,11 +176,13 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         """
         Handle decision task processing failure.
 
+        For query tasks, responds with RespondQueryTaskCompleted with an error.
+        For normal decision tasks, responds with RespondDecisionTaskFailed.
+
         Args:
             task: The task that failed
             error: The exception that occurred
         """
-        # Extract workflow context for error logging (matches Java ReplayDecisionTaskHandler error patterns)
         workflow_execution = task.workflow_execution
         workflow_id = (
             workflow_execution.workflow_id if workflow_execution else "unknown"
@@ -159,7 +190,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         run_id = workflow_execution.run_id if workflow_execution else "unknown"
         workflow_type = task.workflow_type.name if task.workflow_type else "unknown"
 
-        # Log task failure with full context (matches Java error logging)
         logger.error(
             "Decision task processing failure",
             extra={
@@ -170,9 +200,15 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 "attempt": task.attempt,
                 "error_type": type(error).__name__,
                 "error_message": str(error),
+                "is_query_task": task.HasField("query"),
             },
             exc_info=True,
         )
+
+        # For query tasks, respond with a query failure instead of decision failure
+        if task.HasField("query"):
+            await self._respond_query_task_failed(task, str(error))
+            return
 
         # Determine the failure cause
         cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION
@@ -181,12 +217,10 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         elif isinstance(error, ValueError):
             cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_BAD_SCHEDULE_ACTIVITY_ATTRIBUTES
 
-        # Create error details
         # TODO: Use a data converter for error details serialization
         error_message = str(error).encode("utf-8")
         details = Payload(data=error_message)
 
-        # Respond with failure
         try:
             await self._client.worker_stub.RespondDecisionTaskFailed(
                 RespondDecisionTaskFailedRequest(
@@ -237,9 +271,12 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 return_new_decision_task=True,
             )
 
+            if decision_result.query_results:
+                for query_id, query_result in decision_result.query_results.items():
+                    request.query_results[query_id].CopyFrom(query_result)
+
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)
 
-            # Log completion response (matches Java ReplayDecisionTaskHandler trace/debug patterns)
             workflow_execution = task.workflow_execution
             logger.debug(
                 "Decision task completion response sent",
@@ -255,6 +292,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     else "unknown",
                     "started_event_id": task.started_event_id,
                     "decisions_count": len(decision_result.decisions),
+                    "query_results_count": len(decision_result.query_results),
                     "return_new_decision_task": True,
                     "task_token": task.task_token[:16].hex()
                     if task.task_token
@@ -283,3 +321,60 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 exc_info=True,
             )
             raise
+
+    async def _respond_query_task_completed(
+        self, task: PollForDecisionTaskResponse, result: WorkflowQueryResult
+    ) -> None:
+        """Respond to a legacy query task with the query result."""
+        try:
+            request = RespondQueryTaskCompletedRequest(
+                task_token=task.task_token,
+                result=result,
+            )
+            await self._client.worker_stub.RespondQueryTaskCompleted(request)
+
+            logger.debug(
+                "Query task completion response sent",
+                extra={
+                    "workflow_type": task.workflow_type.name
+                    if task.workflow_type
+                    else "unknown",
+                    "query_type": task.query.query_type
+                    if task.HasField("query")
+                    else "unknown",
+                    "result_type": result.result_type,
+                },
+            )
+        except Exception as e:
+            logger.error(
+                "Error responding to query task completion",
+                extra={
+                    "workflow_type": task.workflow_type.name
+                    if task.workflow_type
+                    else "unknown",
+                    "error_type": type(e).__name__,
+                },
+                exc_info=True,
+            )
+            raise
+
+    async def _respond_query_task_failed(
+        self, task: PollForDecisionTaskResponse, error_message: str
+    ) -> None:
+        """Respond to a legacy query task with a failure."""
+        try:
+            result = WorkflowQueryResult(
+                result_type=QUERY_RESULT_TYPE_FAILED,
+                error_message=error_message,
+            )
+            request = RespondQueryTaskCompletedRequest(
+                task_token=task.task_token,
+                result=result,
+            )
+            await self._client.worker_stub.RespondQueryTaskCompleted(request)
+        except Exception as e:
+            logger.error(
+                "Error responding to query task failure",
+                extra={"error_type": type(e).__name__},
+                exc_info=True,
+            )

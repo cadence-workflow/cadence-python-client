@@ -27,6 +27,7 @@ class TestDecisionTaskHandler:
         client.worker_stub = Mock()
         client.worker_stub.RespondDecisionTaskCompleted = AsyncMock()
         client.worker_stub.RespondDecisionTaskFailed = AsyncMock()
+        client.worker_stub.RespondQueryTaskCompleted = AsyncMock()
         type(client).domain = PropertyMock(return_value="test_domain")
         return client
 
@@ -61,6 +62,9 @@ class TestDecisionTaskHandler:
         task.attempt = 1
         task.history = History()
         task.next_page_token = b""
+        # Query-related fields
+        task.HasField = Mock(return_value=False)
+        task.queries = {}
         return task
 
     def test_initialization(self, mock_client, mock_registry):
@@ -103,6 +107,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = [Decision()]
+        mock_decision_result.query_results = {}
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -116,7 +121,7 @@ class TestDecisionTaskHandler:
 
         # Verify workflow engine was created and used
         mock_engine.process_decision.assert_called_once_with(
-            sample_decision_task.history.events
+            sample_decision_task.history.events, None
         )
 
         # Verify response was sent
@@ -178,6 +183,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
+        mock_decision_result.query_results = {}
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -226,6 +232,8 @@ class TestDecisionTaskHandler:
         task1.attempt = 1
         task1.history = History()
         task1.next_page_token = b""
+        task1.HasField = Mock(return_value=False)
+        task1.queries = {}
 
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"test_task_token_2"
@@ -238,12 +246,15 @@ class TestDecisionTaskHandler:
         task2.attempt = 1
         task2.history = History()
         task2.next_page_token = b""
+        task2.HasField = Mock(return_value=False)
+        task2.queries = {}
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
+        mock_decision_result.query_results = {}
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -357,6 +368,7 @@ class TestDecisionTaskHandler:
         """Test successful decision task completion response."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = [Decision(), Decision()]
+        decision_result.query_results = {}
 
         await handler._respond_decision_task_completed(
             sample_decision_task, decision_result
@@ -379,6 +391,7 @@ class TestDecisionTaskHandler:
         """Test decision task completion response without query results."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
+        decision_result.query_results = {}
 
         await handler._respond_decision_task_completed(
             sample_decision_task, decision_result
@@ -397,6 +410,7 @@ class TestDecisionTaskHandler:
         """Test decision task completion response error handling."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
+        decision_result.query_results = {}
 
         handler._client.worker_stub.RespondDecisionTaskCompleted.side_effect = (
             Exception("Respond failed")
@@ -427,6 +441,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
+        mock_decision_result.query_results = {}
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(

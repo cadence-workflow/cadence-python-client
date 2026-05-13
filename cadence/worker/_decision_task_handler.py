@@ -62,11 +62,10 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         """
         Handle a decision task implementation.
 
-        Supports two query paths:
-        1. Legacy query task: task.query is set → replay history, execute query,
+        Supports two paths:
+        1. Query task: task.query is set → replay history, execute query,
            respond with RespondQueryTaskCompleted.
-        2. Inline queries: task.queries is set → process decisions normally,
-           answer queries in RespondDecisionTaskCompleted.query_results.
+        2. Normal decision task: process decisions normally.
 
         Args:
             task: The decision task to handle
@@ -95,7 +94,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 "started_event_id": task.started_event_id,
                 "attempt": task.attempt,
                 "is_query_task": is_query_task,
-                "inline_queries_count": len(task.queries),
                 "task_token": task.task_token[:16].hex() if task.task_token else None,
             },
         )
@@ -140,7 +138,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         )
 
         if is_query_task:
-            # Legacy query path: replay and execute the single query
             query_result = await asyncio.get_running_loop().run_in_executor(
                 self._executor,
                 workflow_engine.execute_query,
@@ -149,13 +146,10 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
             await self._respond_query_task_completed(task, query_result)
         else:
-            # Normal decision path (may include inline queries)
-            inline_queries = dict(task.queries) if task.queries else None
             decision_result = await asyncio.get_running_loop().run_in_executor(
                 self._executor,
                 workflow_engine.process_decision,
                 workflow_events,
-                inline_queries,
             )
             await self._respond_decision_task_completed(task, decision_result)
 
@@ -261,7 +255,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
 
         Args:
             task: The original decision task
-            decision_result: The result containing decisions and query results
+            decision_result: The result containing decisions
         """
         try:
             request = RespondDecisionTaskCompletedRequest(
@@ -270,10 +264,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 identity=self._identity,
                 return_new_decision_task=True,
             )
-
-            if decision_result.query_results:
-                for query_id, query_result in decision_result.query_results.items():
-                    request.query_results[query_id].CopyFrom(query_result)
 
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)
 
@@ -292,7 +282,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     else "unknown",
                     "started_event_id": task.started_event_id,
                     "decisions_count": len(decision_result.decisions),
-                    "query_results_count": len(decision_result.query_results),
                     "return_new_decision_task": True,
                     "task_token": task.task_token[:16].hex()
                     if task.task_token

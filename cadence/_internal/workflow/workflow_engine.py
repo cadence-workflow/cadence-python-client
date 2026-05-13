@@ -1,7 +1,7 @@
 import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import singledispatchmethod
 from typing import List, Optional
 
@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DecisionResult:
     decisions: list[Decision]
-    query_results: dict[str, WorkflowQueryResult] = {}
 
 
 class WorkflowEngine:
@@ -58,7 +57,6 @@ class WorkflowEngine:
     def process_decision(
         self,
         events: List[HistoryEvent],
-        queries: Optional[dict[str, WorkflowQuery]] = None,
     ) -> DecisionResult:
         """
         Process a decision task and generate decisions using DecisionEventsIterator.
@@ -68,15 +66,13 @@ class WorkflowEngine:
 
         Args:
             events: The workflow history events.
-            queries: Optional inline queries to answer after replay (from task.queries).
 
         Returns:
-            DecisionResult containing the list of decisions and query results
+            DecisionResult containing the list of decisions
         """
         try:
             # Activate workflow context for the entire decision processing
             with self._context._activate() as ctx:
-                # Log decision task processing start with full context (matches Java ReplayDecisionTaskHandler)
                 logger.info(
                     "Processing decision task for workflow",
                     extra={
@@ -86,22 +82,11 @@ class WorkflowEngine:
                     },
                 )
 
-                # Create DecisionEventsIterator for structured event processing
                 events_iterator = DecisionEventsIterator(events)
-
-                # Process decision events using iterator-driven approach
                 self._process_decision_events(ctx, events_iterator)
-
-                # Collect all pending decisions from state machines
                 decisions = self._decision_manager.collect_pending_decisions()
 
-                # Execute inline queries after replay (workflow state is now current)
-                query_results: dict[str, WorkflowQueryResult] = {}
-                if queries:
-                    for query_id, wf_query in queries.items():
-                        query_results[query_id] = self._execute_query(wf_query)
-
-                return DecisionResult(decisions=decisions, query_results=query_results)
+                return DecisionResult(decisions=decisions)
 
         except Exception as e:
             # Log decision task failure with full context (matches Java ReplayDecisionTaskHandler)

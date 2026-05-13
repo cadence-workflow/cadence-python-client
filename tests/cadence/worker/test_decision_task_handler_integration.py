@@ -107,7 +107,6 @@ class TestDecisionTaskHandlerIntegration:
         mock_engine.process_decision = Mock(
             return_value=Mock(
                 decisions=[decision],
-                query_results={},
             )
         )
 
@@ -120,7 +119,7 @@ class TestDecisionTaskHandlerIntegration:
 
             # Verify the workflow engine was called
             mock_engine.process_decision.assert_called_once_with(
-                list(decision_task.history.events), None
+                list(decision_task.history.events),
             )
 
             # Verify the response was sent
@@ -182,7 +181,6 @@ class TestDecisionTaskHandlerIntegration:
             mock_engine.process_decision = Mock(
                 return_value=Mock(
                     decisions=[],
-                    query_results={},
                 )
             )
             mock_engine_class.return_value = mock_engine
@@ -233,7 +231,6 @@ class TestDecisionTaskHandlerIntegration:
         # Create mock decision result
         decision_result = Mock()
         decision_result.decisions = [Decision()]
-        decision_result.query_results = {}
 
         # Call the response method
         await decision_task_handler._respond_decision_task_completed(

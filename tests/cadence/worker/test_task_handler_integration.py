@@ -57,9 +57,7 @@ class TestTaskHandlerIntegration:
         task.attempt = 1
         task.history = History()
         task.next_page_token = b""
-        # Query-related fields
         task.HasField = Mock(return_value=False)
-        task.queries = {}
         return task
 
     @pytest.mark.asyncio
@@ -83,7 +81,6 @@ class TestTaskHandlerIntegration:
         mock_engine._is_workflow_complete = False
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -96,7 +93,7 @@ class TestTaskHandlerIntegration:
         # Verify the complete flow
         mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
         mock_engine.process_decision.assert_called_once_with(
-            sample_decision_task.history.events, None
+            sample_decision_task.history.events,
         )
         handler._client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()
 
@@ -212,7 +209,6 @@ class TestTaskHandlerIntegration:
         task1.history = History()
         task1.next_page_token = b""
         task1.HasField = Mock(return_value=False)
-        task1.queries = {}
 
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"task2_token"
@@ -226,7 +222,6 @@ class TestTaskHandlerIntegration:
         task2.history = History()
         task2.next_page_token = b""
         task2.HasField = Mock(return_value=False)
-        task2.queries = {}
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
@@ -234,7 +229,6 @@ class TestTaskHandlerIntegration:
 
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.query_results = {}
 
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
@@ -273,7 +267,6 @@ class TestTaskHandlerIntegration:
         mock_engine._is_workflow_complete = False
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -286,7 +279,7 @@ class TestTaskHandlerIntegration:
             # Verify engine was created and used
             mock_engine_class.assert_called_once()
             mock_engine.process_decision.assert_called_once_with(
-                sample_decision_task.history.events, None
+                sample_decision_task.history.events,
             )
 
     @pytest.mark.asyncio
@@ -370,7 +363,6 @@ class TestTaskHandlerIntegration:
             task.history = History()
             task.next_page_token = b""
             task.HasField = Mock(return_value=False)
-            task.queries = {}
             tasks.append(task)
 
         # Mock workflow engine
@@ -378,7 +370,6 @@ class TestTaskHandlerIntegration:
         mock_engine._is_workflow_complete = False
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
-        mock_decision_result.query_results = {}
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(

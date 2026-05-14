@@ -94,6 +94,7 @@ class TestTaskHandlerIntegration:
         mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
         mock_engine.process_decision.assert_called_once_with(
             sample_decision_task.history.events,
+            None,
         )
         handler._client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()
 
@@ -280,6 +281,7 @@ class TestTaskHandlerIntegration:
             mock_engine_class.assert_called_once()
             mock_engine.process_decision.assert_called_once_with(
                 sample_decision_task.history.events,
+                None,
             )
 
     @pytest.mark.asyncio

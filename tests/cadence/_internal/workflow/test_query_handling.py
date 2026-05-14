@@ -15,7 +15,6 @@ from cadence.api.v1.history_pb2 import (
 from cadence.api.v1.query_pb2 import (
     WorkflowQuery,
     QUERY_RESULT_TYPE_ANSWERED,
-    QUERY_RESULT_TYPE_FAILED,
 )
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence.data_converter import DefaultDataConverter
@@ -190,10 +189,11 @@ class TestQueryExecution:
         events = start_events()
         query = make_query("get_status")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [str])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [str])
         assert decoded == ["running"]
 
     def test_query_count_returns_zero_initially(self):
@@ -202,10 +202,11 @@ class TestQueryExecution:
         events = start_events()
         query = make_query("get_count")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [int])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [int])
         assert decoded == [0]
 
     def test_query_reflects_state_after_signals(self):
@@ -233,10 +234,11 @@ class TestQueryExecution:
         ]
         query = make_query("get_messages")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [str])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [str])
         assert decoded == ["hello,world"]
 
     def test_query_with_arguments(self):
@@ -245,10 +247,11 @@ class TestQueryExecution:
         events = start_events()
         query = make_query("get_value", "b")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [int])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [int])
         assert decoded == [2]
 
     def test_query_with_multiple_arguments(self):
@@ -257,10 +260,11 @@ class TestQueryExecution:
         events = start_events()
         query = make_query("get_sum", "a", "c")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [int])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [int])
         assert decoded == [4]
 
     def test_query_with_default_argument_omitted(self):
@@ -269,10 +273,11 @@ class TestQueryExecution:
         events = start_events()
         query = make_query("get_items")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [str])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [str])
         assert decoded == ["a,b,c"]
 
     def test_query_with_default_argument_overridden(self):
@@ -281,22 +286,21 @@ class TestQueryExecution:
         events = start_events()
         query = make_query("get_items", 5)
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [str])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [str])
         assert decoded == ["a,b,c,d,e"]
 
-    def test_unknown_query_type_returns_failed(self):
+    def test_unknown_query_type(self):
         """Querying an unregistered query type returns QUERY_RESULT_TYPE_FAILED."""
         engine = make_workflow_engine(QueryWorkflow)
         events = start_events()
         query = make_query("nonexistent_query")
 
-        result = engine.execute_query(query, events)
-
-        assert result.result_type == QUERY_RESULT_TYPE_FAILED
-        assert "Unknown query type 'nonexistent_query'" in result.error_message
+        with pytest.raises(ValueError, match="Unknown query type 'nonexistent_query'"):
+            engine.process_decision(events, query)
 
     def test_query_on_workflow_with_no_query_handlers(self):
         """Querying a workflow with no registered handlers returns FAILED."""
@@ -304,10 +308,8 @@ class TestQueryExecution:
         events = start_events()
         query = make_query("get_status")
 
-        result = engine.execute_query(query, events)
-
-        assert result.result_type == QUERY_RESULT_TYPE_FAILED
-        assert "Unknown query type" in result.error_message
+        with pytest.raises(ValueError, match="Unknown query type 'get_status'"):
+            engine.process_decision(events, query)
 
 
 class TestQueryAfterReplay:
@@ -353,10 +355,11 @@ class TestQueryAfterReplay:
         ]
         query = make_query("get_message_count")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [int])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [int])
         assert decoded == [1]
 
     def test_query_sees_all_signals_in_history(self):
@@ -401,10 +404,11 @@ class TestQueryAfterReplay:
         ]
         query = make_query("get_messages")
 
-        result = engine.execute_query(query, events)
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
 
-        assert result.result_type == QUERY_RESULT_TYPE_ANSWERED
-        decoded = DATA_CONVERTER.from_data(result.answer, [str])
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [str])
         assert decoded == ["first,second,third"]
 
 
@@ -482,7 +486,7 @@ class TestQueryDefinitionValidation:
 class TestQueryHandlerException:
     """Tests for query handler exceptions."""
 
-    def test_query_handler_exception_returns_failed_result(self):
+    def test_query_handler_exception(self):
         """An exception in the query handler returns QUERY_RESULT_TYPE_FAILED."""
 
         class FailingQueryWorkflow:
@@ -499,7 +503,5 @@ class TestQueryHandlerException:
         events = start_events()
         query = make_query("failing_query")
 
-        result = engine.execute_query(query, events)
-
-        assert result.result_type == QUERY_RESULT_TYPE_FAILED
-        assert "query handler error" in result.error_message
+        with pytest.raises(RuntimeError, match="query handler error"):
+            engine.process_decision(events, query)

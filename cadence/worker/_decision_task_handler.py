@@ -137,20 +137,17 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_definition=workflow_definition,
         )
 
+        decision_result = await asyncio.get_running_loop().run_in_executor(
+            self._executor,
+            workflow_engine.process_decision,
+            workflow_events,
+            task.query if is_query_task else None,
+        )
         if is_query_task:
-            query_result = await asyncio.get_running_loop().run_in_executor(
-                self._executor,
-                workflow_engine.execute_query,
-                task.query,
-                workflow_events,
-            )
-            await self._respond_query_task_completed(task, query_result)
+            if not decision_result.query_result:
+                raise ValueError("Query result is empty")
+            await self._respond_query_task_completed(task, decision_result.query_result)
         else:
-            decision_result = await asyncio.get_running_loop().run_in_executor(
-                self._executor,
-                workflow_engine.process_decision,
-                workflow_events,
-            )
             await self._respond_decision_task_completed(task, decision_result)
 
         logger.info(
@@ -205,6 +202,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             return
 
         # Determine the failure cause
+        # TODO revisit failure cause logic
         cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION
         if isinstance(error, KeyError):
             cause = DecisionTaskFailedCause.DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
@@ -314,7 +312,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
     async def _respond_query_task_completed(
         self, task: PollForDecisionTaskResponse, result: WorkflowQueryResult
     ) -> None:
-        """Respond to a legacy query task with the query result."""
         try:
             request = RespondQueryTaskCompletedRequest(
                 task_token=task.task_token,

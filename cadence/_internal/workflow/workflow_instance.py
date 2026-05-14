@@ -125,7 +125,7 @@ class WorkflowInstance:
         if inspect.iscoroutine(result):
             raise TypeError(
                 f"Query handler '{query_type}' must be synchronous, got async function"
-            ) 
+            )
         return self._data_converter.to_data([result])
 
     def _on_signal_task_done(self, task: Task[Any], signal_name: str) -> None:

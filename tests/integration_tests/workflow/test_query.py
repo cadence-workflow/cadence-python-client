@@ -141,9 +141,7 @@ async def _wait_for_workflow_result(
             assert data is not None
             return data
         if status == "timed_out":
-            raise AssertionError(
-                "Workflow execution timed out before completion"
-            )
+            raise AssertionError("Workflow execution timed out before completion")
         if status == "failed":
             raise AssertionError("Workflow execution failed")
         await asyncio.sleep(0.05)

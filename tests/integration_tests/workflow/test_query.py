@@ -1,9 +1,13 @@
 import asyncio
 from datetime import timedelta
-from typing import Any
+from typing import Any, Literal, cast
 
 from cadence import Registry, workflow
-from tests.integration_tests.helper import CadenceHelper
+from cadence.api.v1.service_workflow_pb2 import (
+    GetWorkflowExecutionHistoryRequest,
+    GetWorkflowExecutionHistoryResponse,
+)
+from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
 
 registry = Registry()
 
@@ -80,6 +84,79 @@ class QueryMultipleHandlersWorkflow:
         self.done = True
 
 
+def _scan_workflow_outcome(
+    response: GetWorkflowExecutionHistoryResponse,
+) -> (
+    tuple[Literal["completed"], str]
+    | tuple[Literal["timed_out"], None]
+    | tuple[Literal["failed"], None]
+    | tuple[Literal["running"], None]
+):
+    for event in reversed(response.history.events):
+        if event.HasField("workflow_execution_completed_event_attributes"):
+            return (
+                "completed",
+                cast(
+                    str,
+                    event.workflow_execution_completed_event_attributes.result.data.decode(),
+                ),
+            )
+        if event.HasField("workflow_execution_timed_out_event_attributes"):
+            return ("timed_out", None)
+        if event.HasField("workflow_execution_failed_event_attributes"):
+            return ("failed", None)
+    return ("running", None)
+
+
+async def _get_full_history(
+    helper: CadenceHelper, execution: Any
+) -> GetWorkflowExecutionHistoryResponse:
+    async with helper.client() as client:
+        return cast(
+            GetWorkflowExecutionHistoryResponse,
+            await client.workflow_stub.GetWorkflowExecutionHistory(
+                GetWorkflowExecutionHistoryRequest(
+                    domain=DOMAIN_NAME,
+                    workflow_execution=execution,
+                    skip_archival=True,
+                )
+            ),
+        )
+
+
+async def _wait_for_workflow_result(
+    helper: CadenceHelper,
+    execution: Any,
+    *,
+    deadline_seconds: float = 30.0,
+) -> str:
+    """Poll full history until the run completes (or times out / fails on the server)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + deadline_seconds
+    last: GetWorkflowExecutionHistoryResponse | None = None
+    while loop.time() < deadline:
+        last = await _get_full_history(helper, execution)
+        status, data = _scan_workflow_outcome(last)
+        if status == "completed":
+            assert data is not None
+            return data
+        if status == "timed_out":
+            raise AssertionError(
+                "Workflow execution timed out before completion"
+            )
+        if status == "failed":
+            raise AssertionError("Workflow execution failed")
+        await asyncio.sleep(0.05)
+    raise AssertionError(
+        "Timed out waiting for workflow completion in history"
+        + (
+            f" (last event id {last.history.events[-1].event_id})"
+            if last and last.history.events
+            else ""
+        )
+    )
+
+
 async def _poll_query(
     helper: CadenceHelper,
     workflow_id: str,
@@ -138,6 +215,7 @@ async def test_query_returns_initial_state(helper: CadenceHelper):
             "set_status",
             "done",
         )
+        await _wait_for_workflow_result(helper, execution)
 
 
 async def test_query_reflects_signal_mutations(helper: CadenceHelper):
@@ -185,6 +263,7 @@ async def test_query_reflects_signal_mutations(helper: CadenceHelper):
             "set_status",
             "done",
         )
+        await _wait_for_workflow_result(helper, execution)
 
 
 async def test_query_with_arguments(helper: CadenceHelper):
@@ -223,6 +302,7 @@ async def test_query_with_arguments(helper: CadenceHelper):
             "stop",
             0,
         )
+        await _wait_for_workflow_result(helper, execution)
 
 
 async def test_multiple_query_handlers(helper: CadenceHelper):
@@ -280,3 +360,4 @@ async def test_multiple_query_handlers(helper: CadenceHelper):
             execution.run_id,
             "finish",
         )
+        await _wait_for_workflow_result(helper, execution)

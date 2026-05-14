@@ -35,6 +35,10 @@ integration-test:
 	@echo "Running integration tests..."
 	uv run pytest -v --integration-tests
 
+integration-test-keep-cadence-alive:
+	@echo "Running integration tests with cadence alive..."
+	uv run pytest -v --integration-tests --keep-cadence-alive
+
 # Clean generated files and caches
 clean:
 	@echo "Cleaning up..."

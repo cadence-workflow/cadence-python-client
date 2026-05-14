@@ -62,14 +62,10 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         """
         Handle a decision task implementation.
 
-        Supports two paths:
-        1. Query task: task.query is set → replay history, execute query,
-           respond with RespondQueryTaskCompleted.
-        2. Normal decision task: process decisions normally.
-
         Args:
             task: The decision task to handle
         """
+        # Extract workflow execution info
         workflow_execution = task.workflow_execution
         workflow_type = task.workflow_type
 
@@ -117,7 +113,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 return
             raise KeyError(f"Workflow type '{workflow_type_name}' not found")
 
-        # Fetch full workflow history
+        # fetch full workflow history
         # TODO sticky cache
         workflow_events = [
             event async for event in iterate_history_events(task, self._client)
@@ -364,3 +360,4 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 extra={"error_type": type(e).__name__},
                 exc_info=True,
             )
+            raise

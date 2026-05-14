@@ -120,6 +120,7 @@ class TestDecisionTaskHandlerIntegration:
             # Verify the workflow engine was called
             mock_engine.process_decision.assert_called_once_with(
                 list(decision_task.history.events),
+                None,
             )
 
             # Verify the response was sent

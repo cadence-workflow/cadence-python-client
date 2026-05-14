@@ -119,6 +119,7 @@ class TestDecisionTaskHandler:
         # Verify workflow engine was created and used
         mock_engine.process_decision.assert_called_once_with(
             sample_decision_task.history.events,
+            None,
         )
 
         # Verify response was sent

@@ -50,6 +50,10 @@ class ScheduleSpec(TypedDict, total=False):
     """When a schedule fires.
 
     All datetime values must be timezone-aware.
+
+    ``jitter`` is ceil-rounded to whole seconds on the wire (the server
+    resolution matches the Go/Java SDKs). Sub-second values are rounded up:
+    ``timedelta(milliseconds=500)`` is sent as 1 second.
     """
 
     cron_expression: str
@@ -62,9 +66,22 @@ class StartWorkflowAction(TypedDict, total=False):
     """The workflow that a schedule will start on each fire.
 
     ``workflow_type``, ``task_list``, and ``execution_start_to_close_timeout``
-    are required. ``args`` values must be JSON-round-trippable because the
-    server re-encodes the action with ``encoding/json`` for ContinueAsNew.
-    Args are NOT decoded when reading back from DescribeSchedule.
+    are required.
+
+    ``task_start_to_close_timeout`` defaults to 10 seconds if not set,
+    matching the behaviour of ``Client.start_workflow``.
+
+    ``args`` values must be JSON-round-trippable because the server
+    re-encodes the action with ``encoding/json`` for ContinueAsNew.
+    ``args`` are NOT decoded when reading back from ``DescribeSchedule``
+    (a DataConverter is required for decoding and is not available at the
+    mapper level).
+
+    ``retry_policy`` is encoded on write and decoded on ``DescribeSchedule``.
+
+    ``memo`` and ``search_attributes`` (present on the proto's
+    ``StartWorkflowAction``) are not yet supported. Add them in a follow-up
+    once the Memo encoding helpers used by the rest of the client are in place.
     """
 
     workflow_type: str
@@ -107,10 +124,16 @@ class Schedule(TypedDict, total=False):
 class Backfill(TypedDict, total=False):
     """Trigger runs for a historical time range.
 
-    ``start_time`` and ``end_time`` are required and must be timezone-aware.
-    ``end_time`` must be strictly after ``start_time``.
-    ``backfill_id`` defaults to a UUID; the server deduplicates on this ID,
-    so retrying with the same value is safe.
+    ``start_time`` and ``end_time`` must be provided and timezone-aware;
+    ``end_time`` must be strictly after ``start_time``. These constraints
+    are enforced by ``validate_backfill`` before the RPC is sent.
+
+    ``backfill_id`` defaults to a UUID at request time; the server
+    deduplicates on this ID, so retrying with the same value is safe.
+
+    Note: ``total=False`` means all keys are optional at the TypedDict level.
+    Runtime validation is enforced by
+    ``cadence._internal.workflow.schedule_backfill.validate_backfill``.
     """
 
     start_time: datetime
@@ -166,7 +189,11 @@ class ScheduleInfo:
 
 @dataclass(frozen=True)
 class ScheduleDescription:
-    """Full description of a schedule returned by DescribeSchedule."""
+    """Full description of a schedule returned by DescribeSchedule.
+
+    ``memo`` and ``search_attributes`` from the proto response are not yet
+    surfaced here; they will be added alongside Memo encoding support.
+    """
 
     spec: ScheduleSpec
     action: ScheduleAction

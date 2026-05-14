@@ -60,3 +60,36 @@ def retry_policy_to_proto(
         _set_duration_field(out.expiration_interval, cast(timedelta, ei))
 
     return out
+
+
+def retry_policy_from_proto(
+    proto: common_pb2.RetryPolicy | None,
+) -> RetryPolicy | None:
+    """Convert a protobuf RetryPolicy to a RetryPolicy TypedDict.
+
+    Returns ``None`` if the proto is ``None`` or has no meaningful fields set.
+    """
+    if proto is None:
+        return None
+
+    policy: RetryPolicy = {}
+
+    if proto.HasField("initial_interval"):
+        policy["initial_interval"] = proto.initial_interval.ToTimedelta()
+
+    if proto.backoff_coefficient:
+        policy["backoff_coefficient"] = proto.backoff_coefficient
+
+    if proto.HasField("maximum_interval"):
+        policy["maximum_interval"] = proto.maximum_interval.ToTimedelta()
+
+    if proto.maximum_attempts:
+        policy["maximum_attempts"] = proto.maximum_attempts
+
+    if proto.non_retryable_error_reasons:
+        policy["non_retryable_error_reasons"] = list(proto.non_retryable_error_reasons)
+
+    if proto.HasField("expiration_interval"):
+        policy["expiration_interval"] = proto.expiration_interval.ToTimedelta()
+
+    return policy if policy else None

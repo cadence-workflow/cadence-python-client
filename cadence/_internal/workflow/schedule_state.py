@@ -13,7 +13,7 @@ from cadence.schedule import (
 )
 
 
-def _pause_info_from_proto(proto: schedule_pb2.SchedulePauseInfo) -> SchedulePauseInfo:
+def pause_info_from_proto(proto: schedule_pb2.SchedulePauseInfo) -> SchedulePauseInfo:
     paused_at = None
     if proto.HasField("paused_at"):
         paused_at = proto.paused_at.ToDatetime(tzinfo=timezone.utc)
@@ -24,17 +24,17 @@ def _pause_info_from_proto(proto: schedule_pb2.SchedulePauseInfo) -> SchedulePau
     )
 
 
-def _state_from_proto(proto: schedule_pb2.ScheduleState) -> ScheduleState:
+def state_from_proto(proto: schedule_pb2.ScheduleState) -> ScheduleState:
     pause_info = None
     if proto.HasField("pause_info"):
-        pause_info = _pause_info_from_proto(proto.pause_info)
+        pause_info = pause_info_from_proto(proto.pause_info)
     return ScheduleState(
         paused=proto.paused,
         pause_info=pause_info,
     )
 
 
-def _backfill_info_from_proto(proto: schedule_pb2.BackfillInfo) -> BackfillInfo:
+def backfill_info_from_proto(proto: schedule_pb2.BackfillInfo) -> BackfillInfo:
     start_time = None
     end_time = None
     if proto.HasField("start_time"):
@@ -50,7 +50,7 @@ def _backfill_info_from_proto(proto: schedule_pb2.BackfillInfo) -> BackfillInfo:
     )
 
 
-def _info_from_proto(proto: schedule_pb2.ScheduleInfo) -> ScheduleInfo:
+def info_from_proto(proto: schedule_pb2.ScheduleInfo) -> ScheduleInfo:
     last_run_time = None
     next_run_time = None
     create_time = None
@@ -66,7 +66,7 @@ def _info_from_proto(proto: schedule_pb2.ScheduleInfo) -> ScheduleInfo:
         last_update_time = proto.last_update_time.ToDatetime(tzinfo=timezone.utc)
 
     ongoing_backfills = tuple(
-        _backfill_info_from_proto(b) for b in proto.ongoing_backfills
+        backfill_info_from_proto(b) for b in proto.ongoing_backfills
     )
 
     return ScheduleInfo(

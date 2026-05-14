@@ -9,6 +9,7 @@ from cadence.api.v1.common_pb2 import WorkflowType
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence._internal.workflow.retry_policy import (
     _set_duration_field,
+    retry_policy_from_proto,
     retry_policy_to_proto,
 )
 from cadence.data_converter import DataConverter
@@ -74,8 +75,9 @@ def schedule_action_to_proto(
 def schedule_action_from_proto(proto: schedule_pb2.ScheduleAction) -> ScheduleAction:
     """Convert a protobuf ScheduleAction to a ScheduleAction TypedDict.
 
-    Note: StartWorkflowAction.args are encoded bytes and cannot be decoded
+    Note: ``StartWorkflowAction.args`` are encoded bytes and cannot be decoded
     without a DataConverter; the ``args`` key will be absent in the result.
+    ``retry_policy`` is decoded and present if set on the action.
     """
     if not proto.HasField("start_workflow"):
         raise ValueError("ScheduleAction proto has no start_workflow field set")
@@ -98,5 +100,10 @@ def schedule_action_from_proto(proto: schedule_pb2.ScheduleAction) -> ScheduleAc
         start_workflow["task_start_to_close_timeout"] = (
             swa.task_start_to_close_timeout.ToTimedelta()
         )
+
+    if swa.HasField("retry_policy"):
+        retry = retry_policy_from_proto(swa.retry_policy)
+        if retry is not None:
+            start_workflow["retry_policy"] = retry
 
     return ScheduleAction(start_workflow=start_workflow)

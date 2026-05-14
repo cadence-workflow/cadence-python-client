@@ -2,11 +2,13 @@ import asyncio
 from datetime import timedelta
 from typing import Any, Literal, cast
 
+
 from cadence import Registry, workflow
 from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
     GetWorkflowExecutionHistoryResponse,
 )
+from cadence.error import QueryFailedError
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
 
 registry = Registry()
@@ -78,6 +80,27 @@ class QueryMultipleHandlersWorkflow:
     @workflow.signal(name="add")
     def add(self, msg: str) -> None:
         self.messages.append(msg)
+
+    @workflow.signal(name="finish")
+    def finish(self) -> None:
+        self.done = True
+
+
+@registry.workflow()
+class QueryFailingHandlerWorkflow:
+    """Workflow whose query handler raises an exception."""
+
+    def __init__(self) -> None:
+        self.done = False
+
+    @workflow.run
+    async def run(self) -> str:
+        await workflow.wait_condition(lambda: self.done)
+        return "finished"
+
+    @workflow.query(name="failing_query")
+    def failing_query(self) -> str:
+        raise ValueError("query handler intentionally failed")
 
     @workflow.signal(name="finish")
     def finish(self) -> None:
@@ -352,6 +375,48 @@ async def test_multiple_query_handlers(helper: CadenceHelper):
             "get_messages",
         )
         assert messages == "hello,world"
+
+        await worker.client.signal_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            "finish",
+        )
+        await _wait_for_workflow_result(helper, execution)
+
+
+async def test_query_handler_raises_returns_query_failed_error(
+    helper: CadenceHelper,
+):
+    """Querying a handler that raises should propagate as QueryFailedError."""
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "QueryFailingHandlerWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        # Wait for the workflow to be queryable (first decision processed)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 15.0
+        last_err: Exception | None = None
+        got_query_failed = False
+        while loop.time() < deadline:
+            try:
+                async with helper.client() as client:
+                    await client.query_workflow(
+                        execution.workflow_id,
+                        execution.run_id,
+                        "failing_query",
+                        result_type=str,
+                    )
+            except QueryFailedError:
+                got_query_failed = True
+                break
+            except Exception as e:
+                last_err = e
+                await asyncio.sleep(0.2)
+
+        assert got_query_failed, f"Expected QueryFailedError but got: {last_err!r}"
 
         await worker.client.signal_workflow(
             execution.workflow_id,

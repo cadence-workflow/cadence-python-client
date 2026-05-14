@@ -7,7 +7,10 @@ from datetime import timedelta
 from cadence.api.v1 import schedule_pb2
 from cadence.api.v1.common_pb2 import WorkflowType
 from cadence.api.v1.tasklist_pb2 import TaskList
-from cadence._internal.workflow.retry_policy import _set_duration_field, retry_policy_to_proto
+from cadence._internal.workflow.retry_policy import (
+    _set_duration_field,
+    retry_policy_to_proto,
+)
 from cadence.data_converter import DataConverter
 from cadence.schedule import ScheduleAction, StartWorkflowAction
 

@@ -7,7 +7,11 @@ from typing import Mapping, cast
 
 from cadence.api.v1 import schedule_pb2
 from cadence._internal.workflow.retry_policy import _set_duration_field
-from cadence.schedule import ScheduleCatchUpPolicy, ScheduleOverlapPolicy, SchedulePolicies
+from cadence.schedule import (
+    ScheduleCatchUpPolicy,
+    ScheduleOverlapPolicy,
+    SchedulePolicies,
+)
 
 # Wire integer values – kept local to avoid importing from cadence.api.v1 in schedule.py.
 _OVERLAP_SKIP_NEW = int(schedule_pb2.SCHEDULE_OVERLAP_POLICY_SKIP_NEW)
@@ -50,10 +54,16 @@ def schedule_policies_to_proto(
     out = schedule_pb2.SchedulePolicies()
 
     if (overlap := policies.get("overlap_policy")) is not None:
-        out.overlap_policy = cast(schedule_pb2.ScheduleOverlapPolicy, int(cast(ScheduleOverlapPolicy, overlap)))
+        out.overlap_policy = cast(
+            schedule_pb2.ScheduleOverlapPolicy,
+            int(cast(ScheduleOverlapPolicy, overlap)),
+        )
 
     if (catch_up := policies.get("catch_up_policy")) is not None:
-        out.catch_up_policy = cast(schedule_pb2.ScheduleCatchUpPolicy, int(cast(ScheduleCatchUpPolicy, catch_up)))
+        out.catch_up_policy = cast(
+            schedule_pb2.ScheduleCatchUpPolicy,
+            int(cast(ScheduleCatchUpPolicy, catch_up)),
+        )
 
     if (window := policies.get("catch_up_window")) is not None:
         _set_duration_field(out.catch_up_window, cast(timedelta, window))
@@ -70,7 +80,9 @@ def schedule_policies_to_proto(
     return out
 
 
-def schedule_policies_from_proto(proto: schedule_pb2.SchedulePolicies) -> SchedulePolicies:
+def schedule_policies_from_proto(
+    proto: schedule_pb2.SchedulePolicies,
+) -> SchedulePolicies:
     """Convert a protobuf SchedulePolicies to a SchedulePolicies TypedDict."""
     policies: SchedulePolicies = {}
 

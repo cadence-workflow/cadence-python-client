@@ -1,8 +1,8 @@
 """Public API types for Cadence Schedules.
 
-  These types are the public surface for schedule management. They do NOT import
-  from ``cadence.api.v1.*``; proto conversion is handled in
-  ``cadence._internal.workflow.schedule_*``.
+These types are the public surface for schedule management. They do NOT import
+from ``cadence.api.v1.*``; proto conversion is handled in
+``cadence._internal.workflow.schedule_*``.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ class SchedulePolicies(TypedDict, total=False):
     catch_up_policy: ScheduleCatchUpPolicy
     catch_up_window: timedelta
     pause_on_failure: bool
-    buffer_limit: int      # 0 means unlimited; only meaningful with BUFFER
+    buffer_limit: int  # 0 means unlimited; only meaningful with BUFFER
     concurrency_limit: int  # 0 means unlimited; only meaningful with CONCURRENT
 
 

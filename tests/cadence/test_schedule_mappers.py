@@ -19,27 +19,17 @@ from cadence._internal.workflow.schedule_spec import (
     schedule_spec_to_proto,
 )
 from cadence._internal.workflow.schedule_state import (
-    _backfill_info_from_proto,
     _info_from_proto,
-    _pause_info_from_proto,
     _state_from_proto,
 )
 from cadence.api.v1 import schedule_pb2
 from cadence.data_converter import DefaultDataConverter
 from cadence.schedule import (
-    Backfill,
-    BackfillInfo,
-    Schedule,
     ScheduleAction,
     ScheduleCatchUpPolicy,
-    ScheduleDescription,
-    ScheduleInfo,
-    ScheduleListEntry,
     ScheduleOverlapPolicy,
-    SchedulePauseInfo,
     SchedulePolicies,
     ScheduleSpec,
-    ScheduleState,
     StartWorkflowAction,
 )
 
@@ -153,7 +143,9 @@ class TestScheduleAction:
             )
 
     def test_missing_execution_timeout_raises(self):
-        with pytest.raises(ValueError, match="execution_start_to_close_timeout is required"):
+        with pytest.raises(
+            ValueError, match="execution_start_to_close_timeout is required"
+        ):
             schedule_action_to_proto(
                 ScheduleAction(
                     start_workflow=StartWorkflowAction(

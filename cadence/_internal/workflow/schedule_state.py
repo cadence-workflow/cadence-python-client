@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import timezone
 
 from cadence.api.v1 import schedule_pb2
-from cadence.schedule import BackfillInfo, ScheduleInfo, SchedulePauseInfo, ScheduleState
+from cadence.schedule import (
+    BackfillInfo,
+    ScheduleInfo,
+    SchedulePauseInfo,
+    ScheduleState,
+)
 
 
 def _pause_info_from_proto(proto: schedule_pb2.SchedulePauseInfo) -> SchedulePauseInfo:
@@ -72,4 +77,3 @@ def _info_from_proto(proto: schedule_pb2.ScheduleInfo) -> ScheduleInfo:
         last_update_time=last_update_time,
         ongoing_backfills=ongoing_backfills,
     )
-

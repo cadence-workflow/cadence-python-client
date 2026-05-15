@@ -314,7 +314,9 @@ def _(
 
 
 @to_expectation.register
-def _(attrs: history.RequestCancelExternalWorkflowExecutionFailedEventAttributes) -> Expectation:
+def _(
+    attrs: history.RequestCancelExternalWorkflowExecutionFailedEventAttributes,
+) -> Expectation:
     return Expectation(
         DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_execution.workflow_id),
         CANCEL,

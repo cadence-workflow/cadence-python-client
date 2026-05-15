@@ -27,6 +27,7 @@ class TestDecisionTaskHandlerIntegration:
         client.worker_stub = Mock()
         client.worker_stub.RespondDecisionTaskCompleted = AsyncMock()
         client.worker_stub.RespondDecisionTaskFailed = AsyncMock()
+        client.worker_stub.RespondQueryTaskCompleted = AsyncMock()
         return client
 
     @pytest.fixture
@@ -101,13 +102,11 @@ class TestDecisionTaskHandlerIntegration:
         decision_task = self.create_mock_decision_task()
 
         # Mock the workflow engine to return some decisions
-        # Mock the workflow engine creation and execution
         mock_engine = Mock()
-        # Create a proper Decision object
         decision = Decision()
         mock_engine.process_decision = Mock(
             return_value=Mock(
-                decisions=[decision],  # Proper Decision object
+                decisions=[decision],
             )
         )
 
@@ -120,7 +119,8 @@ class TestDecisionTaskHandlerIntegration:
 
             # Verify the workflow engine was called
             mock_engine.process_decision.assert_called_once_with(
-                decision_task.history.events
+                list(decision_task.history.events),
+                None,
             )
 
             # Verify the response was sent
@@ -231,7 +231,7 @@ class TestDecisionTaskHandlerIntegration:
 
         # Create mock decision result
         decision_result = Mock()
-        decision_result.decisions = [Decision()]  # Proper Decision object
+        decision_result.decisions = [Decision()]
 
         # Call the response method
         await decision_task_handler._respond_decision_task_completed(

@@ -22,6 +22,7 @@ class TestTaskHandlerIntegration:
         client.worker_stub = Mock()
         client.worker_stub.RespondDecisionTaskCompleted = AsyncMock()
         client.worker_stub.RespondDecisionTaskFailed = AsyncMock()
+        client.worker_stub.RespondQueryTaskCompleted = AsyncMock()
         type(client).domain = PropertyMock(return_value="test_domain")
         return client
 
@@ -56,6 +57,7 @@ class TestTaskHandlerIntegration:
         task.attempt = 1
         task.history = History()
         task.next_page_token = b""
+        task.HasField = Mock(return_value=False)
         return task
 
     @pytest.mark.asyncio
@@ -76,7 +78,7 @@ class TestTaskHandlerIntegration:
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
-        mock_engine._is_workflow_complete = False  # Add missing attribute
+        mock_engine._is_workflow_complete = False
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
@@ -91,7 +93,8 @@ class TestTaskHandlerIntegration:
         # Verify the complete flow
         mock_registry.get_workflow.assert_called_once_with("TestWorkflow")
         mock_engine.process_decision.assert_called_once_with(
-            sample_decision_task.history.events
+            sample_decision_task.history.events,
+            None,
         )
         handler._client.worker_stub.RespondDecisionTaskCompleted.assert_called_once()
 
@@ -113,7 +116,7 @@ class TestTaskHandlerIntegration:
 
         # Mock workflow engine to raise an error
         mock_engine = Mock(spec=WorkflowEngine)
-        mock_engine._is_workflow_complete = False  # Add missing attribute
+        mock_engine._is_workflow_complete = False
         mock_engine.process_decision = Mock(
             side_effect=RuntimeError("Workflow processing failed")
         )
@@ -122,7 +125,6 @@ class TestTaskHandlerIntegration:
             "cadence.worker._decision_task_handler.WorkflowEngine",
             return_value=mock_engine,
         ):
-            # Use the base handler's handle_task method
             await handler.handle_task(sample_decision_task)
 
         # Verify error handling
@@ -207,6 +209,7 @@ class TestTaskHandlerIntegration:
         task1.attempt = 1
         task1.history = History()
         task1.next_page_token = b""
+        task1.HasField = Mock(return_value=False)
 
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"task2_token"
@@ -219,9 +222,11 @@ class TestTaskHandlerIntegration:
         task2.attempt = 1
         task2.history = History()
         task2.next_page_token = b""
+        task2.HasField = Mock(return_value=False)
+
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
-        mock_engine._is_workflow_complete = False  # Add missing attribute
+        mock_engine._is_workflow_complete = False
 
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
@@ -260,7 +265,7 @@ class TestTaskHandlerIntegration:
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
-        mock_engine._is_workflow_complete = False  # Add missing attribute
+        mock_engine._is_workflow_complete = False
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
@@ -275,7 +280,8 @@ class TestTaskHandlerIntegration:
             # Verify engine was created and used
             mock_engine_class.assert_called_once()
             mock_engine.process_decision.assert_called_once_with(
-                sample_decision_task.history.events
+                sample_decision_task.history.events,
+                None,
             )
 
     @pytest.mark.asyncio
@@ -296,7 +302,7 @@ class TestTaskHandlerIntegration:
 
         # Mock workflow engine to raise an error
         mock_engine = Mock(spec=WorkflowEngine)
-        mock_engine._is_workflow_complete = False  # Add missing attribute
+        mock_engine._is_workflow_complete = False
         mock_engine.process_decision = Mock(
             side_effect=RuntimeError("Workflow processing failed")
         )
@@ -356,13 +362,14 @@ class TestTaskHandlerIntegration:
             task.workflow_type.name = "TestWorkflow"
             task.started_event_id = i + 1
             task.attempt = 1
-            tasks.append(task)
             task.history = History()
             task.next_page_token = b""
+            task.HasField = Mock(return_value=False)
+            tasks.append(task)
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
-        mock_engine._is_workflow_complete = False  # Add missing attribute
+        mock_engine._is_workflow_complete = False
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
         mock_engine.process_decision = Mock(return_value=mock_decision_result)

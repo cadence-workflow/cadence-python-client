@@ -25,6 +25,11 @@ from cadence.api.v1.history_pb2 import (
     WorkflowExecutionSignaledEventAttributes,
     WorkflowExecutionStartedEventAttributes,
 )
+from cadence.api.v1.query_pb2 import (
+    WorkflowQuery,
+    WorkflowQueryResult,
+    QUERY_RESULT_TYPE_ANSWERED,
+)
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
@@ -35,6 +40,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DecisionResult:
     decisions: list[Decision]
+    query_result: Optional[WorkflowQueryResult] = None
 
 
 class WorkflowEngine:
@@ -51,6 +57,7 @@ class WorkflowEngine:
     def process_decision(
         self,
         events: List[HistoryEvent],
+        query: Optional[WorkflowQuery] = None,
     ) -> DecisionResult:
         """
         Process a decision task and generate decisions using DecisionEventsIterator.
@@ -59,7 +66,7 @@ class WorkflowEngine:
         to drive the decision processing pipeline with proper replay handling.
 
         Args:
-            decision_task: The PollForDecisionTaskResponse from the service
+            events: The workflow history events.
 
         Returns:
             DecisionResult containing the list of decisions
@@ -74,6 +81,7 @@ class WorkflowEngine:
                         "workflow_type": ctx.info().workflow_type,
                         "workflow_id": ctx.info().workflow_id,
                         "run_id": ctx.info().workflow_run_id,
+                        "query": query.query_type if query else None,
                     },
                 )
 
@@ -83,11 +91,15 @@ class WorkflowEngine:
                 # Process decision events using iterator-driven approach
                 self._process_decision_events(ctx, events_iterator)
 
+                if query:
+                    return self._execute_query(query)
+
                 # Collect all pending decisions from state machines
                 decisions = self._decision_manager.collect_pending_decisions()
 
-                return DecisionResult(decisions=decisions)
+                return DecisionResult(decisions=decisions, query_result=None)
 
+        # TODO: reevaluate if this is needed to log error here or in the caller
         except Exception as e:
             # Log decision task failure with full context (matches Java ReplayDecisionTaskHandler)
             logger.error(
@@ -102,6 +114,18 @@ class WorkflowEngine:
             )
             # Re-raise the exception so the handler can properly handle the failure
             raise
+
+    def _execute_query(self, query: WorkflowQuery) -> DecisionResult:
+        result_payload = self._workflow_instance.handle_query(
+            query.query_type, query.query_args
+        )
+        return DecisionResult(
+            decisions=[],
+            query_result=WorkflowQueryResult(
+                result_type=QUERY_RESULT_TYPE_ANSWERED,
+                answer=result_payload,
+            ),
+        )
 
     def is_done(self) -> bool:
         return self._workflow_instance.is_done()

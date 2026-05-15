@@ -1,8 +1,12 @@
 import os
 import socket
 import uuid
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
-from typing import Sequence, TypedDict, Unpack, Any, cast, Union
+from typing import TYPE_CHECKING, Sequence, TypedDict, Unpack, Any, cast, Union
+
+if TYPE_CHECKING:
+    from cadence.schedule_handle import ScheduleHandle
 
 from grpc import ChannelCredentials, Compression
 from google.protobuf.duration_pb2 import Duration
@@ -15,7 +19,19 @@ from cadence._internal.workflow.active_cluster_selection_policy import (
     active_cluster_selection_policy_to_proto,
 )
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
+from cadence.api.v1 import schedule_pb2
+from cadence.api.v1.common_pb2 import (
+    Memo,
+    SearchAttributes,
+    WorkflowType,
+    WorkflowExecution,
+)
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
+from cadence.api.v1.service_schedule_pb2 import (
+    CreateScheduleRequest,
+    ListSchedulesRequest,
+)
+from cadence.api.v1.service_schedule_pb2_grpc import ScheduleAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 import grpc.aio
 from grpc.aio import Channel, ClientInterceptor
@@ -36,7 +52,6 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionResponse,
 )
 from cadence.error import QueryFailedError
-from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
@@ -163,6 +178,7 @@ class Client:
         self._worker_stub = WorkerAPIStub(self._channel)
         self._domain_stub = DomainAPIStub(self._channel)
         self._workflow_stub = WorkflowAPIStub(self._channel)
+        self._schedule_stub = ScheduleAPIStub(self._channel)
 
     @property
     def data_converter(self) -> DataConverter:
@@ -187,6 +203,10 @@ class Client:
     @property
     def workflow_stub(self) -> WorkflowAPIStub:
         return self._workflow_stub
+
+    @property
+    def schedule_stub(self) -> ScheduleAPIStub:
+        return self._schedule_stub
 
     @property
     def metrics_emitter(self) -> MetricsEmitter:
@@ -551,6 +571,65 @@ class Client:
             return execution
         except Exception:
             raise
+
+    # ------------------------------------------------------------------
+    # Schedule API
+    # ------------------------------------------------------------------
+
+    async def create_schedule(
+        self,
+        schedule_id: str,
+        *,
+        spec: schedule_pb2.ScheduleSpec | None = None,
+        action: schedule_pb2.ScheduleAction | None = None,
+        policies: schedule_pb2.SchedulePolicies | None = None,
+        memo: Memo | None = None,
+        search_attributes: SearchAttributes | None = None,
+    ) -> "ScheduleHandle":
+        """Create a new schedule and return a handle to it."""
+        from cadence.schedule_handle import ScheduleHandle
+
+        req = CreateScheduleRequest(
+            domain=self.domain,
+            schedule_id=schedule_id,
+        )
+        if spec is not None:
+            req.spec.CopyFrom(spec)
+        if action is not None:
+            req.action.CopyFrom(action)
+        if policies is not None:
+            req.policies.CopyFrom(policies)
+        if memo is not None:
+            req.memo.CopyFrom(memo)
+        if search_attributes is not None:
+            req.search_attributes.CopyFrom(search_attributes)
+        await self._schedule_stub.CreateSchedule(req)
+        return ScheduleHandle(self, schedule_id)
+
+    def get_schedule_handle(self, schedule_id: str) -> "ScheduleHandle":
+        """Return a handle for an existing schedule (no RPC)."""
+        from cadence.schedule_handle import ScheduleHandle
+
+        return ScheduleHandle(self, schedule_id)
+
+    async def list_schedules(
+        self, *, page_size: int = 100
+    ) -> AsyncIterator[schedule_pb2.ScheduleListEntry]:
+        """Async-iterate over all schedules in the domain, handling pagination."""
+        next_page_token = b""
+        while True:
+            resp = await self._schedule_stub.ListSchedules(
+                ListSchedulesRequest(
+                    domain=self.domain,
+                    page_size=page_size,
+                    next_page_token=next_page_token,
+                )
+            )
+            for entry in resp.schedules:
+                yield entry
+            if not resp.next_page_token:
+                break
+            next_page_token = resp.next_page_token
 
 
 def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:

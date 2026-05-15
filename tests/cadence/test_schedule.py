@@ -1,4 +1,4 @@
-"""Unit tests for schedule client methods and ScheduleHandle."""
+"""Unit tests for schedule client methods."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from cadence.api.v1.service_schedule_pb2 import (
     DeleteScheduleResponse,
     DescribeScheduleRequest,
     DescribeScheduleResponse,
+    ListSchedulesRequest,
     ListSchedulesResponse,
     PauseScheduleRequest,
     PauseScheduleResponse,
@@ -31,7 +32,6 @@ from cadence.api.v1.service_schedule_pb2_grpc import (
     add_ScheduleAPIServicer_to_server,
 )
 from cadence.client import Client
-from cadence.schedule_handle import ScheduleHandle
 
 
 class _FakeScheduleServicer(ScheduleAPIServicer):
@@ -117,13 +117,13 @@ async def client(schedule_server):
 
 class TestCreateSchedule:
     @pytest.mark.asyncio
-    async def test_returns_handle(self, client, servicer):
-        handle = await client.create_schedule(
+    async def test_returns_response(self, client, servicer):
+        resp = await client.create_schedule(
             "my-schedule",
             spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
         )
-        assert isinstance(handle, ScheduleHandle)
-        assert handle.schedule_id == "my-schedule"
+        assert isinstance(resp, CreateScheduleResponse)
+        assert resp.schedule_id == "my-schedule"
 
     @pytest.mark.asyncio
     async def test_request_fields(self, client, servicer):
@@ -138,78 +138,61 @@ class TestCreateSchedule:
     async def test_none_fields_not_sent(self, client, servicer):
         await client.create_schedule("sched-2")
         req = servicer.last_create
-        # proto default: HasField returns False for unset message fields
         assert not req.HasField("spec")
         assert not req.HasField("action")
         assert not req.HasField("policies")
 
 
 # ---------------------------------------------------------------------------
-# get_schedule_handle
+# describe_schedule
 # ---------------------------------------------------------------------------
 
 
-class TestGetScheduleHandle:
-    def test_no_rpc(self, client, servicer):
-        handle = client.get_schedule_handle("existing-schedule")
-        assert isinstance(handle, ScheduleHandle)
-        assert handle.schedule_id == "existing-schedule"
-        assert servicer.last_describe is None  # no RPC made
-
-
-# ---------------------------------------------------------------------------
-# ScheduleHandle.describe
-# ---------------------------------------------------------------------------
-
-
-class TestDescribe:
+class TestDescribeSchedule:
     @pytest.mark.asyncio
     async def test_calls_describe(self, client, servicer):
-        handle = client.get_schedule_handle("sched-x")
-        resp = await handle.describe()
+        resp = await client.describe_schedule("sched-x")
         assert servicer.last_describe.schedule_id == "sched-x"
         assert servicer.last_describe.domain == "test-domain"
         assert resp.spec.cron_expression == "0 9 * * *"
 
 
 # ---------------------------------------------------------------------------
-# ScheduleHandle.pause / unpause
+# pause_schedule / unpause_schedule
 # ---------------------------------------------------------------------------
 
 
-class TestPause:
+class TestPauseSchedule:
     @pytest.mark.asyncio
     async def test_pause_sends_reason(self, client, servicer):
-        handle = client.get_schedule_handle("sched-p")
-        await handle.pause(reason="maintenance")
+        await client.pause_schedule("sched-p", reason="maintenance")
         assert servicer.last_pause.schedule_id == "sched-p"
         assert servicer.last_pause.reason == "maintenance"
 
     @pytest.mark.asyncio
     async def test_pause_defaults_identity(self, client, servicer):
-        handle = client.get_schedule_handle("sched-p")
-        await handle.pause()
+        await client.pause_schedule("sched-p")
         assert servicer.last_pause.identity == client.identity
 
     @pytest.mark.asyncio
     async def test_pause_custom_identity(self, client, servicer):
-        handle = client.get_schedule_handle("sched-p")
-        await handle.pause(identity="ops-bot")
+        await client.pause_schedule("sched-p", identity="ops-bot")
         assert servicer.last_pause.identity == "ops-bot"
 
 
-class TestUnpause:
+class TestUnpauseSchedule:
     @pytest.mark.asyncio
     async def test_unpause_sends_reason(self, client, servicer):
-        handle = client.get_schedule_handle("sched-u")
-        await handle.unpause(reason="resolved")
+        await client.unpause_schedule("sched-u", reason="resolved")
         assert servicer.last_unpause.schedule_id == "sched-u"
         assert servicer.last_unpause.reason == "resolved"
 
     @pytest.mark.asyncio
     async def test_unpause_catch_up_policy(self, client, servicer):
-        handle = client.get_schedule_handle("sched-u")
-        await handle.unpause(catch_up_policy=schedule_pb2.SCHEDULE_CATCH_UP_POLICY_ONE)
+        await client.unpause_schedule(
+            "sched-u",
+            catch_up_policy=schedule_pb2.SCHEDULE_CATCH_UP_POLICY_ONE,
+        )
         assert (
             servicer.last_unpause.catch_up_policy
             == schedule_pb2.SCHEDULE_CATCH_UP_POLICY_ONE
@@ -217,89 +200,86 @@ class TestUnpause:
 
 
 # ---------------------------------------------------------------------------
-# ScheduleHandle.delete
+# delete_schedule
 # ---------------------------------------------------------------------------
 
 
-class TestDelete:
+class TestDeleteSchedule:
     @pytest.mark.asyncio
     async def test_delete(self, client, servicer):
-        handle = client.get_schedule_handle("sched-d")
-        await handle.delete()
+        await client.delete_schedule("sched-d")
         assert servicer.last_delete.schedule_id == "sched-d"
         assert servicer.last_delete.domain == "test-domain"
 
 
 # ---------------------------------------------------------------------------
-# ScheduleHandle.update
+# update_schedule
 # ---------------------------------------------------------------------------
 
 
-class TestUpdate:
+class TestUpdateSchedule:
     @pytest.mark.asyncio
     async def test_update_spec(self, client, servicer):
-        handle = client.get_schedule_handle("sched-upd")
         new_spec = schedule_pb2.ScheduleSpec(cron_expression="0 12 * * *")
-        await handle.update(spec=new_spec)
+        await client.update_schedule("sched-upd", spec=new_spec)
         assert servicer.last_update.spec.cron_expression == "0 12 * * *"
 
     @pytest.mark.asyncio
     async def test_update_no_fields_sends_empty(self, client, servicer):
-        handle = client.get_schedule_handle("sched-upd")
-        await handle.update()
+        await client.update_schedule("sched-upd")
         assert not servicer.last_update.HasField("spec")
 
 
 # ---------------------------------------------------------------------------
-# ScheduleHandle.backfill
+# backfill_schedule
 # ---------------------------------------------------------------------------
 
 
-class TestBackfill:
+class TestBackfillSchedule:
     _T0 = datetime(2025, 1, 1, tzinfo=timezone.utc)
     _T1 = datetime(2025, 1, 2, tzinfo=timezone.utc)
 
     @pytest.mark.asyncio
     async def test_backfill_sends_request(self, client, servicer):
-        handle = client.get_schedule_handle("sched-bf")
-        await handle.backfill(self._T0, self._T1)
+        await client.backfill_schedule("sched-bf", self._T0, self._T1)
         req = servicer.last_backfill
         assert req.schedule_id == "sched-bf"
         assert req.backfill_id  # UUID generated
 
     @pytest.mark.asyncio
     async def test_backfill_custom_id(self, client, servicer):
-        handle = client.get_schedule_handle("sched-bf")
-        await handle.backfill(self._T0, self._T1, backfill_id="fixed-id")
+        await client.backfill_schedule(
+            "sched-bf", self._T0, self._T1, backfill_id="fixed-id"
+        )
         assert servicer.last_backfill.backfill_id == "fixed-id"
 
     @pytest.mark.asyncio
     async def test_naive_start_raises(self, client):
-        handle = client.get_schedule_handle("sched-bf")
         with pytest.raises(ValueError, match="start_time must be timezone-aware"):
-            await handle.backfill(datetime(2025, 1, 1), self._T1)
+            await client.backfill_schedule(
+                "sched-bf", datetime(2025, 1, 1), self._T1
+            )
 
     @pytest.mark.asyncio
     async def test_naive_end_raises(self, client):
-        handle = client.get_schedule_handle("sched-bf")
         with pytest.raises(ValueError, match="end_time must be timezone-aware"):
-            await handle.backfill(self._T0, datetime(2025, 1, 2))
+            await client.backfill_schedule(
+                "sched-bf", self._T0, datetime(2025, 1, 2)
+            )
 
     @pytest.mark.asyncio
     async def test_end_before_start_raises(self, client):
-        handle = client.get_schedule_handle("sched-bf")
         with pytest.raises(ValueError, match="end_time must be strictly after"):
-            await handle.backfill(self._T1, self._T0)
+            await client.backfill_schedule("sched-bf", self._T1, self._T0)
 
     @pytest.mark.asyncio
     async def test_equal_times_raises(self, client):
-        handle = client.get_schedule_handle("sched-bf")
         with pytest.raises(ValueError, match="end_time must be strictly after"):
-            await handle.backfill(self._T0, self._T0)
+            await client.backfill_schedule("sched-bf", self._T0, self._T0)
 
 
 # ---------------------------------------------------------------------------
-# Client.list_schedules
+# list_schedules
 # ---------------------------------------------------------------------------
 
 

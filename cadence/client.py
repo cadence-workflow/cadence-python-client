@@ -1,7 +1,7 @@
 import os
 import socket
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
@@ -32,6 +32,7 @@ from cadence.api.v1.service_schedule_pb2 import (
     DescribeScheduleRequest,
     DescribeScheduleResponse,
     ListSchedulesRequest,
+    ListSchedulesResponse,
     PauseScheduleRequest,
     UnpauseScheduleRequest,
     UpdateScheduleRequest,
@@ -732,16 +733,19 @@ class Client:
 
     async def list_schedules(
         self, *, page_size: int = 100
-    ) -> AsyncIterator[schedule_pb2.ScheduleListEntry]:
+    ) -> AsyncGenerator[schedule_pb2.ScheduleListEntry, None]:
         """Async-iterate over all schedules in the domain, handling pagination."""
         next_page_token = b""
         while True:
-            resp = await self._schedule_stub.ListSchedules(
-                ListSchedulesRequest(
-                    domain=self.domain,
-                    page_size=page_size,
-                    next_page_token=next_page_token,
-                )
+            resp = cast(
+                ListSchedulesResponse,
+                await self._schedule_stub.ListSchedules(
+                    ListSchedulesRequest(
+                        domain=self.domain,
+                        page_size=page_size,
+                        next_page_token=next_page_token,
+                    )
+                ),
             )
             for entry in resp.schedules:
                 yield entry

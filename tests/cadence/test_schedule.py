@@ -18,7 +18,6 @@ from cadence.api.v1.service_schedule_pb2 import (
     DeleteScheduleResponse,
     DescribeScheduleRequest,
     DescribeScheduleResponse,
-    ListSchedulesRequest,
     ListSchedulesResponse,
     PauseScheduleRequest,
     PauseScheduleResponse,
@@ -256,16 +255,12 @@ class TestBackfillSchedule:
     @pytest.mark.asyncio
     async def test_naive_start_raises(self, client):
         with pytest.raises(ValueError, match="start_time must be timezone-aware"):
-            await client.backfill_schedule(
-                "sched-bf", datetime(2025, 1, 1), self._T1
-            )
+            await client.backfill_schedule("sched-bf", datetime(2025, 1, 1), self._T1)
 
     @pytest.mark.asyncio
     async def test_naive_end_raises(self, client):
         with pytest.raises(ValueError, match="end_time must be timezone-aware"):
-            await client.backfill_schedule(
-                "sched-bf", self._T0, datetime(2025, 1, 2)
-            )
+            await client.backfill_schedule("sched-bf", self._T0, datetime(2025, 1, 2))
 
     @pytest.mark.asyncio
     async def test_end_before_start_raises(self, client):

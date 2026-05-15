@@ -371,6 +371,56 @@ class TestDeterminismTracker:
             history.ActivityTaskCancelRequestedEventAttributes(activity_id="0"),
             Expectation(DecisionId(DecisionType.ACTIVITY, "0"), CANCEL),
         ),
+        # Child workflow start
+        (
+            decision.StartChildWorkflowExecutionDecisionAttributes(
+                workflow_id="0",
+                workflow_type=common.WorkflowType(name="wf"),
+            ),
+            Expectation(
+                DecisionId(DecisionType.CHILD_WORKFLOW, "0"),
+                {"workflow_type": "wf"},
+            ),
+        ),
+        (
+            history.StartChildWorkflowExecutionInitiatedEventAttributes(
+                workflow_id="0",
+                workflow_type=common.WorkflowType(name="wf"),
+            ),
+            Expectation(
+                DecisionId(DecisionType.CHILD_WORKFLOW, "0"),
+                {"workflow_type": "wf"},
+            ),
+        ),
+        (
+            history.StartChildWorkflowExecutionFailedEventAttributes(
+                workflow_id="0",
+                workflow_type=common.WorkflowType(name="wf"),
+            ),
+            Expectation(
+                DecisionId(DecisionType.CHILD_WORKFLOW, "0"),
+                {"workflow_type": "wf"},
+            ),
+        ),
+        # Child workflow cancel requested
+        (
+            decision.RequestCancelExternalWorkflowExecutionDecisionAttributes(
+                workflow_execution=common.WorkflowExecution(workflow_id="0"),
+            ),
+            Expectation(DecisionId(DecisionType.CHILD_WORKFLOW, "0"), CANCEL),
+        ),
+        (
+            history.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes(
+                workflow_execution=common.WorkflowExecution(workflow_id="0"),
+            ),
+            Expectation(DecisionId(DecisionType.CHILD_WORKFLOW, "0"), CANCEL),
+        ),
+        (
+            history.RequestCancelExternalWorkflowExecutionFailedEventAttributes(
+                workflow_execution=common.WorkflowExecution(workflow_id="0"),
+            ),
+            Expectation(DecisionId(DecisionType.CHILD_WORKFLOW, "0"), CANCEL),
+        ),
         # Workflow complete
         (
             decision.CompleteWorkflowExecutionDecisionAttributes(),

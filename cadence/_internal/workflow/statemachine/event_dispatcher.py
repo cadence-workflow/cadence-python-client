@@ -44,6 +44,19 @@ class EventDispatcher:
         return decorator
 
 
+def resolve_id_attr(obj: Any, path: str) -> Any:
+    """Resolve a potentially dotted attribute path from a proto message.
+
+    For example, resolve_id_attr(attrs, "workflow_execution.workflow_id") will
+    return attrs.workflow_execution.workflow_id.
+    """
+    if not path:
+        return None
+    for part in path.split("."):
+        obj = getattr(obj, part)
+    return obj
+
+
 def _find_event_type(func: EventHandler) -> Type[Message]:
     sig = signature(func)
     type_hints = get_type_hints(func)
@@ -70,8 +83,18 @@ def _find_event_type(func: EventHandler) -> Type[Message]:
 
 
 def _validate_field(func: EventHandler, event_type: Type[Message], field: str) -> None:
-    fields = event_type.DESCRIPTOR.fields_by_name
-    if field not in fields:
-        raise ValueError(
-            f"{func.__qualname__} handles {event_type.__qualname__}, which has no field {field}"
-        )
+    """Validate that all parts of a (potentially dotted) field path exist on the proto type."""
+    descriptor = event_type.DESCRIPTOR
+    parts = field.split(".")
+    for i, part in enumerate(parts):
+        fields = descriptor.fields_by_name
+        if part not in fields:
+            raise ValueError(
+                f"{func.__qualname__} handles {event_type.__qualname__}, which has no field {part!r} (in path {field!r})"
+            )
+        if i < len(parts) - 1:
+            descriptor = fields[part].message_type
+            if descriptor is None:
+                raise ValueError(
+                    f"{func.__qualname__}: field {part!r} is not a message type, cannot access sub-field in path {field!r}"
+                )

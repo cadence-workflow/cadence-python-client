@@ -147,3 +147,38 @@ class ServiceBusyError(CadenceRpcError):
     def __init__(self, message: str | None, code: grpc.StatusCode, reason: str) -> None:
         super().__init__(message, code, reason)
         self.reason = reason
+
+
+class ChildWorkflowError(Exception):
+    """Base class for all child workflow lifecycle errors."""
+
+    pass
+
+
+class StartChildWorkflowExecutionFailed(ChildWorkflowError):
+    def __init__(self, message: str, cause: Any, workflow_id: str) -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.workflow_id = workflow_id
+
+
+class ChildWorkflowExecutionFailed(ChildWorkflowError):
+    def __init__(self, message: str, failure: Any) -> None:
+        super().__init__(message)
+        self.failure = failure
+
+
+class ChildWorkflowExecutionCanceled(ChildWorkflowError):
+    def __init__(self, message: str, details: Any) -> None:
+        super().__init__(message)
+        self.details = details
+
+
+class ChildWorkflowExecutionTimedOut(ChildWorkflowError):
+    def __init__(self, message: str, timeout_type: int) -> None:
+        super().__init__(message)
+        self.timeout_type = timeout_type
+
+
+class ChildWorkflowExecutionTerminated(ChildWorkflowError):
+    pass

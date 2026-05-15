@@ -8,6 +8,10 @@ from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,
 )
+from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
+    child_workflow_events,
+    ChildWorkflowExecutionStateMachine,
+)
 from cadence._internal.workflow.statemachine.completion_state_machine import (
     CompletionStateMachine,
 )
@@ -21,6 +25,7 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
 from cadence._internal.workflow.statemachine.event_dispatcher import (
     EventDispatcher,
     Action,
+    resolve_id_attr,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.timer_state_machine import (
@@ -28,7 +33,7 @@ from cadence._internal.workflow.statemachine.timer_state_machine import (
     timer_events,
 )
 from cadence.api.v1 import decision, history
-from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
 
 DecisionAlias = Tuple[DecisionType, str | int]
 
@@ -67,6 +72,7 @@ class DecisionManager:
         {
             DecisionType.ACTIVITY: activity_events,
             DecisionType.TIMER: timer_events,
+            DecisionType.CHILD_WORKFLOW: child_workflow_events,
         }
     )
 
@@ -110,6 +116,21 @@ class DecisionManager:
 
         return future
 
+    # ----- Child Workflow API -----
+    def schedule_child_workflow(
+        self, attrs: decision.StartChildWorkflowExecutionDecisionAttributes
+    ) -> tuple[asyncio.Future[WorkflowExecution], asyncio.Future[Payload]]:
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
+        decision_id = DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id)
+        execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
+        result: DecisionFuture[Payload] = DecisionFuture(
+            self._event_loop, lambda: self._request_cancel(decision_id)
+        )
+        machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
+        self._add_state_machine(machine)
+        return execution, result
+
     # ----- Workflow API -----
     def complete_workflow(self, decision: decision.Decision) -> None:
         if self._replaying:
@@ -152,8 +173,9 @@ class DecisionManager:
             decision_type = event_action.decision_type
             action = event_action.action
             # Find what state machine the event references.
-            # This may be a reference via the user id or a reference to a previous event
-            id_for_event = getattr(event_attributes, action.id_attr)
+            # This may be a reference via the user id or a reference to a previous event.
+            # Supports dotted paths (e.g. "workflow_execution.workflow_id") for nested fields.
+            id_for_event = resolve_id_attr(event_attributes, action.id_attr)
             alias = (decision_type, id_for_event)
             machine = self.aliases.get(alias, None)
             if machine is None:

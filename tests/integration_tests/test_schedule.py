@@ -163,4 +163,3 @@ async def test_list_schedules_contains_created(helper: CadenceHelper):
             assert schedule_id in ids
         finally:
             await client.delete_schedule(schedule_id)
-

@@ -35,6 +35,10 @@ integration-test:
 	@echo "Running integration tests..."
 	uv run pytest -v --integration-tests
 
+integration-test-keep:
+	@echo "Running integration tests with cadence alive..."
+	uv run pytest -v --integration-tests --keep-cadence-alive
+
 # Clean generated files and caches
 clean:
 	@echo "Cleaning up..."
@@ -45,11 +49,12 @@ clean:
 # Show help
 help:
 	@echo "Available targets:"
-	@echo "  make pr              - Run all PR checks (recommended before submitting PR)"
-	@echo "  make install         - Install dependencies"
-	@echo "  make lint            - Run Ruff linter"
-	@echo "  make type-check      - Run mypy type checker"
-	@echo "  make test            - Run unit tests"
-	@echo "  make integration-test - Run integration tests"
-	@echo "  make clean           - Remove generated files and caches"
-	@echo "  make help            - Show this help message"
+	@echo "  make pr                    - Run all PR checks (recommended before submitting PR)"
+	@echo "  make install         		- Install dependencies"
+	@echo "  make lint            		- Run Ruff linter"
+	@echo "  make type-check      		- Run mypy type checker"
+	@echo "  make test            		- Run unit tests"
+	@echo "  make integration-test 		- Run integration tests"
+	@echo "  make integration-test-keep - Run integration tests with cadence alive"
+	@echo "  make clean           		- Remove generated files and caches"
+	@echo "  make help            		- Show this help message"

@@ -123,6 +123,7 @@ class WorkflowInstance:
         args = query_def.params_from_payload(self._data_converter, query_args)
         result = query_def(self._instance, *args)
         if inspect.iscoroutine(result):
+            result.close()
             raise TypeError(
                 f"Query handler '{query_type}' must be synchronous, got async function"
             )

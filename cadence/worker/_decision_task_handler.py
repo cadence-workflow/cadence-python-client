@@ -177,6 +177,11 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         run_id = workflow_execution.run_id if workflow_execution else "unknown"
         workflow_type = task.workflow_type.name if task.workflow_type else "unknown"
 
+        # For query tasks, respond with a query failure instead of decision failure
+        if task.HasField("query"):
+            await self._respond_query_task_failed(task, str(error))
+            return
+
         logger.error(
             "Decision task processing failure",
             extra={
@@ -191,11 +196,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             },
             exc_info=True,
         )
-
-        # For query tasks, respond with a query failure instead of decision failure
-        if task.HasField("query"):
-            await self._respond_query_task_failed(task, str(error))
-            return
 
         # Determine the failure cause
         # TODO revisit failure cause logic

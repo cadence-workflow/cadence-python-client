@@ -18,8 +18,8 @@ from cadence.error import QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
 
 
-def _dummy_schedule_action() -> schedule_pb2.ScheduleAction:
-    """Cadence rejects CreateSchedule without Action.start_workflow set."""
+def _make_schedule_action() -> schedule_pb2.ScheduleAction:
+    """Build a minimal ScheduleAction required by CreateSchedule."""
     return schedule_pb2.ScheduleAction(
         start_workflow=schedule_pb2.ScheduleAction.StartWorkflowAction(
             workflow_type=common_pb2.WorkflowType(
@@ -83,7 +83,7 @@ async def test_create_describe_delete(helper: CadenceHelper):
     async with helper.client() as client:
         try:
             expected_spec = schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *")
-            expected_action = _dummy_schedule_action()
+            expected_action = _make_schedule_action()
             await client.create_schedule(
                 schedule_id,
                 spec=expected_spec,
@@ -106,7 +106,7 @@ async def test_pause_and_unpause(helper: CadenceHelper):
             await client.create_schedule(
                 schedule_id,
                 spec=schedule_pb2.ScheduleSpec(cron_expression="0 10 * * *"),
-                action=_dummy_schedule_action(),
+                action=_make_schedule_action(),
             )
 
             await client.pause_schedule(schedule_id, reason="integration-test")
@@ -127,7 +127,7 @@ async def test_update_spec(helper: CadenceHelper):
 
     async with helper.client() as client:
         try:
-            expected_action = _dummy_schedule_action()
+            expected_action = _make_schedule_action()
             await client.create_schedule(
                 schedule_id,
                 spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
@@ -156,7 +156,7 @@ async def test_list_schedules_contains_created(helper: CadenceHelper):
             await client.create_schedule(
                 schedule_id,
                 spec=schedule_pb2.ScheduleSpec(cron_expression="0 11 * * *"),
-                action=_dummy_schedule_action(),
+                action=_make_schedule_action(),
             )
 
             ids = [e.schedule_id async for e in client.list_schedules()]

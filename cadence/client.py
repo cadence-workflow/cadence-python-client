@@ -1,3 +1,4 @@
+import asyncio
 import os
 import socket
 import uuid
@@ -612,17 +613,39 @@ class Client:
             await self._schedule_stub.CreateSchedule(req),
         )
 
-    async def describe_schedule(self, schedule_id: str) -> DescribeScheduleResponse:
-        """Return the current configuration and state of the schedule."""
-        return cast(
-            DescribeScheduleResponse,
-            await self._schedule_stub.DescribeSchedule(
-                DescribeScheduleRequest(
-                    domain=self.domain,
-                    schedule_id=schedule_id,
+    async def describe_schedule(
+        self,
+        schedule_id: str,
+        *,
+        _timeout: float = 90.0,
+        _initial_backoff: float = 0.25,
+    ) -> DescribeScheduleResponse:
+        """Return the current configuration and state of the schedule.
+
+        Cadence implements schedules as workflow executions internally.
+        Immediately after ``create_schedule`` the underlying workflow may not
+        have processed its first decision task yet, causing ``DescribeSchedule``
+        to transiently fail.  This is retried internally so callers never see
+        the transient error.
+        """
+        req = DescribeScheduleRequest(domain=self.domain, schedule_id=schedule_id)
+        deadline = asyncio.get_event_loop().time() + _timeout
+        backoff = _initial_backoff
+        while True:
+            try:
+                return cast(
+                    DescribeScheduleResponse,
+                    await self._schedule_stub.DescribeSchedule(req),
                 )
-            ),
-        )
+            except QueryFailedError as exc:
+                msg = str(exc.args[0]) if exc.args else ""
+                if asyncio.get_event_loop().time() < deadline and (
+                    "decision task" in msg or "queried" in msg.lower()
+                ):
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 1.5, 2.0)
+                    continue
+                raise
 
     async def pause_schedule(
         self,

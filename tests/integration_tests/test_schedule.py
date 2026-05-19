@@ -4,8 +4,6 @@ Requires a running Cadence server. Run with:
     uv run pytest tests/integration_tests/test_schedule.py --integration-tests -v
 """
 
-import asyncio
-import time
 import uuid
 
 import pytest
@@ -13,8 +11,6 @@ from google.protobuf import text_format
 
 from cadence.api.v1 import common_pb2, schedule_pb2, tasklist_pb2
 from cadence.api.v1.service_schedule_pb2 import DescribeScheduleResponse
-from cadence.client import Client
-from cadence.error import QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
 
 
@@ -28,31 +24,6 @@ def _make_schedule_action() -> schedule_pb2.ScheduleAction:
             task_list=tasklist_pb2.TaskList(name="schedule-integration-task-list"),
         )
     )
-
-
-async def _describe_schedule_when_ready(
-    client: Client,
-    schedule_id: str,
-    *,
-    timeout_s: float = 90.0,
-) -> DescribeScheduleResponse:
-    """DescribeSchedule is backed by a query; the schedule workflow may not be queryable immediately."""
-    deadline = time.monotonic() + timeout_s
-    backoff = 0.25
-    last_err: QueryFailedError | None = None
-    while time.monotonic() < deadline:
-        try:
-            return await client.describe_schedule(schedule_id)
-        except QueryFailedError as exc:
-            msg = str(exc.args[0]) if exc.args else ""
-            if "decision task" in msg or "queried" in msg.lower():
-                last_err = exc
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 1.5, 2.0)
-                continue
-            raise
-    assert last_err is not None
-    raise last_err
 
 
 def _assert_describe_spec_and_action(
@@ -90,7 +61,7 @@ async def test_create_describe_delete(helper: CadenceHelper):
                 action=expected_action,
             )
 
-            resp = await _describe_schedule_when_ready(client, schedule_id)
+            resp = await client.describe_schedule(schedule_id)
             _assert_describe_spec_and_action(resp, expected_spec, expected_action)
         finally:
             await client.delete_schedule(schedule_id)
@@ -110,11 +81,11 @@ async def test_pause_and_unpause(helper: CadenceHelper):
             )
 
             await client.pause_schedule(schedule_id, reason="integration-test")
-            paused_resp = await _describe_schedule_when_ready(client, schedule_id)
+            paused_resp = await client.describe_schedule(schedule_id)
             assert paused_resp.state.paused
 
             await client.unpause_schedule(schedule_id, reason="done")
-            resumed_resp = await _describe_schedule_when_ready(client, schedule_id)
+            resumed_resp = await client.describe_schedule(schedule_id)
             assert not resumed_resp.state.paused
         finally:
             await client.delete_schedule(schedule_id)
@@ -140,7 +111,7 @@ async def test_update_spec(helper: CadenceHelper):
                 spec=updated_spec,
             )
 
-            resp = await _describe_schedule_when_ready(client, schedule_id)
+            resp = await client.describe_schedule(schedule_id)
             _assert_describe_spec_and_action(resp, updated_spec, expected_action)
         finally:
             await client.delete_schedule(schedule_id)

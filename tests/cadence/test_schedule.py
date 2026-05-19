@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 import grpc
 import grpc.aio
@@ -31,6 +32,7 @@ from cadence.api.v1.service_schedule_pb2_grpc import (
     add_ScheduleAPIServicer_to_server,
 )
 from cadence.client import Client
+from cadence.error import QueryFailedError
 
 
 class _FakeScheduleServicer(ScheduleAPIServicer):
@@ -319,3 +321,55 @@ class TestListSchedules:
         servicer.list_pages = [ListSchedulesResponse()]
         results = [e async for e in client.list_schedules()]
         assert results == []
+
+
+# ---------------------------------------------------------------------------
+# describe_schedule retry on transient QueryFailedError
+# ---------------------------------------------------------------------------
+
+
+class TestDescribeScheduleRetry:
+    _TRANSIENT_MSG = "decision task not yet processed"
+    _SUCCESS = DescribeScheduleResponse(
+        spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *")
+    )
+
+    @pytest.mark.asyncio
+    async def test_retries_on_transient_query_failed_error(self, client):
+        """Transient QueryFailedError (decision task) is retried until success."""
+        transient = QueryFailedError(self._TRANSIENT_MSG, grpc.StatusCode.INTERNAL)
+        mock_rpc = AsyncMock(side_effect=[transient, transient, self._SUCCESS])
+
+        with patch.object(client._schedule_stub, "DescribeSchedule", mock_rpc):
+            resp = await client.describe_schedule(
+                "sched-x", _timeout=10.0, _initial_backoff=0.0
+            )
+
+        assert resp.spec.cron_expression == "0 9 * * *"
+        assert mock_rpc.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_query_failed_error_raises(self, client):
+        """QueryFailedError with an unrecognised message is not retried."""
+        non_retryable = QueryFailedError(
+            "query rejected: closed", grpc.StatusCode.INTERNAL
+        )
+        mock_rpc = AsyncMock(side_effect=non_retryable)
+
+        with patch.object(client._schedule_stub, "DescribeSchedule", mock_rpc):
+            with pytest.raises(QueryFailedError, match="query rejected: closed"):
+                await client.describe_schedule("sched-x", _timeout=10.0)
+
+        assert mock_rpc.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_timeout_stops_retrying(self, client):
+        """Once timeout is exceeded, the last QueryFailedError is re-raised."""
+        transient = QueryFailedError(self._TRANSIENT_MSG, grpc.StatusCode.INTERNAL)
+        mock_rpc = AsyncMock(side_effect=transient)
+
+        with patch.object(client._schedule_stub, "DescribeSchedule", mock_rpc):
+            with pytest.raises(QueryFailedError):
+                await client.describe_schedule(
+                    "sched-x", _timeout=0.0, _initial_backoff=0.0
+                )

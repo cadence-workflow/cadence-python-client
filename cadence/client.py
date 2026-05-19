@@ -629,7 +629,7 @@ class Client:
         the transient error.
         """
         req = DescribeScheduleRequest(domain=self.domain, schedule_id=schedule_id)
-        deadline = asyncio.get_event_loop().time() + _timeout
+        deadline = asyncio.get_running_loop().time() + _timeout
         backoff = _initial_backoff
         while True:
             try:
@@ -639,7 +639,7 @@ class Client:
                 )
             except QueryFailedError as exc:
                 msg = str(exc.args[0]) if exc.args else ""
-                if asyncio.get_event_loop().time() < deadline and (
+                if asyncio.get_running_loop().time() < deadline and (
                     "decision task" in msg or "queried" in msg.lower()
                 ):
                     await asyncio.sleep(backoff)

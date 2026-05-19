@@ -16,6 +16,7 @@ class CadenceFunctionTool:
     params_json_schema: dict[str, Any]
     strict_json_schema: bool = True
     is_enabled: bool = True
+    needs_approval: bool = False
 
 
 """CadenceTool is a union of all the tool types that can be used with Cadence."""
@@ -33,6 +34,7 @@ def to_cadence_tool(tool: Tool) -> CadenceTool:
             params_json_schema=tool.params_json_schema,
             strict_json_schema=tool.strict_json_schema,
             is_enabled=tool.is_enabled,
+            needs_approval=tool.needs_approval,
         )
     raise ValueError(f"Unknown tool type: {type(tool)}")
 
@@ -49,6 +51,7 @@ def from_cadence_tool(tool: CadenceTool) -> Tool:
             params_json_schema=tool.params_json_schema,
             strict_json_schema=tool.strict_json_schema,
             is_enabled=tool.is_enabled,
+            needs_approval=tool.needs_approval,
             on_invoke_tool=noop_on_invoke_tool,
         )
     raise ValueError(f"Unknown tool type: {type(tool)}")

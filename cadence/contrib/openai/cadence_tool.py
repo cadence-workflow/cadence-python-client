@@ -28,6 +28,9 @@ def to_cadence_tool(tool: Tool) -> CadenceTool:
         if not isinstance(tool.is_enabled, bool):
             raise ValueError("is_enabled must be a bool")
 
+        if not isinstance(tool.needs_approval, bool):
+            raise ValueError("needs_approval must be a bool")
+
         return CadenceFunctionTool(
             name=tool.name,
             description=tool.description,

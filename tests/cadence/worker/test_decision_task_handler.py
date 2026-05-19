@@ -27,6 +27,7 @@ class TestDecisionTaskHandler:
         client.worker_stub = Mock()
         client.worker_stub.RespondDecisionTaskCompleted = AsyncMock()
         client.worker_stub.RespondDecisionTaskFailed = AsyncMock()
+        client.worker_stub.RespondQueryTaskCompleted = AsyncMock()
         type(client).domain = PropertyMock(return_value="test_domain")
         return client
 
@@ -61,6 +62,7 @@ class TestDecisionTaskHandler:
         task.attempt = 1
         task.history = History()
         task.next_page_token = b""
+        task.HasField = Mock(return_value=False)
         return task
 
     def test_initialization(self, mock_client, mock_registry):
@@ -116,7 +118,8 @@ class TestDecisionTaskHandler:
 
         # Verify workflow engine was created and used
         mock_engine.process_decision.assert_called_once_with(
-            sample_decision_task.history.events
+            sample_decision_task.history.events,
+            None,
         )
 
         # Verify response was sent
@@ -226,6 +229,7 @@ class TestDecisionTaskHandler:
         task1.attempt = 1
         task1.history = History()
         task1.next_page_token = b""
+        task1.HasField = Mock(return_value=False)
 
         task2 = Mock(spec=PollForDecisionTaskResponse)
         task2.task_token = b"test_task_token_2"
@@ -238,6 +242,7 @@ class TestDecisionTaskHandler:
         task2.attempt = 1
         task2.history = History()
         task2.next_page_token = b""
+        task2.HasField = Mock(return_value=False)
 
         # Mock workflow engine
         mock_engine = Mock(spec=WorkflowEngine)
@@ -373,10 +378,10 @@ class TestDecisionTaskHandler:
         assert len(call_args.decisions) == 2
 
     @pytest.mark.asyncio
-    async def test_respond_decision_task_completed_no_query_results(
+    async def test_respond_decision_task_completed_empty_decisions(
         self, handler, sample_decision_task
     ):
-        """Test decision task completion response without query results."""
+        """Test decision task completion response with no decisions."""
         decision_result = Mock(spec=DecisionResult)
         decision_result.decisions = []
 

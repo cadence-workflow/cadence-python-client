@@ -1,7 +1,12 @@
 import pytest
 
 from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
+    ChildWorkflowExecutionCanceled,
+    ChildWorkflowExecutionFailed,
     ChildWorkflowExecutionStateMachine,
+    ChildWorkflowExecutionTerminated,
+    ChildWorkflowExecutionTimedOut,
+    StartChildWorkflowExecutionFailed,
 )
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionFuture,
@@ -12,13 +17,6 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Failure, Payload, WorkflowExecution, WorkflowType
-from cadence.error import (
-    ChildWorkflowExecutionCanceled,
-    ChildWorkflowExecutionFailed,
-    ChildWorkflowExecutionTerminated,
-    ChildWorkflowExecutionTimedOut,
-    StartChildWorkflowExecutionFailed,
-)
 
 ### These tests have to be async because they rely on the presence of an eventloop
 
@@ -87,6 +85,28 @@ async def test_cancel_after_recorded():
     assert execution.done() is True
     assert execution.cancelled() is True
     assert result.done() is False
+
+
+async def test_handle_started_after_cancel_recorded_keeps_execution_cancelled():
+    sm, execution, result = make_sm()
+    sm.handle_initiated(history.StartChildWorkflowExecutionInitiatedEventAttributes())
+    sm.request_cancel()
+
+    sm.handle_started(
+        history.ChildWorkflowExecutionStartedEventAttributes(
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-1")
+        )
+    )
+
+    assert sm.state is DecisionState.CANCELED_AFTER_STARTED
+    assert execution.cancelled() is True
+    assert result.done() is False
+    cancel_decision = sm.get_decision()
+    assert cancel_decision is not None
+    attrs = (
+        cancel_decision.request_cancel_external_workflow_execution_decision_attributes
+    )
+    assert attrs.workflow_execution.run_id == "run-1"
 
 
 async def test_cancel_after_started():

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     BaseDecisionStateMachine,
     DecisionFuture,
@@ -13,15 +15,41 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
-from cadence.error import (
-    ChildWorkflowExecutionCanceled,
-    ChildWorkflowExecutionFailed,
-    ChildWorkflowExecutionTerminated,
-    ChildWorkflowExecutionTimedOut,
-    StartChildWorkflowExecutionFailed,
-)
 
 child_workflow_events = EventDispatcher("initiated_event_id")
+
+
+class ChildWorkflowError(Exception):
+    """Base class for internal child workflow lifecycle errors."""
+
+
+class StartChildWorkflowExecutionFailed(ChildWorkflowError):
+    def __init__(self, message: str, cause: Any, workflow_id: str) -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.workflow_id = workflow_id
+
+
+class ChildWorkflowExecutionFailed(ChildWorkflowError):
+    def __init__(self, message: str, failure: Any) -> None:
+        super().__init__(message)
+        self.failure = failure
+
+
+class ChildWorkflowExecutionCanceled(ChildWorkflowError):
+    def __init__(self, message: str, details: Any) -> None:
+        super().__init__(message)
+        self.details = details
+
+
+class ChildWorkflowExecutionTimedOut(ChildWorkflowError):
+    def __init__(self, message: str, timeout_type: int) -> None:
+        super().__init__(message)
+        self.timeout_type = timeout_type
+
+
+class ChildWorkflowExecutionTerminated(ChildWorkflowError):
+    pass
 
 
 class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
@@ -48,45 +76,46 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         return DecisionId(DecisionType.CHILD_WORKFLOW, self.request.workflow_id)
 
     def get_decision(self) -> decision.Decision | None:
-        if self.state is DecisionState.REQUESTED:
-            return decision.Decision(
-                start_child_workflow_execution_decision_attributes=self.request
-            )
-        if self.state is DecisionState.CANCELED_AFTER_REQUESTED:
-            return record_immediate_cancel(self.request)
-        if self.state in (
-            DecisionState.CANCELED_AFTER_RECORDED,
-            DecisionState.CANCELED_AFTER_STARTED,
-        ):
-            return decision.Decision(
-                request_cancel_external_workflow_execution_decision_attributes=decision.RequestCancelExternalWorkflowExecutionDecisionAttributes(
-                    domain=self.request.domain,
-                    workflow_execution=WorkflowExecution(
-                        workflow_id=self.request.workflow_id,
-                        run_id=self._run_id or "",
-                    ),
-                    child_workflow_only=True,
+        match self.state:
+            case DecisionState.REQUESTED:
+                return decision.Decision(
+                    start_child_workflow_execution_decision_attributes=self.request
                 )
-            )
-        return None
+            case DecisionState.CANCELED_AFTER_REQUESTED:
+                return record_immediate_cancel(self.request)
+            case (
+                DecisionState.CANCELED_AFTER_RECORDED
+                | DecisionState.CANCELED_AFTER_STARTED
+            ):
+                return decision.Decision(
+                    request_cancel_external_workflow_execution_decision_attributes=decision.RequestCancelExternalWorkflowExecutionDecisionAttributes(
+                        domain=self.request.domain,
+                        workflow_execution=WorkflowExecution(
+                            workflow_id=self.request.workflow_id,
+                            run_id=self._run_id or "",
+                        ),
+                        child_workflow_only=True,
+                    )
+                )
+            case _:
+                return None
 
     def request_cancel(self) -> bool:
-        if self.state is DecisionState.REQUESTED:
-            self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
-            self.execution.force_cancel()
-            self.result.force_cancel()
-            return True
-
-        if self.state is DecisionState.RECORDED:
-            self._transition(DecisionState.CANCELED_AFTER_RECORDED)
-            self.execution.force_cancel()
-            return True
-
-        if self.state is DecisionState.STARTED:
-            self._transition(DecisionState.CANCELED_AFTER_STARTED)
-            return True
-
-        return False
+        match self.state:
+            case DecisionState.REQUESTED:
+                self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
+                self.execution.force_cancel()
+                self.result.force_cancel()
+                return True
+            case DecisionState.RECORDED:
+                self._transition(DecisionState.CANCELED_AFTER_RECORDED)
+                self.execution.force_cancel()
+                return True
+            case DecisionState.STARTED:
+                self._transition(DecisionState.CANCELED_AFTER_STARTED)
+                return True
+            case _:
+                return False
 
     @child_workflow_events.event("workflow_id", event_id_is_alias=True)
     def handle_initiated(
@@ -111,9 +140,13 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
     def handle_started(
         self, event: history.ChildWorkflowExecutionStartedEventAttributes
     ) -> None:
-        self._transition(DecisionState.STARTED)
         self._run_id = event.workflow_execution.run_id
-        self.execution.set_result(event.workflow_execution)
+        if self.state is DecisionState.CANCELED_AFTER_RECORDED:
+            self._transition(DecisionState.CANCELED_AFTER_STARTED)
+        else:
+            self._transition(DecisionState.STARTED)
+        if not self.execution.done():
+            self.execution.set_result(event.workflow_execution)
 
     @child_workflow_events.event()
     def handle_completed(

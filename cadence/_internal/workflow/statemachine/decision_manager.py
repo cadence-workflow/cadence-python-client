@@ -124,6 +124,8 @@ class DecisionManager:
             self._determinism_tracker.validate_action(attrs)
         decision_id = DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id)
         execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
+        # Child workflows have two milestones: started execution and terminal result.
+        # The result future is also the cancellation handle after the child starts.
         result: DecisionFuture[Payload] = DecisionFuture(
             self._event_loop, lambda: self._request_cancel(decision_id)
         )
@@ -172,16 +174,9 @@ class DecisionManager:
         if event_action is not None:
             decision_type = event_action.decision_type
             action = event_action.action
-            # Find what state machine the event references.
-            # This may be a reference via the user id or a reference to a previous event.
-            # Supports dotted paths (e.g. "workflow_execution.workflow_id") for nested fields.
-            id_for_event = resolve_id_attr(event_attributes, action.id_attr)
-            alias = (decision_type, id_for_event)
-            machine = self.aliases.get(alias, None)
-            if machine is None:
-                raise KeyError(
-                    f"Event {event.event_id} references unknown state machine {alias}"
-                )
+            machine = self._state_machine_for_event(
+                event.event_id, decision_type, action, event_attributes
+            )
 
             action.fn(machine, event_attributes)
 
@@ -189,6 +184,22 @@ class DecisionManager:
             # rather than using the client provided id
             if action.event_id_is_alias:
                 self.aliases[(decision_type, event.event_id)] = machine
+
+    def _state_machine_for_event(
+        self,
+        event_id: int,
+        decision_type: DecisionType,
+        action: Action,
+        event_attributes: object,
+    ) -> DecisionStateMachine:
+        # This may resolve via a user id, an event-id alias, or a nested proto field
+        # such as workflow_execution.workflow_id.
+        id_for_event = resolve_id_attr(event_attributes, action.id_attr)
+        alias = (decision_type, id_for_event)
+        machine = self.aliases.get(alias, None)
+        if machine is None:
+            raise KeyError(f"Event {event_id} references unknown state machine {alias}")
+        return machine
 
     # ---- Non-determinism ----
     @contextmanager

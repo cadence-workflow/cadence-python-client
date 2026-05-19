@@ -14,6 +14,8 @@ from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionResponse,
     SignalWorkflowExecutionRequest,
     SignalWorkflowExecutionResponse,
+    RequestCancelWorkflowExecutionRequest,
+    RequestCancelWorkflowExecutionResponse,
 )
 from cadence.api.v1.service_workflow_pb2_grpc import (
     WorkflowAPIServicer,
@@ -38,6 +40,13 @@ class _FakeWorkflowServicer(WorkflowAPIServicer):
         context: grpc.aio.ServicerContext,
     ) -> SignalWorkflowExecutionResponse:
         return SignalWorkflowExecutionResponse()
+
+    async def RequestCancelWorkflowExecution(
+        self,
+        request: RequestCancelWorkflowExecutionRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> RequestCancelWorkflowExecutionResponse:
+        return RequestCancelWorkflowExecutionResponse()
 
 
 @pytest.fixture()
@@ -106,6 +115,23 @@ class TestOpenTelemetryGrpcCompatibility:
         rpc_names = [s.name for s in spans]
         assert any("SignalWorkflowExecution" in name for name in rpc_names), (
             f"Expected a span for SignalWorkflowExecution, got: {rpc_names}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancel_workflow_produces_otel_span(
+        self, otel_setup: InMemorySpanExporter, cadence_server: int
+    ):
+        """An instrumented client produces an OTel span for RequestCancelWorkflowExecution."""
+        client = Client(domain="test-domain", target=f"localhost:{cadence_server}")
+        try:
+            await client.cancel_workflow("wf-id", "run-id")
+        finally:
+            await client.close()
+
+        spans = otel_setup.get_finished_spans()
+        rpc_names = [s.name for s in spans]
+        assert any("RequestCancelWorkflowExecution" in name for name in rpc_names), (
+            f"Expected a span for RequestCancelWorkflowExecution, got: {rpc_names}"
         )
 
     @pytest.mark.asyncio

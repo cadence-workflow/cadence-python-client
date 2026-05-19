@@ -126,7 +126,7 @@ class FailoverInfo(_message.Message):
     def __init__(self, failover_version: _Optional[int] = ..., failover_start_timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., failover_expire_timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., completed_shard_count: _Optional[int] = ..., pending_shards: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class ActiveClusters(_message.Message):
-    __slots__ = ("region_to_cluster",)
+    __slots__ = ("region_to_cluster", "active_clusters_by_cluster_attribute")
     class RegionToClusterEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -134,9 +134,31 @@ class ActiveClusters(_message.Message):
         key: str
         value: ActiveClusterInfo
         def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ActiveClusterInfo, _Mapping]] = ...) -> None: ...
+    class ActiveClustersByClusterAttributeEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: ClusterAttributeScope
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ClusterAttributeScope, _Mapping]] = ...) -> None: ...
     REGION_TO_CLUSTER_FIELD_NUMBER: _ClassVar[int]
+    ACTIVE_CLUSTERS_BY_CLUSTER_ATTRIBUTE_FIELD_NUMBER: _ClassVar[int]
     region_to_cluster: _containers.MessageMap[str, ActiveClusterInfo]
-    def __init__(self, region_to_cluster: _Optional[_Mapping[str, ActiveClusterInfo]] = ...) -> None: ...
+    active_clusters_by_cluster_attribute: _containers.MessageMap[str, ClusterAttributeScope]
+    def __init__(self, region_to_cluster: _Optional[_Mapping[str, ActiveClusterInfo]] = ..., active_clusters_by_cluster_attribute: _Optional[_Mapping[str, ClusterAttributeScope]] = ...) -> None: ...
+
+class ClusterAttributeScope(_message.Message):
+    __slots__ = ("cluster_attributes",)
+    class ClusterAttributesEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: ActiveClusterInfo
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ActiveClusterInfo, _Mapping]] = ...) -> None: ...
+    CLUSTER_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
+    cluster_attributes: _containers.MessageMap[str, ActiveClusterInfo]
+    def __init__(self, cluster_attributes: _Optional[_Mapping[str, ActiveClusterInfo]] = ...) -> None: ...
 
 class ActiveClusterInfo(_message.Message):
     __slots__ = ("active_cluster_name", "failover_version")

@@ -12,10 +12,14 @@ from . import history_pb2
 from . import history_pb2_grpc
 from . import query_pb2
 from . import query_pb2_grpc
+from . import schedule_pb2
+from . import schedule_pb2_grpc
 from . import service_domain_pb2
 from . import service_domain_pb2_grpc
 from . import service_meta_pb2
 from . import service_meta_pb2_grpc
+from . import service_schedule_pb2
+from . import service_schedule_pb2_grpc
 from . import service_visibility_pb2
 from . import service_visibility_pb2_grpc
 from . import service_worker_pb2
@@ -42,10 +46,14 @@ history = history_pb2
 history_grpc = history_pb2_grpc
 query = query_pb2
 query_grpc = query_pb2_grpc
+schedule = schedule_pb2
+schedule_grpc = schedule_pb2_grpc
 service_domain = service_domain_pb2
 service_domain_grpc = service_domain_pb2_grpc
 service_meta = service_meta_pb2
 service_meta_grpc = service_meta_pb2_grpc
+service_schedule = service_schedule_pb2
+service_schedule_grpc = service_schedule_pb2_grpc
 service_visibility = service_visibility_pb2
 service_visibility_grpc = service_visibility_pb2_grpc
 service_worker = service_worker_pb2
@@ -73,10 +81,14 @@ __all__ = [
     'history_grpc',
     'query',
     'query_grpc',
+    'schedule',
+    'schedule_grpc',
     'service_domain',
     'service_domain_grpc',
     'service_meta',
     'service_meta_grpc',
+    'service_schedule',
+    'service_schedule_grpc',
     'service_visibility',
     'service_visibility_grpc',
     'service_worker',

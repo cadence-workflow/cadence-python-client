@@ -2,6 +2,7 @@ import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
 from dataclasses import dataclass
+from functools import singledispatchmethod
 from typing import List, Optional
 
 from cadence._internal.workflow.context import Context
@@ -12,16 +13,16 @@ from cadence._internal.workflow.deterministic_event_loop import (
 )
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
-from cadence.api.v1 import history
-from cadence.api.v1.common_pb2 import Failure, WorkflowType
 from cadence.api.v1.decision_pb2 import (
     Decision,
     FailWorkflowExecutionDecisionAttributes,
     CompleteWorkflowExecutionDecisionAttributes,
     ContinueAsNewWorkflowExecutionDecisionAttributes,
 )
+from cadence.api.v1.common_pb2 import Failure, WorkflowType
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
+    WorkflowExecutionSignaledEventAttributes,
     WorkflowExecutionStartedEventAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList
@@ -162,15 +163,19 @@ class WorkflowEngine:
                     # Process through state machines (DecisionsHelper now delegates to DecisionManager)
                     self._decision_manager.handle_history_event(marker_event)
 
-                # Phase 2: Process regular input events
+                # Phase 2: Apply input events in history order.
                 for event in decision_events.input:
                     self._apply_input_event(event)
 
                 # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()
 
-                # If the workflow function returned (or threw an exception), we're done
-                # If it completed early (or late), the nondeterminism tracking will catch that
+                # Signal handler failures fail the decision task, not the workflow.
+                if (
+                    signal_failure := self._workflow_instance.get_signal_failure()
+                ) is not None:
+                    raise signal_failure
+
                 if decision := self._maybe_complete_workflow():
                     self._decision_manager.complete_workflow(decision)
 
@@ -228,28 +233,28 @@ class WorkflowEngine:
                 )
             )
 
-    def _apply_input_event(self, event: history.HistoryEvent) -> None:
-        logger.debug(
-            "Processing history event",
-            extra={
-                "workflow_id": self._context.info().workflow_id,
-                "event_type": getattr(event, "event_type", "unknown"),
-                "event_id": getattr(event, "event_id", None),
-                "replay_mode": self._context.is_replay_mode(),
-            },
-        )
-        # start workflow on workflow started event
-        if (
-            event.WhichOneof("attributes")
-            == "workflow_execution_started_event_attributes"
-        ):
-            started_attrs: WorkflowExecutionStartedEventAttributes = (
-                event.workflow_execution_started_event_attributes
-            )
-            if started_attrs and hasattr(started_attrs, "input"):
-                self._workflow_instance.start(started_attrs.input)
+    def _apply_input_event(self, event: HistoryEvent) -> None:
+        attr = event.WhichOneof("attributes")
+        if attr is None:
+            self._decision_manager.handle_history_event(event)
+            return
+        self._handle_input_event(getattr(event, attr), event)
 
+    @singledispatchmethod
+    def _handle_input_event(self, attrs: object, event: HistoryEvent) -> None:
         self._decision_manager.handle_history_event(event)
+
+    @_handle_input_event.register
+    def _handle_started_input_event(
+        self, attrs: WorkflowExecutionStartedEventAttributes, event: HistoryEvent
+    ) -> None:
+        self._workflow_instance.start(attrs.input)
+
+    @_handle_input_event.register
+    def _handle_signaled_input_event(
+        self, attrs: WorkflowExecutionSignaledEventAttributes, event: HistoryEvent
+    ) -> None:
+        self._workflow_instance.handle_signal(attrs.signal_name, attrs.input)
 
 
 def _failure_from_exception(e: Exception) -> Failure:

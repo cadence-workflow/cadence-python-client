@@ -10,10 +10,25 @@ If you'd like to propose a new feature, first join the [CNCF Slack workspace](ht
 **This SDK is currently an early work-in-progress (WIP) and is NOT ready for production use.**
 
 - This project is still in active development
-- It has not been published to any package repository (PyPI, etc.)
 - APIs and interfaces are subject to change without notice
 
 ## Installation
+
+Install from [PyPI](https://pypi.org/project/cadence-python-client/):
+
+```bash
+pip install cadence-python-client
+```
+
+Or with `uv`:
+
+```bash
+uv add cadence-python-client
+```
+
+The core package supports Python `>=3.11,<3.14`.
+
+Clone the repository if you want to develop locally:
 
 ```bash
 git clone https://github.com/cadence-workflow/cadence-python-client.git
@@ -45,8 +60,7 @@ cd cadence-python-client
 
 3. **Create virtual environment and install dependencies:**
    ```bash
-   uv venv
-   uv pip install -e ".[dev]"
+   uv sync --all-extras
    ```
 
    Or if you prefer traditional pip:
@@ -58,70 +72,56 @@ cd cadence-python-client
 
 ### Generate Protobuf and gRPC Files
 
-Run the generation script:
-```bash
-# Using uv (recommended)
-uv sync --extra dev
-uv run python scripts/generate_proto.py
+Run the generation script only if you change files under `idls/proto/`:
 
-# Or using traditional Python
-python scripts/generate_proto.py
+```bash
+# Recommended
+make generate
+
+# Or run the script directly
+uv run python scripts/generate_proto.py
 ```
 
 This will:
-- Download protoc 29.1 binary
-- Install grpcio-tools if needed
 - Generate Python protobuf files in `cadence/api/v1/`
 - Generate gRPC service files in `cadence/api/v1/`
-- Create proper package structure with both protobuf and gRPC imports
+- Refresh the package imports for the generated modules
 
 ### Test
 
-Verify the generated files work:
-```bash
-# Using uv (recommended)
-uv run python cadence/sample/simple_usage_example.py
-uv run python cadence/sample/grpc_usage_example.py
+Run the main checks:
 
-# Or using traditional Python
-python cadence/sample/simple_usage_example.py
-python test_grpc_with_examples.py
+```bash
+make lint
+make type-check
+make test
 ```
 
-### Development Script
-
-The project includes a development script that provides convenient commands for common tasks:
+Run integration tests with Docker:
 
 ```bash
-# Generate protobuf files
-uv run python scripts/dev.py protobuf
+make integration-test
+```
 
-# Run tests
-uv run python scripts/dev.py test
+You can also verify the generated files manually:
 
-# Run tests with coverage
-uv run python scripts/dev.py test-cov
+```bash
+uv run python cadence/sample/simple_usage_example.py
+uv run python cadence/sample/grpc_usage_example.py
+```
 
-# Run linting
-uv run python scripts/dev.py lint
+### Development Commands
 
-# Format code
-uv run python scripts/dev.py format
+The current repository workflow is centered on `make` targets:
 
-# Install in development mode
-uv run python scripts/dev.py install
-
-# Install with dev dependencies
-uv run python scripts/dev.py install-dev
-
-# Build package
-uv run python scripts/dev.py build
-
-# Clean build artifacts
-uv run python scripts/dev.py clean
-
-# Run all checks (lint + test)
-uv run python scripts/dev.py check
+```bash
+make install
+make generate
+make lint
+make type-check
+make test
+make integration-test
+make pr
 ```
 
 ## License

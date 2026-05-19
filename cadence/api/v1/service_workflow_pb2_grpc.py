@@ -220,8 +220,8 @@ class WorkflowAPIServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def DescribeTaskList(self, request, context):
-        """DescribeTaskList returns information about the target tasklist, right now this API returns the
-        pollers which polled this tasklist in last few minutes.
+        """DescribeTaskList returns information about the target task list, including
+        the workers that polled it in the last few minutes.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

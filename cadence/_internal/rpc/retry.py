@@ -102,6 +102,7 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
 
 
 def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
+    # Handle requests to the passive side, matching the Go and Java Clients.
     # grpc-stubs types method as str, but grpcio corrected it to bytes in v1.75.0
     # (grpc/grpc#39405). Cast to bytes to match the actual runtime type.
     method = cast(bytes, call_details.method)

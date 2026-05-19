@@ -8,6 +8,8 @@ import threading
 from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator
 from typing_extensions import Unpack, TypeVarTuple
 
+from cadence._internal.workflow.waiter import Waiter
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +34,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._thread_id: int | None = None  # indicate if the event loop is running
         self._debug: bool = False
         self._ready: collections.deque[events.Handle] = collections.deque()
+        self._waiters: list[Waiter] = []
         self._stopping: bool = False
         self._closed: bool = False
 
@@ -141,6 +144,13 @@ class DeterministicEventLoop(AbstractEventLoop):
     def create_future(self) -> Future[Any]:
         return futures.Future(loop=self)
 
+    def create_waiter(self, predicate: Callable[[], bool]) -> Waiter:
+        """Register a predicate-driven awaitable."""
+        waiter = Waiter(predicate, self)
+        if not waiter.poll():
+            self._waiters.append(waiter)
+        return waiter
+
     def _run_once(self) -> None:
         ntodo = len(self._ready)
         for i in range(ntodo):
@@ -148,6 +158,19 @@ class DeterministicEventLoop(AbstractEventLoop):
             if handle._cancelled:
                 continue
             handle._run()
+
+        # Poll waiters; only stop early if settling one schedules new work,
+        # so remaining waiters are not skipped.
+        i = 0
+        while i < len(self._waiters):
+            w = self._waiters[i]
+            ready_before = len(self._ready)
+            if w.poll():
+                del self._waiters[i]
+                if len(self._ready) > ready_before:
+                    return
+            else:
+                i += 1
 
     def _run_forever_setup(self) -> None:
         self._check_closed()
@@ -190,6 +213,7 @@ class DeterministicEventLoop(AbstractEventLoop):
             logger.debug("Close %r", self)
         self._closed = True
         self._ready.clear()
+        self._waiters.clear()
 
     def is_closed(self) -> bool:
         """Returns True if the event loop was closed."""
@@ -462,13 +486,12 @@ class DeterministicEventLoop(AbstractEventLoop):
         )
 
     def call_exception_handler(self, context: dict[str, Any]) -> None:
-        # This is called if a task has an unhandled exception. Short term, it's helpful to log these for debugging.
-        # Long term, we need some combination of failing decision tasks or workflows based on these errors.
         message = context.get("message")
         if not message:
             message = "Unhandled exception in event loop"
 
         exception = context.get("exception")
+
         if isinstance(exception, BaseException):
             exc_info = exception
         else:

@@ -17,7 +17,11 @@ from cadence.client import (
 )
 from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DefaultDataConverter
-from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
+from cadence.workflow import (
+    ActiveClusterSelectionPolicy,
+    WorkflowDefinition,
+    WorkflowDefinitionOptions,
+)
 
 
 @pytest.fixture
@@ -459,6 +463,34 @@ class TestClientBuildStartWorkflowRequest:
         ):
             _validate_and_apply_defaults(options)
 
+    @pytest.mark.asyncio
+    async def test_build_request_with_explicit_active_cluster_selection_policy(
+        self, mock_client
+    ):
+        """active_cluster_selection_policy TypedDict is converted to the proto field."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        policy: ActiveClusterSelectionPolicy = {
+            "cluster_attribute": {"scope": "region", "name": "us-east-1"},
+        }
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            active_cluster_selection_policy=policy,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("active_cluster_selection_policy")
+        assert (
+            request.active_cluster_selection_policy.cluster_attribute.scope == "region"
+        )
+        assert (
+            request.active_cluster_selection_policy.cluster_attribute.name
+            == "us-east-1"
+        )
+
 
 class TestClientStartWorkflow:
     """Test Client.start_workflow method."""
@@ -721,15 +753,13 @@ class TestBuildStartWorkflowRequestRetryPolicy:
     """Tests for retry_policy wiring in _build_start_workflow_request."""
 
     def _base_options(self, **extra: Any) -> StartWorkflowOptions:
-        return cast(
-            StartWorkflowOptions,
-            {
-                "task_list": "test-task-list",
-                "execution_start_to_close_timeout": timedelta(minutes=10),
-                "task_start_to_close_timeout": timedelta(seconds=30),
-                **extra,
-            },
-        )
+        merged: dict[str, Any] = {
+            "task_list": "test-task-list",
+            "execution_start_to_close_timeout": timedelta(minutes=10),
+            "task_start_to_close_timeout": timedelta(seconds=30),
+        }
+        merged.update(extra)
+        return cast(StartWorkflowOptions, merged)
 
     def _client(self) -> Client:
         return Client(domain="test-domain", target="localhost:7933")

@@ -81,3 +81,7 @@ class ServiceBusyError(_message.Message):
 class StickyWorkerUnavailableError(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
+
+class ReadOnlyPartitionError(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...

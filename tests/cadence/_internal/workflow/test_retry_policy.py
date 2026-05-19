@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Mapping
 
 import pytest
 from google.protobuf.json_format import MessageToDict
@@ -26,12 +27,11 @@ def test_retry_policy_rounds_durations_up_to_seconds():
 
 
 def test_retry_policy_maximum_interval_none_omits_field():
-    p = retry_policy_to_proto(
-        {
-            "initial_interval": timedelta(seconds=1),
-            "maximum_interval": None,
-        }
-    )
+    policy: Mapping[str, object] = {
+        "initial_interval": timedelta(seconds=1),
+        "maximum_interval": None,
+    }
+    p = retry_policy_to_proto(policy)
     assert p is not None
     assert not p.HasField("maximum_interval")
 
@@ -67,16 +67,15 @@ def test_retry_policy_backoff_omitted_not_explicitly_set_in_dict():
 
 
 def test_retry_policy_explicit_none_fields_are_omitted():
-    p = retry_policy_to_proto(
-        {
-            "initial_interval": None,
-            "backoff_coefficient": None,
-            "maximum_interval": None,
-            "maximum_attempts": None,
-            "non_retryable_error_reasons": None,
-            "expiration_interval": None,
-        }
-    )
+    policy: Mapping[str, object] = {
+        "initial_interval": None,
+        "backoff_coefficient": None,
+        "maximum_interval": None,
+        "maximum_attempts": None,
+        "non_retryable_error_reasons": None,
+        "expiration_interval": None,
+    }
+    p = retry_policy_to_proto(policy)
     assert p is not None
     assert not p.HasField("initial_interval")
     assert not p.HasField("maximum_interval")

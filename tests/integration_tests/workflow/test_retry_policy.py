@@ -1,5 +1,4 @@
 from datetime import timedelta
-
 from cadence import workflow, Registry, activity
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.common_pb2 import WorkflowExecution

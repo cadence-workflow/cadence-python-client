@@ -222,7 +222,7 @@ class Client:
         await self._channel.channel_ready()
 
     async def close(self) -> None:
-        await self._channel.close()
+        await self._channel.close(None)
 
     async def __aenter__(self) -> "Client":
         await self.ready()
@@ -770,7 +770,7 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
 
 
 def _create_channel(options: ClientOptions) -> Channel:
-    interceptors = list(options["interceptors"])
+    interceptors: list[Any] = list(options["interceptors"])
     interceptors.append(
         YarpcMetadataInterceptor(options["service_name"], options["caller_name"])
     )

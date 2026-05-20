@@ -1,5 +1,5 @@
 from concurrent import futures
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from google.protobuf import any_pb2

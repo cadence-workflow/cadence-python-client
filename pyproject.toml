@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cadence-python-client"
 dynamic = ["version"] # version is dynamically determined by setuptools-scm by git tags
-description = "Python framework for authoring Cadence workflows and activities"
+description = "Python SDK for authoring Cadence workflows and activities"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
@@ -13,7 +13,7 @@ authors = [
 ]
 keywords = ["workflow", "orchestration", "distributed", "async", "cadence"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",

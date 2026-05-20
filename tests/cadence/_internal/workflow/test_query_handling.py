@@ -470,7 +470,10 @@ class TestQueryDefinitionValidation:
         )
         assert "get_status" in workflow_def.queries
         assert "get_count" in workflow_def.queries
-        assert len(workflow_def.queries) == 2
+        # WorkflowDefinition automatically registers a built-in __query_types
+        # handler that reports the names of every registered query.
+        assert "__query_types" in workflow_def.queries
+        assert len(workflow_def.queries) == 3
 
     def test_workflow_definition_includes_both_signals_and_queries(self):
         """WorkflowDefinition correctly separates signals from queries."""
@@ -481,6 +484,41 @@ class TestQueryDefinitionValidation:
         assert "add_message" in workflow_def.signals
         assert "get_messages" in workflow_def.queries
         assert "get_message_count" in workflow_def.queries
+
+    def test_workflow_without_user_queries_still_has_query_types(self):
+        """A workflow that defines no query handlers still gets __query_types."""
+        workflow_def = WorkflowDefinition.wrap(
+            NoQueryWorkflow, WorkflowDefinitionOptions(name="NoQueryWorkflow")
+        )
+        assert set(workflow_def.queries) == {"__query_types"}
+
+
+class TestQueryTypesBuiltIn:
+    """Tests for the built-in __query_types query handler."""
+
+    def test_query_types_returns_all_registered_names(self):
+        """__query_types lists every registered query, including itself."""
+        engine = make_workflow_engine(QueryWorkflow)
+        events = start_events()
+        query = make_query("__query_types")
+
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [list[str]])
+        assert set(decoded[0]) == {"get_status", "get_count", "__query_types"}
+
+    def test_query_types_for_workflow_with_no_user_queries(self):
+        """__query_types returns just itself when no user queries are defined."""
+        engine = make_workflow_engine(NoQueryWorkflow)
+        events = start_events()
+        query = make_query("__query_types")
+
+        result = engine.process_decision(events, query)
+        assert result.query_result is not None
+        assert result.query_result.result_type == QUERY_RESULT_TYPE_ANSWERED
+        decoded = DATA_CONVERTER.from_data(result.query_result.answer, [list[str]])
+        assert decoded[0] == ["__query_types"]
 
 
 class TestQueryHandlerException:

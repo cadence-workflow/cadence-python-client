@@ -25,6 +25,8 @@ from cadence.error import ContinueAsNewError
 from cadence.query import QueryDefinition, QueryDefinitionOptions
 from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
+_QUERY_TYPES_QUERY_NAME = "__query_types"
+
 ResultType = TypeVar("ResultType")
 
 
@@ -244,6 +246,19 @@ class WorkflowDefinition(Generic[C]):
 
         if run_method_name is None or run_signature is None:
             raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
+
+        # Register the built-in __query_types query, which returns the names
+        # of all registered query handlers (including itself). The handler
+        # declares a `self` parameter so it matches the calling convention
+        # used by `WorkflowInstance.handle_query`; `FnSignature.of` filters
+        # `self` out so it is not decoded from the query payload.
+        def _query_types_handler(self: Any) -> list[str]:
+            return sorted(list(queries.keys()))
+
+        queries[_QUERY_TYPES_QUERY_NAME] = QueryDefinition.wrap(
+            _query_types_handler,
+            QueryDefinitionOptions(name=_QUERY_TYPES_QUERY_NAME),
+        )
 
         return WorkflowDefinition(
             cls, name, run_method_name, signals, queries, run_signature

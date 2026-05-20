@@ -335,6 +335,15 @@ async def test_multiple_query_handlers(helper: CadenceHelper):
             execution_start_to_close_timeout=timedelta(seconds=30),
         )
 
+        result = await worker.client.query_workflow(
+            execution.workflow_id,
+            execution.run_id,
+            "__query_types",
+            result_type=list[str],
+        )
+
+        assert result == ["__query_types", "get_count", "get_messages"]
+
         count = await _poll_query(
             helper,
             execution.workflow_id,

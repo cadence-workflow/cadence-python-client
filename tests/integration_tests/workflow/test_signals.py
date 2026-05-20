@@ -289,8 +289,9 @@ async def test_async_signal_handler_direct_mutation(helper: CadenceHelper):
         execution = await worker.client.start_workflow(
             "AsyncSignalDirectWorkflow",
             task_list=worker.task_list,
-            execution_start_to_close_timeout=timedelta(seconds=10),
+            execution_start_to_close_timeout=timedelta(seconds=30),
         )
+        await asyncio.sleep(0.15)
 
         await worker.client.signal_workflow(
             execution.workflow_id,

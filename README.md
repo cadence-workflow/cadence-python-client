@@ -1,16 +1,10 @@
-# Python framework for Cadence
+# Cadence Python SDK
 
 [Cadence](https://github.com/uber/cadence) is a distributed, scalable, durable, and highly available orchestration engine we developed at Uber Engineering to execute asynchronous long-running business logic in a scalable and resilient way.
 
 If you'd like to propose a new feature, first join the [CNCF Slack workspace](https://communityinviter.com/apps/cloud-native/cncf) in the **#cadence-users** channel to start a discussion.
 
-`cadence-python-client` is the Python framework for authoring workflows and activities.
-
-## Disclaimer
-**This SDK is currently an early work-in-progress (WIP) and is NOT ready for production use.**
-
-- This project is still in active development
-- APIs and interfaces are subject to change without notice
+The Cadence Python SDK is the framework for authoring workflows and activities using the Python programming language.
 
 ## Installation
 
@@ -27,6 +21,8 @@ uv add cadence-python-client
 ```
 
 The core package supports Python `>=3.11,<3.14`.
+
+The SDK is ready for production use using PYPI. To build from source, clone the repository and install the development dependencies.
 
 Clone the repository if you want to develop locally:
 

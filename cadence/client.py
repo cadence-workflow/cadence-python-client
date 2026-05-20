@@ -447,7 +447,6 @@ class Client:
         *query_args: Any,
         result_type: type = object,
         query_reject_condition: QueryRejectCondition | None = None,
-        query_consistency_level: QueryConsistencyLevel | None = None,
     ) -> Any:
         """
         Query a running workflow execution's state.
@@ -462,7 +461,6 @@ class Client:
             *query_args: Arguments to pass to the query handler.
             result_type: The expected return type for deserialization.
             query_reject_condition: Optional condition to reject the query.
-            query_consistency_level: Optional consistency level for the query.
 
         Returns:
             The deserialized query result.
@@ -492,12 +490,11 @@ class Client:
             domain=self.domain,
             workflow_execution=workflow_execution,
             query=wf_query,
+            query_consistency_level=QueryConsistencyLevel.QUERY_CONSISTENCY_LEVEL_EVENTUAL,
         )
 
         if query_reject_condition is not None:
             request.query_reject_condition = query_reject_condition
-        if query_consistency_level is not None:
-            request.query_consistency_level = query_consistency_level
 
         response: QueryWorkflowResponse = await self.workflow_stub.QueryWorkflow(
             request

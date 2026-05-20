@@ -267,6 +267,62 @@ def _(attrs: history.ActivityTaskCancelRequestedEventAttributes) -> Expectation:
     return Expectation(DecisionId(DecisionType.ACTIVITY, attrs.activity_id), CANCEL)
 
 
+@to_expectation.register
+def _(attrs: decision.StartChildWorkflowExecutionDecisionAttributes) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id),
+        {"workflow_type": attrs.workflow_type.name},
+    )
+
+
+@to_expectation.register
+def _(
+    attrs: history.StartChildWorkflowExecutionInitiatedEventAttributes,
+) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id),
+        {"workflow_type": attrs.workflow_type.name},
+    )
+
+
+@to_expectation.register
+def _(attrs: history.StartChildWorkflowExecutionFailedEventAttributes) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id),
+        {"workflow_type": attrs.workflow_type.name},
+    )
+
+
+@to_expectation.register
+def _(
+    attrs: decision.RequestCancelExternalWorkflowExecutionDecisionAttributes,
+) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_execution.workflow_id),
+        CANCEL,
+    )
+
+
+@to_expectation.register
+def _(
+    attrs: history.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes,
+) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_execution.workflow_id),
+        CANCEL,
+    )
+
+
+@to_expectation.register
+def _(
+    attrs: history.RequestCancelExternalWorkflowExecutionFailedEventAttributes,
+) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_execution.workflow_id),
+        CANCEL,
+    )
+
+
 # Workflow Completion - Enforce complete vs failure. Maybe we should enforce the output data?
 @to_expectation.register
 def _(_: decision.CompleteWorkflowExecutionDecisionAttributes) -> Expectation:

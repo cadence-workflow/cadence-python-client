@@ -97,6 +97,6 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --extra dev
-      - name: Run unit tests
+      - name: Run integration tests
         run: |
-          uv run pytest -v --integration-tests
+          uv run pytest -v tests/integration_tests --integration-tests

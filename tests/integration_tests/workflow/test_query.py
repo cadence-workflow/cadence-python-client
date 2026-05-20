@@ -392,6 +392,7 @@ async def test_multiple_query_handlers(helper: CadenceHelper):
         )
         await _wait_for_workflow_result(helper, execution)
 
+
 async def test_query_handler_raises_returns_query_failed_error(
     helper: CadenceHelper,
 ):

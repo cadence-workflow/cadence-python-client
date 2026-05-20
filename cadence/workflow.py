@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from collections import OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -253,8 +252,11 @@ class WorkflowDefinition(Generic[C]):
         # declares a `self` parameter so it matches the calling convention
         # used by `WorkflowInstance.handle_query`; `FnSignature.of` filters
         # `self` out so it is not decoded from the query payload.
+        def _query_types_handler(self: Any) -> list[str]:
+            return sorted(list(queries.keys()))
+
         queries[_QUERY_TYPES_QUERY_NAME] = QueryDefinition.wrap(
-            lambda self: sorted(list(queries.keys())),
+            _query_types_handler,
             QueryDefinitionOptions(name=_QUERY_TYPES_QUERY_NAME),
         )
 

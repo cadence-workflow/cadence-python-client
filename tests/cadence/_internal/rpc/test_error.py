@@ -1,5 +1,5 @@
 from concurrent import futures
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from google.protobuf import any_pb2
@@ -198,4 +198,4 @@ def details_to_status(message: Message) -> Status:
         message="message",
         details=[detail],
     )
-    return to_status(status_proto)
+    return cast(Status, to_status(status_proto))

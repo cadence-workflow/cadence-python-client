@@ -198,4 +198,4 @@ def details_to_status(message: Message) -> Status:
         message="message",
         details=[detail],
     )
-    return cast(Status, to_status(status_proto))
+    return to_status(status_proto)

@@ -1,6 +1,9 @@
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionFuture,
 )
+from cadence._internal.workflow.statemachine.nondeterminism import (
+    record_immediate_cancel,
+)
 from cadence._internal.workflow.statemachine.timer_state_machine import (
     TimerStateMachine,
 )
@@ -28,7 +31,7 @@ async def test_timer_state_machine_cancel_before_sent():
     assert m.request_cancel() is True
 
     assert completed.done() is True
-    assert m.get_decision() is None
+    assert m.get_decision() == record_immediate_cancel(attrs)
 
 
 async def test_timer_state_machine_cancel_after_initiated():

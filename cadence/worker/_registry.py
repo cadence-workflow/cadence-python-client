@@ -103,14 +103,13 @@ class Registry:
 
         self._workflows[defn.name] = defn
 
-    @overload
-    def activity(self, func: Callable[P, R]) -> _SyncActivityDefinition[P, R]: ...
-
+    # Order matters, Async must be first
     @overload
     def activity(
         self, func: Callable[P, Awaitable[R]]
     ) -> _AsyncActivityDefinition[P, R]: ...
-
+    @overload
+    def activity(self, func: Callable[P, R]) -> _SyncActivityDefinition[P, R]: ...
     @overload
     def activity(
         self, **kwargs: Unpack[ActivityDefinitionOptions]

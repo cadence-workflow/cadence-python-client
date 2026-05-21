@@ -63,6 +63,22 @@ def info() -> ActivityInfo:
     return ActivityContext.get().info()
 
 
+def heartbeat(*details: Any) -> None:
+    """Send a heartbeat for the current activity."""
+    ActivityContext.get().heartbeat(*details)
+
+
+def heartbeat_details(*types: Type) -> list[Any]:
+    """Return heartbeat details from the previous attempt.
+
+    Pass type hints to decode the values into specific Python types:
+        step, total = activity.heartbeat_details(int, int)
+
+    Without type hints, returns raw JSON-decoded values.
+    """
+    return ActivityContext.get().heartbeat_details(*types)
+
+
 class ActivityContext(ABC):
     _var: ContextVar["ActivityContext"] = ContextVar("activity")
 
@@ -71,6 +87,12 @@ class ActivityContext(ABC):
 
     @abstractmethod
     def client(self) -> Client: ...
+
+    @abstractmethod
+    def heartbeat(self, *details: Any) -> None: ...
+
+    @abstractmethod
+    def heartbeat_details(self, *types: Type) -> list[Any]: ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:

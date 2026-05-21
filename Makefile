@@ -7,7 +7,7 @@ pr: install generate lint type-check test integration-test
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
-	uv sync --extra dev
+	uv sync --all-extras
 
 # Generate idl files
 generate:
@@ -33,7 +33,11 @@ test:
 # Run integration tests
 integration-test:
 	@echo "Running integration tests..."
-	uv run pytest -v --integration-tests
+	uv run pytest -v tests/integration_tests --integration-tests
+
+integration-test-keep:
+	@echo "Running integration tests with cadence alive..."
+	uv run pytest -v tests/integration_tests --integration-tests --keep-cadence-alive
 
 # Clean generated files and caches
 clean:
@@ -41,15 +45,17 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .mypy_cache
 
 # Show help
 help:
 	@echo "Available targets:"
-	@echo "  make pr              - Run all PR checks (recommended before submitting PR)"
-	@echo "  make install         - Install dependencies"
-	@echo "  make lint            - Run Ruff linter"
-	@echo "  make type-check      - Run mypy type checker"
-	@echo "  make test            - Run unit tests"
-	@echo "  make integration-test - Run integration tests"
-	@echo "  make clean           - Remove generated files and caches"
-	@echo "  make help            - Show this help message"
+	@echo "  make pr                    - Run all PR checks (recommended before submitting PR)"
+	@echo "  make install         		- Install dependencies"
+	@echo "  make lint            		- Run Ruff linter"
+	@echo "  make type-check      		- Run mypy type checker"
+	@echo "  make test            		- Run unit tests"
+	@echo "  make integration-test 		- Run integration tests"
+	@echo "  make integration-test-keep - Run integration tests with cadence alive"
+	@echo "  make clean           		- Remove generated files and caches"
+	@echo "  make help            		- Show this help message"

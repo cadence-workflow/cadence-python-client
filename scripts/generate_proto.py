@@ -160,6 +160,16 @@ def main():
     generate_init_file(gen_dir)
     delete_temp_dir(temp_dir)
 
+    # Fix missing datetime imports in generated .pyi files
+    print("\nFixing missing datetime imports in .pyi files...")
+    fix_pyi_imports_script = project_root / "scripts" / "fix_pyi_imports.py"
+    if fix_pyi_imports_script.exists():
+        import runpy
+
+        runpy.run_path(str(fix_pyi_imports_script), run_name="__main__")
+    else:
+        print(f"Warning: {fix_pyi_imports_script} not found, skipping .pyi fixes")
+
 
 if __name__ == "__main__":
     main()

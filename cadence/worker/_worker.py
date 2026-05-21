@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from typing import Unpack, cast
 
@@ -7,6 +8,8 @@ from cadence.worker._registry import Registry
 from cadence.worker._activity import ActivityWorker
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
+
+logger = logging.getLogger(__name__)
 
 
 class Worker:
@@ -17,6 +20,7 @@ class Worker:
         registry: Registry,
         **kwargs: Unpack[WorkerOptions],
     ) -> None:
+        self._tasks: list[asyncio.Task[None]] = []
         self._client = client
         self._task_list = task_list
 
@@ -35,11 +39,27 @@ class Worker:
         return self._task_list
 
     async def run(self) -> None:
-        async with asyncio.TaskGroup() as tg:
-            if not self._options["disable_workflow_worker"]:
-                tg.create_task(self._decision_worker.run())
-            if not self._options["disable_activity_worker"]:
-                tg.create_task(self._activity_worker.run())
+        if not self._options["disable_workflow_worker"]:
+            self._tasks.append(asyncio.create_task(self._decision_worker.run()))
+        if not self._options["disable_activity_worker"]:
+            self._tasks.append(asyncio.create_task(self._activity_worker.run()))
+
+    async def close(self) -> None:
+        for task in self._tasks:
+            task.cancel()
+        results = await asyncio.gather(*self._tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                logger.error("Worker task failed", exc_info=result)
+
+    async def __aenter__(self) -> "Worker":
+        await self.run()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
 
 def _validate_and_copy_defaults(

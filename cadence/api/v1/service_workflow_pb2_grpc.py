@@ -5,7 +5,7 @@ import warnings
 
 from cadence.api.v1 import service_workflow_pb2 as cadence_dot_api_dot_v1_dot_service__workflow__pb2
 
-GRPC_GENERATED_VERSION = '1.71.2'
+GRPC_GENERATED_VERSION = '1.73.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -220,8 +220,8 @@ class WorkflowAPIServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def DescribeTaskList(self, request, context):
-        """DescribeTaskList returns information about the target tasklist, right now this API returns the
-        pollers which polled this tasklist in last few minutes.
+        """DescribeTaskList returns information about the target task list, including
+        the workers that polled it in the last few minutes.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

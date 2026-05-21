@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm[simple]>=9.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cadence-python-client"
-version = "0.1.0"
-description = "Python framework for authoring Cadence workflows and activities"
+dynamic = ["version"] # version is dynamically determined by setuptools-scm by git tags
+description = "Python SDK for authoring Cadence workflows and activities"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
@@ -13,7 +13,7 @@ authors = [
 ]
 keywords = ["workflow", "orchestration", "distributed", "async", "cadence"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
@@ -26,17 +26,18 @@ classifiers = [
 ]
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "grpcio==1.71.2",
-    "grpcio-status>=1.71.2",
+    "grpcio>=1.73.1",
+    "grpcio-status>=1.73.1",
     "msgspec>=0.19.0",
-    "protobuf==5.29.1",
+    "protobuf>=6.31.0,<7.0.0",
     "typing-extensions>=4.0.0",
     "prometheus-client>=0.21.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "grpcio-tools==1.71.2",
+    "grpcio-tools>=1.73.1",
+    "grpc-stubs>=1.53.0.6",
     "pytest>=8.4.1",
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.21.0",
@@ -46,6 +47,10 @@ dev = [
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
     "pytest-docker>=3.2.3",
+    "opentelemetry-instrumentation-grpc==0.60b1",
+    "opentelemetry-sdk>=1.39.1",
+    "setuptools-scm[simple]>=9.2",
+    "types-grpcio>=1.0.0.20260408",
 ]
 docs = [
     "sphinx>=6.0.0",
@@ -55,6 +60,10 @@ docs = [
 examples = [
     "requests>=2.28.0",
     "aiohttp>=3.8.0",
+]
+openai = [
+    "openai>=0.27.10",
+    "openai-agents>=0.12.5",
 ]
 
 [project.urls]
@@ -100,6 +109,8 @@ module = [
     "grpcio_tools.*",
     "grpc.*",
     "google.protobuf.*",
+    "google.rpc.*",
+    "grpc_status.*",
     "uber.cadence.*",
     "msgspec.*",
     "cadence.api.*",

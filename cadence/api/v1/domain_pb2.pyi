@@ -5,7 +5,9 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+import datetime
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -78,7 +80,7 @@ class Domain(_message.Message):
     isolation_groups: _common_pb2.IsolationGroupConfiguration
     async_workflow_config: _common_pb2.AsyncWorkflowConfiguration
     active_clusters: ActiveClusters
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., status: _Optional[_Union[DomainStatus, str]] = ..., description: _Optional[str] = ..., owner_email: _Optional[str] = ..., data: _Optional[_Mapping[str, str]] = ..., workflow_execution_retention_period: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., bad_binaries: _Optional[_Union[BadBinaries, _Mapping]] = ..., history_archival_status: _Optional[_Union[ArchivalStatus, str]] = ..., history_archival_uri: _Optional[str] = ..., visibility_archival_status: _Optional[_Union[ArchivalStatus, str]] = ..., visibility_archival_uri: _Optional[str] = ..., active_cluster_name: _Optional[str] = ..., clusters: _Optional[_Iterable[_Union[ClusterReplicationConfiguration, _Mapping]]] = ..., failover_version: _Optional[int] = ..., is_global_domain: bool = ..., failover_info: _Optional[_Union[FailoverInfo, _Mapping]] = ..., isolation_groups: _Optional[_Union[_common_pb2.IsolationGroupConfiguration, _Mapping]] = ..., async_workflow_config: _Optional[_Union[_common_pb2.AsyncWorkflowConfiguration, _Mapping]] = ..., active_clusters: _Optional[_Union[ActiveClusters, _Mapping]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., status: _Optional[_Union[DomainStatus, str]] = ..., description: _Optional[str] = ..., owner_email: _Optional[str] = ..., data: _Optional[_Mapping[str, str]] = ..., workflow_execution_retention_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., bad_binaries: _Optional[_Union[BadBinaries, _Mapping]] = ..., history_archival_status: _Optional[_Union[ArchivalStatus, str]] = ..., history_archival_uri: _Optional[str] = ..., visibility_archival_status: _Optional[_Union[ArchivalStatus, str]] = ..., visibility_archival_uri: _Optional[str] = ..., active_cluster_name: _Optional[str] = ..., clusters: _Optional[_Iterable[_Union[ClusterReplicationConfiguration, _Mapping]]] = ..., failover_version: _Optional[int] = ..., is_global_domain: bool = ..., failover_info: _Optional[_Union[FailoverInfo, _Mapping]] = ..., isolation_groups: _Optional[_Union[_common_pb2.IsolationGroupConfiguration, _Mapping]] = ..., async_workflow_config: _Optional[_Union[_common_pb2.AsyncWorkflowConfiguration, _Mapping]] = ..., active_clusters: _Optional[_Union[ActiveClusters, _Mapping]] = ...) -> None: ...
 
 class ClusterReplicationConfiguration(_message.Message):
     __slots__ = ("cluster_name",)
@@ -107,7 +109,7 @@ class BadBinaryInfo(_message.Message):
     reason: str
     operator: str
     created_time: _timestamp_pb2.Timestamp
-    def __init__(self, reason: _Optional[str] = ..., operator: _Optional[str] = ..., created_time: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    def __init__(self, reason: _Optional[str] = ..., operator: _Optional[str] = ..., created_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class FailoverInfo(_message.Message):
     __slots__ = ("failover_version", "failover_start_timestamp", "failover_expire_timestamp", "completed_shard_count", "pending_shards")
@@ -121,10 +123,10 @@ class FailoverInfo(_message.Message):
     failover_expire_timestamp: _timestamp_pb2.Timestamp
     completed_shard_count: int
     pending_shards: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, failover_version: _Optional[int] = ..., failover_start_timestamp: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., failover_expire_timestamp: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., completed_shard_count: _Optional[int] = ..., pending_shards: _Optional[_Iterable[int]] = ...) -> None: ...
+    def __init__(self, failover_version: _Optional[int] = ..., failover_start_timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., failover_expire_timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., completed_shard_count: _Optional[int] = ..., pending_shards: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class ActiveClusters(_message.Message):
-    __slots__ = ("region_to_cluster",)
+    __slots__ = ("region_to_cluster", "active_clusters_by_cluster_attribute")
     class RegionToClusterEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -132,9 +134,31 @@ class ActiveClusters(_message.Message):
         key: str
         value: ActiveClusterInfo
         def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ActiveClusterInfo, _Mapping]] = ...) -> None: ...
+    class ActiveClustersByClusterAttributeEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: ClusterAttributeScope
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ClusterAttributeScope, _Mapping]] = ...) -> None: ...
     REGION_TO_CLUSTER_FIELD_NUMBER: _ClassVar[int]
+    ACTIVE_CLUSTERS_BY_CLUSTER_ATTRIBUTE_FIELD_NUMBER: _ClassVar[int]
     region_to_cluster: _containers.MessageMap[str, ActiveClusterInfo]
-    def __init__(self, region_to_cluster: _Optional[_Mapping[str, ActiveClusterInfo]] = ...) -> None: ...
+    active_clusters_by_cluster_attribute: _containers.MessageMap[str, ClusterAttributeScope]
+    def __init__(self, region_to_cluster: _Optional[_Mapping[str, ActiveClusterInfo]] = ..., active_clusters_by_cluster_attribute: _Optional[_Mapping[str, ClusterAttributeScope]] = ...) -> None: ...
+
+class ClusterAttributeScope(_message.Message):
+    __slots__ = ("cluster_attributes",)
+    class ClusterAttributesEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: ActiveClusterInfo
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ActiveClusterInfo, _Mapping]] = ...) -> None: ...
+    CLUSTER_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
+    cluster_attributes: _containers.MessageMap[str, ActiveClusterInfo]
+    def __init__(self, cluster_attributes: _Optional[_Mapping[str, ActiveClusterInfo]] = ...) -> None: ...
 
 class ActiveClusterInfo(_message.Message):
     __slots__ = ("active_cluster_name", "failover_version")

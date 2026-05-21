@@ -1,0 +1,316 @@
+{
+  "events": [
+    {
+      "event_id": "1",
+      "workflow_execution_started_event_attributes": {
+        "workflow_type": {
+          "name": "CurrentlyDeterministicWorkflow"
+        },
+        "task_list": {
+          "name": "test_succeeds"
+        },
+        "execution_start_to_close_timeout": "10s",
+        "task_start_to_close_timeout": "10s",
+        "original_execution_run_id": "54ae4750-3f4b-4594-9f25-3a38634f5b7d",
+        "first_execution_run_id": "54ae4750-3f4b-4594-9f25-3a38634f5b7d",
+        "first_decision_task_backoff": "0s"
+        
+      }
+    },
+    {
+      "event_id": "2",
+      "decision_task_scheduled_event_attributes": {
+        "task_list": {
+          "name": "test_succeeds"
+        },
+        "start_to_close_timeout": "10s"
+      }
+    },
+    {
+      "event_id": "3",
+      "decision_task_started_event_attributes": {
+        "scheduled_event_id": "2"
+        
+      }
+    },
+    {
+      "event_id": "4",
+      "decision_task_completed_event_attributes": {
+        "scheduled_event_id": "2",
+        "started_event_id": "3"
+      }
+    },
+    {
+      "event_id": "5",
+      "activity_task_scheduled_event_attributes": {
+        "activity_id": "0",
+        "activity_type": {
+          "name": "first_activity"
+        },
+        "domain": "test-domain",
+        "task_list": {
+          "name": "test_succeeds",
+          "kind": "TASK_LIST_KIND_NORMAL"
+        },
+        "input": {
+          "data": "IjEi"
+        },
+        "schedule_to_close_timeout": "10s",
+        "schedule_to_start_timeout": "10s",
+        "start_to_close_timeout": "10s",
+        "heartbeat_timeout": "10s",
+        "decision_task_completed_event_id": "4"
+      }
+    },
+    {
+      "event_id": "6",
+      "activity_task_started_event_attributes": {
+        "scheduled_event_id": "5",
+
+        "last_failure": {}
+      }
+    },
+    {
+      "event_id": "7",
+      "activity_task_completed_event_attributes": {
+        "result": {
+          "data": "ImhlbGxvIHdvcmxkIg=="
+        },
+        "scheduled_event_id": "5",
+        "started_event_id": "6"
+      }
+    },
+    {
+      "event_id": "8",
+      "decision_task_scheduled_event_attributes": {
+        "task_list": {
+          "name": "test_succeeds"
+        },
+        "start_to_close_timeout": "10s"
+      }
+    },
+    {
+      "event_id": "9",
+      "decision_task_started_event_attributes": {
+        "scheduled_event_id": "8"
+        
+      }
+    },
+    {
+      "event_id": "10",
+      "decision_task_completed_event_attributes": {
+        "scheduled_event_id": "8",
+        "started_event_id": "9"
+      }
+    },
+    {
+      "event_id": "11",
+      "activity_task_scheduled_event_attributes": {
+        "activity_id": "1",
+        "activity_type": {
+          "name": "parallel_one"
+        },
+        "domain": "test-domain",
+        "task_list": {
+          "name": "test_succeeds",
+          "kind": "TASK_LIST_KIND_NORMAL"
+        },
+        "input": {
+          "data": "IjIi"
+        },
+        "schedule_to_close_timeout": "10s",
+        "schedule_to_start_timeout": "10s",
+        "start_to_close_timeout": "10s",
+        "heartbeat_timeout": "10s",
+        "decision_task_completed_event_id": "10"
+      }
+    },
+    {
+      "event_id": "12",
+      "activity_task_scheduled_event_attributes": {
+        "activity_id": "2",
+        "activity_type": {
+          "name": "parallel_two"
+        },
+        "domain": "test-domain",
+        "task_list": {
+          "name": "test_succeeds",
+          "kind": "TASK_LIST_KIND_NORMAL"
+        },
+        "input": {
+          "data": "IjMi"
+        },
+        "schedule_to_close_timeout": "10s",
+        "schedule_to_start_timeout": "10s",
+        "start_to_close_timeout": "10s",
+        "heartbeat_timeout": "10s",
+        "decision_task_completed_event_id": "10"
+      }
+    },
+    {
+      "event_id": "13",
+      "activity_task_started_event_attributes": {
+        "scheduled_event_id": "11",
+        "last_failure": {}
+      }
+    },
+    {
+      "event_id": "14",
+      "activity_task_started_event_attributes": {
+        "scheduled_event_id": "12",
+        "last_failure": {}
+      }
+    },
+    {
+      "event_id": "15",
+      "activity_task_completed_event_attributes": {
+        "result": {
+          "data": "ImhlbGxvIDEi"
+        },
+        "scheduled_event_id": "11",
+        "started_event_id": "13"
+      }
+    },
+    {
+      "event_id": "16",
+      "decision_task_scheduled_event_attributes": {
+        "task_list": {
+          "name": "test_succeeds"
+        },
+        "start_to_close_timeout": "10s"
+      }
+    },
+    {
+      "event_id": "17",
+      "activity_task_completed_event_attributes": {
+        "result": {
+          "data": "ImhlbGxvIDIi"
+        },
+        "scheduled_event_id": "12",
+        "started_event_id": "14"
+      }
+    },
+    {
+      "event_id": "18",
+      "decision_task_started_event_attributes": {
+        "scheduled_event_id": "16"
+      }
+    },
+    {
+      "event_id": "19",
+      "decision_task_completed_event_attributes": {
+        "scheduled_event_id": "16",
+        "started_event_id": "18"
+      }
+    },
+    {
+      "event_id": "20",
+      "activity_task_scheduled_event_attributes": {
+        "activity_id": "3",
+        "activity_type": {
+          "name": "parallel_three"
+        },
+        "domain": "test-domain",
+        "task_list": {
+          "name": "test_succeeds",
+          "kind": "TASK_LIST_KIND_NORMAL"
+        },
+        "input": {
+          "data": "IjQi"
+        },
+        "schedule_to_close_timeout": "10s",
+        "schedule_to_start_timeout": "10s",
+        "start_to_close_timeout": "10s",
+        "heartbeat_timeout": "10s",
+        "decision_task_completed_event_id": "19"
+      }
+    },
+    {
+      "event_id": "21",
+      "activity_task_scheduled_event_attributes": {
+        "activity_id": "4",
+        "activity_type": {
+          "name": "parallel_three"
+        },
+        "domain": "test-domain",
+        "task_list": {
+          "name": "test_succeeds",
+          "kind": "TASK_LIST_KIND_NORMAL"
+        },
+        "input": {
+          "data": "IjUi"
+        },
+        "schedule_to_close_timeout": "10s",
+        "schedule_to_start_timeout": "10s",
+        "start_to_close_timeout": "10s",
+        "heartbeat_timeout": "10s",
+        "decision_task_completed_event_id": "19"
+      }
+    },
+    {
+      "event_id": "22",
+      "activity_task_started_event_attributes": {
+        "scheduled_event_id": "21",
+        "last_failure": {}
+      }
+    },
+    {
+      "event_id": "23",
+      "activity_task_started_event_attributes": {
+        "scheduled_event_id": "20",
+        "last_failure": {}
+      }
+    },
+    {
+      "event_id": "24",
+      "activity_task_completed_event_attributes": {
+        "result": {
+          "data": "ImhlbGxvIDMi"
+        },
+        "scheduled_event_id": "21",
+        "started_event_id": "22"
+      }
+    },
+    {
+      "event_id": "25",
+      "decision_task_scheduled_event_attributes": {
+        "task_list": {
+          "name": "test_succeeds"
+        },
+        "start_to_close_timeout": "10s"
+      }
+    },
+    {
+      "event_id": "26",
+      "activity_task_completed_event_attributes": {
+        "result": {
+          "data": "ImhlbGxvIDMi"
+        },
+        "scheduled_event_id": "20",
+        "started_event_id": "23"
+      }
+    },
+    {
+      "event_id": "27",
+      "decision_task_started_event_attributes": {
+        "scheduled_event_id": "25"
+      }
+    },
+    {
+      "event_id": "28",
+      "decision_task_completed_event_attributes": {
+        "scheduled_event_id": "25",
+        "started_event_id": "27"
+      }
+    },
+    {
+      "event_id": "29",
+      "workflow_execution_completed_event_attributes": {
+        "result": {
+          "data": "ImhlbGxvIHdvcmxkIg=="
+        },
+        "decision_task_completed_event_id": "28"
+      }
+    }
+  ]
+}

@@ -1,31 +1,72 @@
 import os
 import socket
 import uuid
-from datetime import timedelta
-from typing import TypedDict, Unpack, Any, cast, Union
+from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta
+from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
 from google.protobuf.duration_pb2 import Duration
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
+from cadence._internal.workflow.active_cluster_selection_policy import (
+    active_cluster_selection_policy_to_proto,
+)
+from cadence._internal.workflow.retry_policy import retry_policy_to_proto
+from cadence.api.v1 import schedule_pb2
+from cadence.api.v1.common_pb2 import (
+    Memo,
+    SearchAttributes,
+    WorkflowType,
+    WorkflowExecution,
+)
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
+from cadence.api.v1.service_schedule_pb2 import (
+    BackfillScheduleRequest,
+    CreateScheduleRequest,
+    CreateScheduleResponse,
+    DeleteScheduleRequest,
+    DescribeScheduleRequest,
+    DescribeScheduleResponse,
+    ListSchedulesRequest,
+    ListSchedulesResponse,
+    PauseScheduleRequest,
+    UnpauseScheduleRequest,
+    UpdateScheduleRequest,
+)
+from cadence.api.v1.service_schedule_pb2_grpc import ScheduleAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
-from grpc.aio import Channel, ClientInterceptor, secure_channel, insecure_channel
+import grpc.aio
+from grpc.aio import Channel, ClientInterceptor
 from cadence.api.v1.service_workflow_pb2_grpc import WorkflowAPIStub
+from cadence.api.v1.query_pb2 import (
+    QueryRejectCondition,
+    QueryConsistencyLevel,
+    WorkflowQuery,
+)
 from cadence.api.v1.service_workflow_pb2 import (
+    RequestCancelWorkflowExecutionRequest,
+    QueryWorkflowRequest,
+    QueryWorkflowResponse,
     SignalWorkflowExecutionRequest,
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
     SignalWithStartWorkflowExecutionRequest,
     SignalWithStartWorkflowExecutionResponse,
 )
-from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
+from cadence.error import QueryFailedError
+from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
-from cadence.workflow import WorkflowDefinition
+from cadence.workflow import (
+    ActiveClusterSelectionPolicy,
+    RetryPolicy,
+    WorkflowDefinition,
+)
 
 
 class StartWorkflowOptions(TypedDict, total=False):
@@ -36,10 +77,25 @@ class StartWorkflowOptions(TypedDict, total=False):
     workflow_id: str
     task_start_to_close_timeout: timedelta
     cron_schedule: str
+    delay_start: timedelta
+    jitter_start: timedelta
+    cron_overlap_policy: workflow_pb2.CronOverlapPolicy
+    first_run_at: datetime
+    workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
+    retry_policy: RetryPolicy
+    active_cluster_selection_policy: ActiveClusterSelectionPolicy
 
 
-def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflowOptions:
-    """Validate required fields and apply defaults to StartWorkflowOptions."""
+def _validate_and_apply_defaults(
+    options: StartWorkflowOptions,
+    default_workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy = workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+) -> StartWorkflowOptions:
+    """Validate required fields and apply defaults to StartWorkflowOptions.
+
+    ``default_workflow_id_reuse_policy`` defaults to the value used by
+    ``start_workflow``. ``signal_with_start_workflow`` passes
+    ``ALLOW_DUPLICATE`` for Go parity.
+    """
     if not options.get("task_list"):
         raise ValueError("task_list is required")
 
@@ -55,6 +111,41 @@ def _validate_and_apply_defaults(options: StartWorkflowOptions) -> StartWorkflow
         options["task_start_to_close_timeout"] = timedelta(seconds=10)
     elif task_timeout <= timedelta(0):
         raise ValueError("task_start_to_close_timeout must be greater than 0")
+
+    # Validate delay_start (must be non-negative)
+    delay_start = options.get("delay_start")
+    if delay_start is not None and delay_start < timedelta(0):
+        raise ValueError("delay_start cannot be negative")
+
+    # Validate jitter_start (must be non-negative)
+    jitter_start = options.get("jitter_start")
+    if jitter_start is not None and jitter_start < timedelta(0):
+        raise ValueError("jitter_start cannot be negative")
+
+    if options.get("workflow_id_reuse_policy") is None:
+        options["workflow_id_reuse_policy"] = default_workflow_id_reuse_policy
+    elif (
+        options["workflow_id_reuse_policy"]
+        == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID
+    ):
+        raise ValueError(
+            "workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID"
+        )
+
+    # Validate first_run_at (must be timezone-aware and not before Unix epoch)
+    first_run_at = options.get("first_run_at")
+    if first_run_at is not None:
+        # Require timezone-aware datetime to prevent ambiguity
+        if first_run_at.tzinfo is None:
+            raise ValueError(
+                "first_run_at must be timezone-aware. "
+                "Use datetime.now(timezone.utc) or datetime(..., tzinfo=timezone.utc)"
+            )
+        # Validate timestamp is not before Unix epoch
+        if first_run_at.timestamp() < 0:
+            raise ValueError(
+                "first_run_at cannot be before Unix epoch (January 1, 1970 UTC)"
+            )
 
     return options
 
@@ -93,6 +184,7 @@ class Client:
         self._worker_stub = WorkerAPIStub(self._channel)
         self._domain_stub = DomainAPIStub(self._channel)
         self._workflow_stub = WorkflowAPIStub(self._channel)
+        self._schedule_stub = ScheduleAPIStub(self._channel)
 
     @property
     def data_converter(self) -> DataConverter:
@@ -119,6 +211,10 @@ class Client:
         return self._workflow_stub
 
     @property
+    def schedule_stub(self) -> ScheduleAPIStub:
+        return self._schedule_stub
+
+    @property
     def metrics_emitter(self) -> MetricsEmitter:
         return self._options["metrics_emitter"]
 
@@ -126,9 +222,10 @@ class Client:
         await self._channel.channel_ready()
 
     async def close(self) -> None:
-        await self._channel.close()
+        await self._channel.close(None)
 
     async def __aenter__(self) -> "Client":
+        await self.ready()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -185,6 +282,42 @@ class Client:
             request.input.CopyFrom(input_payload)
         if options.get("cron_schedule"):
             request.cron_schedule = options["cron_schedule"]
+        if options.get("cron_overlap_policy") is not None:
+            request.cron_overlap_policy = options["cron_overlap_policy"]
+        if options.get("workflow_id_reuse_policy") is not None:
+            request.workflow_id_reuse_policy = options["workflow_id_reuse_policy"]
+
+        # Set delay_start if provided
+        delay_start = options.get("delay_start")
+        if delay_start is not None:
+            delay_duration = Duration()
+            delay_duration.FromTimedelta(delay_start)
+            request.delay_start.CopyFrom(delay_duration)
+
+        # Set jitter_start if provided
+        jitter_start = options.get("jitter_start")
+        if jitter_start is not None:
+            jitter_duration = Duration()
+            jitter_duration.FromTimedelta(jitter_start)
+            request.jitter_start.CopyFrom(jitter_duration)
+
+        # Set first_run_at if provided
+        first_run_at = options.get("first_run_at")
+        if first_run_at is not None:
+            first_run_timestamp = Timestamp()
+            first_run_timestamp.FromDatetime(first_run_at)
+            request.first_run_at.CopyFrom(first_run_timestamp)
+
+        # Set retry_policy if provided
+        retry_proto = retry_policy_to_proto(options.get("retry_policy"))
+        if retry_proto is not None:
+            request.retry_policy.CopyFrom(retry_proto)
+
+        acsp_proto = active_cluster_selection_policy_to_proto(
+            options.get("active_cluster_selection_policy")
+        )
+        if acsp_proto is not None:
+            request.active_cluster_selection_policy.CopyFrom(acsp_proto)
 
         return request
 
@@ -278,6 +411,104 @@ class Client:
 
         await self.workflow_stub.SignalWorkflowExecution(signal_request)
 
+    async def cancel_workflow(
+        self,
+        workflow_id: str,
+        run_id: str,
+    ) -> None:
+        """
+        Cancel a workflow execution.
+
+        Args:
+            workflow_id: The workflow ID
+            run_id: The run ID (can be empty string to cancel current run)
+
+        Raises:
+            Exception: If the gRPC call fails
+        """
+        workflow_execution = WorkflowExecution()
+        workflow_execution.workflow_id = workflow_id
+        if run_id:
+            workflow_execution.run_id = run_id
+        cancel_request = RequestCancelWorkflowExecutionRequest(
+            domain=self.domain,
+            workflow_execution=workflow_execution,
+            identity=self.identity,
+            request_id=str(uuid.uuid4()),
+        )
+
+        await self.workflow_stub.RequestCancelWorkflowExecution(cancel_request)
+
+    async def query_workflow(
+        self,
+        workflow_id: str,
+        run_id: str,
+        query_type: str,
+        *query_args: Any,
+        result_type: type = object,
+        query_reject_condition: QueryRejectCondition | None = None,
+    ) -> Any:
+        """
+        Query a running workflow execution's state.
+
+        Queries do not affect workflow execution. They invoke a registered
+        query handler on the workflow and return the result.
+
+        Args:
+            workflow_id: The workflow ID to query.
+            run_id: The run ID (can be empty string to query the current run).
+            query_type: Name of the query type (must match a @workflow.query handler).
+            *query_args: Arguments to pass to the query handler.
+            result_type: The expected return type for deserialization.
+            query_reject_condition: Optional condition to reject the query.
+
+        Returns:
+            The deserialized query result.
+
+        Raises:
+            ValueError: If query encoding fails.
+            QueryFailedError: If the query was rejected or failed.
+            Exception: If the gRPC call fails.
+        """
+        query_payload = None
+        if query_args:
+            try:
+                query_payload = self.data_converter.to_data(list(query_args))
+            except Exception as e:
+                raise ValueError(f"Failed to encode query arguments: {e}")
+
+        wf_query = WorkflowQuery(query_type=query_type)
+        if query_payload:
+            wf_query.query_args.CopyFrom(query_payload)
+
+        workflow_execution = WorkflowExecution()
+        workflow_execution.workflow_id = workflow_id
+        if run_id:
+            workflow_execution.run_id = run_id
+
+        request = QueryWorkflowRequest(
+            domain=self.domain,
+            workflow_execution=workflow_execution,
+            query=wf_query,
+            query_consistency_level=QueryConsistencyLevel.QUERY_CONSISTENCY_LEVEL_EVENTUAL,
+        )
+
+        if query_reject_condition is not None:
+            request.query_reject_condition = query_reject_condition
+
+        response: QueryWorkflowResponse = await self.workflow_stub.QueryWorkflow(
+            request
+        )
+
+        if response.HasField("query_rejected"):
+            raise QueryFailedError(
+                f"Query rejected: close_status={response.query_rejected.close_status}",
+                grpc.StatusCode.INVALID_ARGUMENT,
+            )
+
+        results = self.data_converter.from_data(response.query_result, [result_type])
+        return results[0] if results else None
+
     async def signal_with_start_workflow(
         self,
         workflow: Union[str, WorkflowDefinition],
@@ -304,7 +535,10 @@ class Client:
             Exception: If the gRPC call fails
         """
         # Convert kwargs to StartWorkflowOptions and validate
-        options = _validate_and_apply_defaults(StartWorkflowOptions(**options_kwargs))
+        options = _validate_and_apply_defaults(
+            StartWorkflowOptions(**options_kwargs),
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+        )
 
         # Build the start workflow request
         start_request = self._build_start_workflow_request(
@@ -341,6 +575,181 @@ class Client:
         except Exception:
             raise
 
+    # ------------------------------------------------------------------
+    # Schedule API
+    # ------------------------------------------------------------------
+
+    async def create_schedule(
+        self,
+        schedule_id: str,
+        *,
+        spec: schedule_pb2.ScheduleSpec | None = None,
+        action: schedule_pb2.ScheduleAction | None = None,
+        policies: schedule_pb2.SchedulePolicies | None = None,
+        memo: Memo | None = None,
+        search_attributes: SearchAttributes | None = None,
+    ) -> CreateScheduleResponse:
+        """Create a new schedule and return the server response."""
+        req = CreateScheduleRequest(
+            domain=self.domain,
+            schedule_id=schedule_id,
+        )
+        if spec is not None:
+            req.spec.CopyFrom(spec)
+        if action is not None:
+            req.action.CopyFrom(action)
+        if policies is not None:
+            req.policies.CopyFrom(policies)
+        if memo is not None:
+            req.memo.CopyFrom(memo)
+        if search_attributes is not None:
+            req.search_attributes.CopyFrom(search_attributes)
+        return cast(
+            CreateScheduleResponse,
+            await self._schedule_stub.CreateSchedule(req),
+        )
+
+    async def describe_schedule(self, schedule_id: str) -> DescribeScheduleResponse:
+        """Return the current configuration and state of the schedule."""
+        return cast(
+            DescribeScheduleResponse,
+            await self._schedule_stub.DescribeSchedule(
+                DescribeScheduleRequest(
+                    domain=self.domain,
+                    schedule_id=schedule_id,
+                )
+            ),
+        )
+
+    async def pause_schedule(
+        self,
+        schedule_id: str,
+        *,
+        reason: str = "",
+        identity: str | None = None,
+    ) -> None:
+        """Pause the schedule, stopping new workflow starts."""
+        await self._schedule_stub.PauseSchedule(
+            PauseScheduleRequest(
+                domain=self.domain,
+                schedule_id=schedule_id,
+                reason=reason,
+                identity=identity or self.identity,
+            )
+        )
+
+    async def unpause_schedule(
+        self,
+        schedule_id: str,
+        *,
+        reason: str = "",
+        catch_up_policy: schedule_pb2.ScheduleCatchUpPolicy = schedule_pb2.SCHEDULE_CATCH_UP_POLICY_INVALID,
+    ) -> None:
+        """Resume a paused schedule."""
+        await self._schedule_stub.UnpauseSchedule(
+            UnpauseScheduleRequest(
+                domain=self.domain,
+                schedule_id=schedule_id,
+                reason=reason,
+                catch_up_policy=catch_up_policy,
+            )
+        )
+
+    async def delete_schedule(self, schedule_id: str) -> None:
+        """Delete the schedule. Running workflows are not affected."""
+        await self._schedule_stub.DeleteSchedule(
+            DeleteScheduleRequest(
+                domain=self.domain,
+                schedule_id=schedule_id,
+            )
+        )
+
+    async def update_schedule(
+        self,
+        schedule_id: str,
+        *,
+        spec: schedule_pb2.ScheduleSpec | None = None,
+        action: schedule_pb2.ScheduleAction | None = None,
+        policies: schedule_pb2.SchedulePolicies | None = None,
+        search_attributes: SearchAttributes | None = None,
+    ) -> None:
+        """Update the schedule configuration. Only supplied fields are applied."""
+        req = UpdateScheduleRequest(
+            domain=self.domain,
+            schedule_id=schedule_id,
+        )
+        if spec is not None:
+            req.spec.CopyFrom(spec)
+        if action is not None:
+            req.action.CopyFrom(action)
+        if policies is not None:
+            req.policies.CopyFrom(policies)
+        if search_attributes is not None:
+            req.search_attributes.CopyFrom(search_attributes)
+        await self._schedule_stub.UpdateSchedule(req)
+
+    async def backfill_schedule(
+        self,
+        schedule_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        *,
+        overlap_policy: schedule_pb2.ScheduleOverlapPolicy = schedule_pb2.SCHEDULE_OVERLAP_POLICY_INVALID,
+        backfill_id: str | None = None,
+    ) -> None:
+        """Trigger runs for a historical time range.
+
+        ``backfill_id`` defaults to a UUID; the server deduplicates on this
+        value so retrying with the same ID is safe.
+
+        Raises:
+            ValueError: If datetimes are naive or ``end_time <= start_time``.
+        """
+        if start_time.tzinfo is None:
+            raise ValueError(
+                "backfill start_time must be timezone-aware. "
+                "Use datetime.now(timezone.utc) or datetime(..., tzinfo=timezone.utc)"
+            )
+        if end_time.tzinfo is None:
+            raise ValueError(
+                "backfill end_time must be timezone-aware. "
+                "Use datetime.now(timezone.utc) or datetime(..., tzinfo=timezone.utc)"
+            )
+        if end_time <= start_time:
+            raise ValueError("backfill end_time must be strictly after start_time")
+
+        req = BackfillScheduleRequest(
+            domain=self.domain,
+            schedule_id=schedule_id,
+            overlap_policy=overlap_policy,
+            backfill_id=backfill_id or str(uuid.uuid4()),
+        )
+        req.start_time.FromDatetime(start_time)
+        req.end_time.FromDatetime(end_time)
+        await self._schedule_stub.BackfillSchedule(req)
+
+    async def list_schedules(
+        self, *, page_size: int = 100
+    ) -> AsyncGenerator[schedule_pb2.ScheduleListEntry, None]:
+        """Async-iterate over all schedules in the domain, handling pagination."""
+        next_page_token = b""
+        while True:
+            resp = cast(
+                ListSchedulesResponse,
+                await self._schedule_stub.ListSchedules(
+                    ListSchedulesRequest(
+                        domain=self.domain,
+                        page_size=page_size,
+                        next_page_token=next_page_token,
+                    )
+                ),
+            )
+            for entry in resp.schedules:
+                yield entry
+            if not resp.next_page_token:
+                break
+            next_page_token = resp.next_page_token
+
 
 def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     if "target" not in options:
@@ -358,25 +767,28 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
 
 
 def _create_channel(options: ClientOptions) -> Channel:
-    interceptors = list(options["interceptors"])
+    interceptors: list[Any] = list(options["interceptors"])
     interceptors.append(
         YarpcMetadataInterceptor(options["service_name"], options["caller_name"])
     )
     interceptors.append(RetryInterceptor())
     interceptors.append(CadenceErrorInterceptor())
 
+    channel_arguments = options.get("channel_arguments") or {}
+    grpc_channel_options: Sequence[tuple[str, Any]] = tuple(channel_arguments.items())
+
     if options["credentials"]:
-        return secure_channel(
+        return grpc.aio.secure_channel(
             options["target"],
             options["credentials"],
-            options["channel_arguments"],
-            options["compression"],
-            interceptors,
+            options=grpc_channel_options,
+            compression=options["compression"],
+            interceptors=interceptors,
         )
     else:
-        return insecure_channel(
+        return grpc.aio.insecure_channel(
             options["target"],
-            options["channel_arguments"],
-            options["compression"],
-            interceptors,
+            options=grpc_channel_options,
+            compression=options["compression"],
+            interceptors=interceptors,
         )

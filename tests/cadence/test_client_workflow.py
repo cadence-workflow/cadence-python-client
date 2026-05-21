@@ -1,16 +1,27 @@
 import pytest
 import uuid
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
 from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.api.v1.service_workflow_pb2 import (
     StartWorkflowExecutionRequest,
     StartWorkflowExecutionResponse,
+    SignalWithStartWorkflowExecutionResponse,
 )
-from cadence.client import Client, StartWorkflowOptions, _validate_and_apply_defaults
+from cadence.client import (
+    Client,
+    StartWorkflowOptions,
+    _validate_and_apply_defaults,
+)
+from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DefaultDataConverter
-from cadence.workflow import WorkflowDefinition, WorkflowDefinitionOptions
+from cadence.workflow import (
+    ActiveClusterSelectionPolicy,
+    WorkflowDefinition,
+    WorkflowDefinitionOptions,
+)
 
 
 @pytest.fixture
@@ -241,6 +252,245 @@ class TestClientBuildStartWorkflowRequest:
 
         assert request.cron_schedule == "0 * * * *"
 
+    @pytest.mark.asyncio
+    async def test_build_request_with_delay_start(self, mock_client):
+        """Test building request with delay_start."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            delay_start=timedelta(minutes=5),
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("delay_start")
+        assert request.delay_start.seconds == 300  # 5 minutes
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_jitter_start(self, mock_client):
+        """Test building request with jitter_start."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            jitter_start=timedelta(seconds=30),
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("jitter_start")
+        assert request.jitter_start.seconds == 30
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_delay_and_jitter_start(self, mock_client):
+        """Test building request with both delay_start and jitter_start."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            delay_start=timedelta(minutes=1),
+            jitter_start=timedelta(seconds=10),
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.delay_start.seconds == 60
+        assert request.jitter_start.seconds == 10
+
+    def test_negative_delay_start_raises_error(self):
+        """Test that negative delay_start raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            delay_start=timedelta(seconds=-1),
+        )
+        with pytest.raises(ValueError, match="delay_start cannot be negative"):
+            _validate_and_apply_defaults(options)
+
+    def test_negative_jitter_start_raises_error(self):
+        """Test that negative jitter_start raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            jitter_start=timedelta(seconds=-1),
+        )
+        with pytest.raises(ValueError, match="jitter_start cannot be negative"):
+            _validate_and_apply_defaults(options)
+
+    def test_zero_delay_start_is_valid(self):
+        """Test that zero delay_start is valid."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            delay_start=timedelta(0),
+        )
+        validated = _validate_and_apply_defaults(options)
+        assert validated["delay_start"] == timedelta(0)
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_cron_overlap_policy_enum(self, mock_client):
+        """Test building request with cron_overlap_policy as enum."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            cron_schedule="0 * * * *",
+            cron_overlap_policy=workflow_pb2.CRON_OVERLAP_POLICY_SKIPPED,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.cron_overlap_policy == workflow_pb2.CRON_OVERLAP_POLICY_SKIPPED
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_first_run_at_timezone_aware(self, mock_client):
+        """Test building request with timezone-aware first_run_at."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        first_run = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            cron_schedule="0 * * * *",
+            first_run_at=first_run,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("first_run_at")
+        # Convert back and verify
+        result_dt = request.first_run_at.ToDatetime()
+        assert result_dt == first_run.replace(
+            tzinfo=None
+        )  # ToDatetime returns naive UTC
+
+    def test_first_run_at_naive_datetime_raises_error(self):
+        """Test that timezone-naive first_run_at raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(2024, 1, 1, 12, 0, 0),  # Naive
+        )
+        with pytest.raises(ValueError, match="must be timezone-aware"):
+            _validate_and_apply_defaults(options)
+
+    def test_first_run_at_aware_datetime_is_valid(self):
+        """Test that timezone-aware first_run_at is valid."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        # Should not raise
+        validated = _validate_and_apply_defaults(options)
+        assert validated["first_run_at"] == datetime(
+            2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc
+        )
+
+    def test_first_run_at_before_epoch_raises_error(self):
+        """Test that first_run_at before Unix epoch raises ValueError."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(1960, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        )
+        with pytest.raises(ValueError, match="cannot be before Unix epoch"):
+            _validate_and_apply_defaults(options)
+
+    def test_first_run_at_at_epoch_is_valid(self):
+        """Test that first_run_at exactly at Unix epoch is valid."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            first_run_at=datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        )
+        # Should not raise
+        validated = _validate_and_apply_defaults(options)
+        assert validated["first_run_at"] == datetime(
+            1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc
+        )
+
+    @pytest.mark.parametrize(
+        "policy",
+        [
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING,
+        ],
+        ids=[
+            "allow_duplicate_failed_only",
+            "allow_duplicate",
+            "reject_duplicate",
+            "terminate_if_running",
+        ],
+    )
+    def test_build_request_propagates_workflow_id_reuse_policy(
+        self, policy: workflow_pb2.WorkflowIdReusePolicy
+    ) -> None:
+        """Non-INVALID reuse policies propagate through the builder."""
+        client = Client(domain="test-domain", target="localhost:7933")
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            workflow_id_reuse_policy=policy,
+        )
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+        assert request.workflow_id_reuse_policy == policy
+
+    def test_invalid_workflow_id_reuse_policy_raises_error(self):
+        """Explicit WORKFLOW_ID_REUSE_POLICY_INVALID is rejected."""
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID,
+        )
+        with pytest.raises(
+            ValueError,
+            match="workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID",
+        ):
+            _validate_and_apply_defaults(options)
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_explicit_active_cluster_selection_policy(
+        self, mock_client
+    ):
+        """active_cluster_selection_policy TypedDict is converted to the proto field."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        policy: ActiveClusterSelectionPolicy = {
+            "cluster_attribute": {"scope": "region", "name": "us-east-1"},
+        }
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            active_cluster_selection_policy=policy,
+        )
+
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+
+        assert request.HasField("active_cluster_selection_policy")
+        assert (
+            request.active_cluster_selection_policy.cluster_attribute.scope == "region"
+        )
+        assert (
+            request.active_cluster_selection_policy.cluster_attribute.name
+            == "us-east-1"
+        )
+
 
 class TestClientStartWorkflow:
     """Test Client.start_workflow method."""
@@ -386,6 +636,78 @@ class TestClientStartWorkflow:
         # Verify default was applied
         assert captured_options["task_start_to_close_timeout"] == timedelta(seconds=10)
 
+    @pytest.mark.asyncio
+    async def test_start_workflow_defaults_reuse_policy_to_allow_duplicate_failed_only(
+        self, mock_client
+    ):
+        """start_workflow defaults workflow_id_reuse_policy to ALLOW_DUPLICATE_FAILED_ONLY."""
+        response = StartWorkflowExecutionResponse()
+        response.run_id = "test-run-id"
+
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = mock_client.workflow_stub
+
+        await client.start_workflow(
+            "TestWorkflow",
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        request = mock_client.workflow_stub.StartWorkflowExecution.call_args[0][0]
+        assert (
+            request.workflow_id_reuse_policy
+            == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_workflow_respects_explicit_reuse_policy(self, mock_client):
+        """Explicit workflow_id_reuse_policy on start_workflow overrides the default."""
+        response = StartWorkflowExecutionResponse()
+        response.run_id = "test-run-id"
+
+        mock_client.workflow_stub.StartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = mock_client.workflow_stub
+
+        await client.start_workflow(
+            "TestWorkflow",
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING,
+        )
+
+        request = mock_client.workflow_stub.StartWorkflowExecution.call_args[0][0]
+        assert (
+            request.workflow_id_reuse_policy
+            == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_workflow_rejects_invalid_reuse_policy(self, mock_client):
+        """Explicit WORKFLOW_ID_REUSE_POLICY_INVALID on start_workflow raises ValueError."""
+        client = Client(domain="test-domain", target="localhost:7933")
+
+        with pytest.raises(
+            ValueError,
+            match="workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID",
+        ):
+            await client.start_workflow(
+                "TestWorkflow",
+                task_list="test-task-list",
+                execution_start_to_close_timeout=timedelta(minutes=10),
+                task_start_to_close_timeout=timedelta(seconds=30),
+                workflow_id_reuse_policy=workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID,
+            )
+
 
 @pytest.mark.asyncio
 async def test_integration_workflow_invocation():
@@ -425,3 +747,136 @@ async def test_integration_workflow_invocation():
     assert request.task_list.name == "integration-task-list"
     assert request.HasField("input")  # Should have encoded input
     assert request.HasField("execution_start_to_close_timeout")
+
+
+class TestBuildStartWorkflowRequestRetryPolicy:
+    """Tests for retry_policy wiring in _build_start_workflow_request."""
+
+    def _base_options(self, **extra: Any) -> StartWorkflowOptions:
+        merged: dict[str, Any] = {
+            "task_list": "test-task-list",
+            "execution_start_to_close_timeout": timedelta(minutes=10),
+            "task_start_to_close_timeout": timedelta(seconds=30),
+        }
+        merged.update(extra)
+        return cast(StartWorkflowOptions, merged)
+
+    def _client(self) -> Client:
+        return Client(domain="test-domain", target="localhost:7933")
+
+    def test_retry_policy_omitted_sets_no_field(self):
+        """No retry_policy → request has no retry_policy field."""
+        client = self._client()
+        request = client._build_start_workflow_request("WF", (), self._base_options())
+        assert not request.HasField("retry_policy")
+
+    def test_retry_policy_empty_dict_sets_no_field(self):
+        """Empty dict retry_policy → treated as None, no field set."""
+        client = self._client()
+        request = client._build_start_workflow_request(
+            "WF", (), self._base_options(retry_policy={})
+        )
+        assert not request.HasField("retry_policy")
+
+    def test_retry_policy_populated_sets_field(self):
+        """Populated retry_policy → request.retry_policy is set."""
+        client = self._client()
+        request = client._build_start_workflow_request(
+            "WF",
+            (),
+            self._base_options(
+                retry_policy={
+                    "initial_interval": timedelta(seconds=1),
+                    "backoff_coefficient": 2.0,
+                    "maximum_interval": timedelta(seconds=10),
+                    "maximum_attempts": 3,
+                    "non_retryable_error_reasons": ["FatalError"],
+                    "expiration_interval": timedelta(minutes=5),
+                }
+            ),
+        )
+        assert request.HasField("retry_policy")
+        rp = request.retry_policy
+        assert rp.initial_interval.seconds == 1
+        assert rp.backoff_coefficient == 2.0
+        assert rp.maximum_interval.seconds == 10
+        assert rp.maximum_attempts == 3
+        assert list(rp.non_retryable_error_reasons) == ["FatalError"]
+        assert rp.expiration_interval.seconds == 300
+
+    def test_retry_policy_duration_ceiled_to_seconds(self):
+        """Sub-second durations are ceil-rounded to whole seconds."""
+        client = self._client()
+        request = client._build_start_workflow_request(
+            "WF",
+            (),
+            self._base_options(
+                retry_policy={"initial_interval": timedelta(milliseconds=500)}
+            ),
+        )
+        assert request.HasField("retry_policy")
+        assert request.retry_policy.initial_interval.seconds == 1
+
+    def test_retry_policy_invalid_backoff_raises(self):
+        """backoff_coefficient < 1.0 raises ValueError at build time."""
+        client = self._client()
+        with pytest.raises(ValueError, match="backoff_coefficient"):
+            client._build_start_workflow_request(
+                "WF",
+                (),
+                self._base_options(retry_policy={"backoff_coefficient": 0.5}),
+            )
+
+    @pytest.mark.asyncio
+    async def test_start_workflow_passes_retry_policy_to_server(self):
+        """start_workflow wires retry_policy into the gRPC request sent to the server."""
+        response = StartWorkflowExecutionResponse()
+        response.run_id = "run-1"
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = Mock()
+        client._workflow_stub.StartWorkflowExecution = AsyncMock(return_value=response)
+
+        await client.start_workflow(
+            "WF",
+            task_list="tl",
+            execution_start_to_close_timeout=timedelta(minutes=5),
+            retry_policy={
+                "initial_interval": timedelta(seconds=2),
+                "maximum_attempts": 4,
+            },
+        )
+
+        request = client._workflow_stub.StartWorkflowExecution.call_args[0][0]
+        assert request.HasField("retry_policy")
+        assert request.retry_policy.initial_interval.seconds == 2
+        assert request.retry_policy.maximum_attempts == 4
+
+    @pytest.mark.asyncio
+    async def test_signal_with_start_workflow_passes_retry_policy(self):
+        """signal_with_start_workflow wires retry_policy into the underlying start request."""
+        response = SignalWithStartWorkflowExecutionResponse()
+        response.run_id = "run-2"
+
+        client = Client(domain="test-domain", target="localhost:7933")
+        client._workflow_stub = Mock()
+        client._workflow_stub.SignalWithStartWorkflowExecution = AsyncMock(
+            return_value=response
+        )
+
+        await client.signal_with_start_workflow(
+            "WF",
+            "my-signal",
+            [],
+            task_list="tl",
+            execution_start_to_close_timeout=timedelta(minutes=5),
+            retry_policy={
+                "initial_interval": timedelta(seconds=3),
+                "maximum_attempts": 2,
+            },
+        )
+
+        request = client._workflow_stub.SignalWithStartWorkflowExecution.call_args[0][0]
+        assert request.start_request.HasField("retry_policy")
+        assert request.start_request.retry_policy.initial_interval.seconds == 3
+        assert request.start_request.retry_policy.maximum_attempts == 2

@@ -53,8 +53,20 @@ class FnSignature:
     def params_from_payload(
         self, data_converter: DataConverter, payload: Payload
     ) -> list[Any]:
+        if not self.params:
+            return []
         type_hints = [param.type_hint for param in self.params]
-        return data_converter.from_data(payload, type_hints)
+        decoded = _decode_provided_values(data_converter, payload, type_hints)
+        for i, param in enumerate(self.params):
+            if i < len(decoded):
+                continue
+            if param.has_default:
+                decoded.append(param.default_value)
+            else:
+                raise ValueError(
+                    f"required parameter '{param.name}' (position {i}) not provided in payload"
+                )
+        return decoded
 
     @staticmethod
     def of(fn: Callable) -> "FnSignature":
@@ -88,3 +100,21 @@ class FnSignature:
         return_type = hints.get("return", Any)
 
         return FnSignature(params, return_type)
+
+
+def _decode_provided_values(
+    data_converter: DataConverter,
+    payload: Payload,
+    type_hints: Sequence[Type | None],
+) -> list[Any]:
+    decoder = getattr(data_converter, "_decode_provided_values", None)
+    if callable(decoder):
+        return list(decoder(payload, type_hints))
+
+    counter = getattr(data_converter, "_payload_value_count", None)
+    if callable(counter):
+        provided_count = int(counter(payload, len(type_hints)))
+        return data_converter.from_data(payload, list(type_hints[:provided_count]))
+
+    # Backward compatibility
+    return data_converter.from_data(payload, list(type_hints))

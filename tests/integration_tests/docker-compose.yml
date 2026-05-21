@@ -34,6 +34,7 @@ services:
       - "CASSANDRA_SEEDS=cassandra"
       - "STATSD_ENDPOINT=statsd:8125"
       - "DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development.yaml"
+      - "CADENCE_OVERRIDE_DYNAMIC_CONFIG=system.enableSchedules:true"
     depends_on:
       - cassandra
       - statsd

@@ -1,3 +1,4 @@
+import traceback
 from asyncio import AbstractEventLoop, Handle, TimerHandle, futures, tasks, Future, Task
 from contextvars import Context
 import logging
@@ -7,7 +8,15 @@ import threading
 from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator
 from typing_extensions import Unpack, TypeVarTuple
 
+from cadence._internal.workflow.waiter import Waiter
+
 logger = logging.getLogger(__name__)
+
+
+class FatalDecisionError(Exception):
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+
 
 _Ts = TypeVarTuple("_Ts")
 _T = TypeVar("_T")
@@ -25,6 +34,7 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._thread_id: int | None = None  # indicate if the event loop is running
         self._debug: bool = False
         self._ready: collections.deque[events.Handle] = collections.deque()
+        self._waiters: list[Waiter] = []
         self._stopping: bool = False
         self._closed: bool = False
 
@@ -134,6 +144,13 @@ class DeterministicEventLoop(AbstractEventLoop):
     def create_future(self) -> Future[Any]:
         return futures.Future(loop=self)
 
+    def create_waiter(self, predicate: Callable[[], bool]) -> Waiter:
+        """Register a predicate-driven awaitable."""
+        waiter = Waiter(predicate, self)
+        if not waiter.poll():
+            self._waiters.append(waiter)
+        return waiter
+
     def _run_once(self) -> None:
         ntodo = len(self._ready)
         for i in range(ntodo):
@@ -141,6 +158,19 @@ class DeterministicEventLoop(AbstractEventLoop):
             if handle._cancelled:
                 continue
             handle._run()
+
+        # Poll waiters; only stop early if settling one schedules new work,
+        # so remaining waiters are not skipped.
+        i = 0
+        while i < len(self._waiters):
+            w = self._waiters[i]
+            ready_before = len(self._ready)
+            if w.poll():
+                del self._waiters[i]
+                if len(self._ready) > ready_before:
+                    return
+            else:
+                i += 1
 
     def _run_forever_setup(self) -> None:
         self._check_closed()
@@ -183,6 +213,7 @@ class DeterministicEventLoop(AbstractEventLoop):
             logger.debug("Close %r", self)
         self._closed = True
         self._ready.clear()
+        self._waiters.clear()
 
     def is_closed(self) -> bool:
         """Returns True if the event loop was closed."""
@@ -455,9 +486,35 @@ class DeterministicEventLoop(AbstractEventLoop):
         )
 
     def call_exception_handler(self, context: dict[str, Any]) -> None:
-        raise NotImplementedError(
-            "Custom exception handlers not supported in deterministic event loop"
-        )
+        message = context.get("message")
+        if not message:
+            message = "Unhandled exception in event loop"
+
+        exception = context.get("exception")
+
+        if isinstance(exception, BaseException):
+            exc_info = exception
+        else:
+            exc_info = None
+
+        log_lines = [message]
+        for key in sorted(context):
+            if key in {"message", "exception"}:
+                continue
+            value = context[key]
+            if key == "source_traceback":
+                tb = "".join(traceback.format_list(value))
+                value = "Object created at (most recent call last):\n"
+                value += tb.rstrip()
+            elif key == "handle_traceback":
+                tb = "".join(traceback.format_list(value))
+                value = "Handle created at (most recent call last):\n"
+                value += tb.rstrip()
+            else:
+                value = repr(value)
+            log_lines.append(f"{key}: {value}")
+
+        logger.error("\n".join(log_lines), exc_info=exc_info)
 
     # Task factory
     def set_task_factory(  # type: ignore[override]

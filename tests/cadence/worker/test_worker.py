@@ -32,22 +32,16 @@ async def test_worker():
     type(client).domain = PropertyMock(return_value="domain")
     type(client).identity = PropertyMock(return_value="identity")
 
-    worker = Worker(
+    async with Worker(
         client,
         "task_list",
         Registry(),
         activity_task_pollers=1,
         decision_task_pollers=1,
         identity="identity",
-    )
-
-    task = asyncio.create_task(worker.run())
-
-    # Wait until both polled
-    await both_waited.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    ):
+        # Wait until both polled
+        await both_waited.wait()
 
     worker_stub.PollForDecisionTask.assert_called_once_with(
         PollForDecisionTaskRequest(

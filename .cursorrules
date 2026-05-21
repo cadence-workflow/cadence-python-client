@@ -4,7 +4,7 @@
 - **Always use `uv` for Python package management**
 - Use `uv run` for running Python commands instead of `python` directly
 - Use `uv sync` for installing dependencies instead of `pip install`
-- Use `uv tool run` for running development tools (pytest, mypy, ruff, etc.)
+- Use `uv tool run` for running development tools (pytest, ruff, etc.); use `uv run mypy` so mypy uses the project environment (e.g. `types-grpcio`).
 - Only use `pip` or `python` directly when specifically required by the tool or documentation
 
 ## Examples
@@ -12,7 +12,7 @@
 # ✅ Correct
 uv run python scripts/generate_proto.py
 uv run python -m pytest tests/
-uv tool run mypy cadence/
+uv run mypy cadence/
 uv tool run ruff check
 
 # ❌ Avoid
@@ -37,13 +37,13 @@ pip install -e ".[dev]"
 ## Code Quality
 - **ALWAYS run linter and type checker after making code changes**
 - Run linter with auto-fix: `uv tool run ruff check --fix`
-- Run type checking: `uv tool run mypy cadence/`
-- Use `uv tool run ruff check --fix && uv tool run mypy cadence/` to run both together
+- Run type checking: `uv run mypy cadence/`
+- Use `uv tool run ruff check --fix && uv run mypy cadence/` to run both together
 - **Standard workflow**: Make changes → Run linter → Run type checker → Commit
 
 ## Development Workflow
 1. Make code changes
 2. Run `uv tool run ruff check --fix` (fixes formatting and linting issues)
-3. Run `uv tool run mypy cadence/` (checks type safety)
+3. Run `uv run mypy cadence/` (checks type safety)
 4. Run `uv run python -m pytest` (run tests)
 5. Commit changes

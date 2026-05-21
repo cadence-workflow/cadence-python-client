@@ -10,20 +10,33 @@ from cadence.api.v1 import (
 )
 
 
-# TODO: Remove unused states
 class DecisionState(Enum):
     """Lifecycle states for a decision-producing state machine instance."""
 
-    CREATED = 0
-    DECISION_SENT = 1
-    CANCELED_BEFORE_INITIATED = 2
-    INITIATED = 3
+    # Indicates that user code requested the operation. For example, this is the state immediately after calling
+    # schedule_activity. From this state, state machines should yield a decision to initiate the operation.
+    REQUESTED = 0
+    # The Decision was canceled before it was ever sent to the server. State machines should yield a marker.
+    CANCELED_AFTER_REQUESTED = 1
+    # Indicates the Decision was recorded in history. For example, this is the state after
+    # history.ActivityTaskScheduledEventAttributes is received.
+    # It's effectively started, but "started" is a loaded term.
+    RECORDED = 2
+    # The Decision was canceled after it was recorded in history. We need to yield another decision to cancel it.
+    CANCELED_AFTER_RECORDED = 3
+    # Most types don't use this state.
+    # Child Workflows are unique in that they have an intermediate state between "recorded" and "completed". Unlike
+    # an activity starting, it's an observable event. It's needed to communicate the WorkflowID and whether it actually
+    # could start.
+    # Currently unused.
     STARTED = 4
-    CANCELED_AFTER_INITIATED = 5
-    CANCELED_AFTER_STARTED = 6
-    CANCELLATION_DECISION_SENT = 7
-    COMPLETED_AFTER_CANCELLATION_DECISION_SENT = 8
-    COMPLETED = 9
+    # Maybe also needed for ChildWorkflows depending on how we model them.
+    # Currently unused.
+    CANCELED_AFTER_STARTED = 5
+    # The Decision to cancel the operation was recorded in history.
+    CANCELLATION_RECORDED = 6
+    # Completed, maybe successfully, maybe not.
+    COMPLETED = 7
 
 
 class DecisionType(Enum):
@@ -36,6 +49,7 @@ class DecisionType(Enum):
     TIMER = 4
     SIGNAL = 5
     UPSERT_SEARCH_ATTRIBUTES = 6
+    WORKFLOW_COMPLETE = 7
 
 
 @dataclass(frozen=True)
@@ -54,7 +68,7 @@ class DecisionStateMachine(Protocol):
 
 class BaseDecisionStateMachine(DecisionStateMachine):
     def __init__(self):
-        self._state = DecisionState.CREATED
+        self._state = DecisionState.REQUESTED
 
     def _transition(
         self, to: DecisionState, allowed_from: list[DecisionState] | None = None

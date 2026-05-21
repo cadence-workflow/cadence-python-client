@@ -15,14 +15,37 @@ from typing import (
     Union,
     Unpack,
     Generic,
+    NoReturn,
 )
 import inspect
 
 from cadence._internal.fn_signature import FnSignature
 from cadence.data_converter import DataConverter
+from cadence.error import ContinueAsNewError
+from cadence.query import QueryDefinition, QueryDefinitionOptions
 from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
+_QUERY_TYPES_QUERY_NAME = "__query_types"
+
 ResultType = TypeVar("ResultType")
+
+
+class RetryPolicy(TypedDict, total=False):
+    initial_interval: timedelta | None
+    backoff_coefficient: float | None
+    maximum_interval: timedelta | None
+    maximum_attempts: int | None
+    non_retryable_error_reasons: list[str] | None
+    expiration_interval: timedelta | None
+
+
+class ClusterAttribute(TypedDict, total=False):
+    scope: str
+    name: str
+
+
+class ActiveClusterSelectionPolicy(TypedDict, total=False):
+    cluster_attribute: ClusterAttribute
 
 
 class ActivityOptions(TypedDict, total=False):
@@ -31,6 +54,7 @@ class ActivityOptions(TypedDict, total=False):
     schedule_to_start_timeout: timedelta
     start_to_close_timeout: timedelta
     heartbeat_timeout: timedelta
+    retry_policy: RetryPolicy
 
 
 async def execute_activity(
@@ -41,6 +65,51 @@ async def execute_activity(
 ) -> ResultType:
     return await WorkflowContext.get().execute_activity(
         activity, result_type, *args, **kwargs
+    )
+
+
+async def sleep(duration: timedelta) -> None:
+    return await WorkflowContext.get().start_timer(duration)
+
+
+async def wait_condition(predicate: Callable[[], bool]) -> None:
+    """Block until predicate returns True.
+
+    The predicate is re-evaluated after any workflow state change
+    (signal delivery, activity completion, timer firing).
+    If the predicate is already True, returns immediately.
+    """
+    await WorkflowContext.get().wait_condition(predicate)
+
+
+def continue_as_new(
+    *args: Any,
+    workflow_type: str | None = None,
+    task_list: str | None = None,
+    execution_start_to_close_timeout: timedelta | None = None,
+    task_start_to_close_timeout: timedelta | None = None,
+) -> NoReturn:
+    """Continue this workflow as a new execution.
+
+    This function never returns. It raises ContinueAsNewError which
+    propagates out of the workflow to signal the worker to create a
+    continue-as-new decision.
+
+    This is different from go sdk
+
+    Args:
+        *args: Arguments for the new workflow execution.
+        workflow_type: Override workflow type (default: same type).
+        task_list: Override task list (default: same task list).
+        execution_start_to_close_timeout: Override execution timeout.
+        task_start_to_close_timeout: Override task timeout.
+    """
+    raise ContinueAsNewError(
+        *args,
+        workflow_type=workflow_type,
+        task_list=task_list,
+        execution_start_to_close_timeout=execution_start_to_close_timeout,
+        task_start_to_close_timeout=task_start_to_close_timeout,
     )
 
 
@@ -68,18 +137,25 @@ class WorkflowDefinition(Generic[C]):
         name: str,
         run_method_name: str,
         signals: dict[str, SignalDefinition[..., Any]],
+        queries: dict[str, QueryDefinition[..., Any]],
         run_signature: FnSignature,
     ):
         self._cls: Type[C] = cls
         self._name = name
         self._run_method_name = run_method_name
         self._signals = signals
+        self._queries = queries
         self._run_signature = run_signature
 
     @property
     def signals(self) -> dict[str, SignalDefinition[..., Any]]:
         """Get the signal definitions."""
         return self._signals
+
+    @property
+    def queries(self) -> dict[str, QueryDefinition[..., Any]]:
+        """Get the query definitions."""
+        return self._queries
 
     @property
     def name(self) -> str:
@@ -115,11 +191,13 @@ class WorkflowDefinition(Generic[C]):
             name = opts["name"]
 
         # Validate that the class has exactly one run method and find it
-        # Also validate that class does not have multiple signal methods with the same name
+        # Also validate that class does not have multiple signal/query methods with the same name
         signals: dict[str, SignalDefinition[..., Any]] = {}
         signal_names: dict[
             str, str
         ] = {}  # Map signal name to method name for duplicate detection
+        queries: dict[str, QueryDefinition[..., Any]] = {}
+        query_names: dict[str, str] = {}
         run_method_name = None
         run_signature = None
         for attr_name in dir(cls):
@@ -153,10 +231,38 @@ class WorkflowDefinition(Generic[C]):
                 signals[signal_name] = signal_def
                 signal_names[signal_name] = attr_name
 
+            if hasattr(attr, "_workflow_query"):
+                query_name = getattr(attr, "_workflow_query")
+                if query_name in query_names:
+                    raise ValueError(
+                        f"Multiple @workflow.query methods found in class {cls.__name__} "
+                        f"with query name '{query_name}': '{attr_name}' and '{query_names[query_name]}'"
+                    )
+                query_def = QueryDefinition.wrap(
+                    attr, QueryDefinitionOptions(name=query_name)
+                )
+                queries[query_name] = query_def
+                query_names[query_name] = attr_name
+
         if run_method_name is None or run_signature is None:
             raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
 
-        return WorkflowDefinition(cls, name, run_method_name, signals, run_signature)
+        # Register the built-in __query_types query, which returns the names
+        # of all registered query handlers (including itself). The handler
+        # declares a `self` parameter so it matches the calling convention
+        # used by `WorkflowInstance.handle_query`; `FnSignature.of` filters
+        # `self` out so it is not decoded from the query payload.
+        def _query_types_handler(self: Any) -> list[str]:
+            return sorted(list(queries.keys()))
+
+        queries[_QUERY_TYPES_QUERY_NAME] = QueryDefinition.wrap(
+            _query_types_handler,
+            QueryDefinitionOptions(name=_QUERY_TYPES_QUERY_NAME),
+        )
+
+        return WorkflowDefinition(
+            cls, name, run_method_name, signals, queries, run_signature
+        )
 
 
 class WorkflowDecorator:
@@ -223,10 +329,34 @@ def signal(name: str | None = None) -> Callable[[T], T]:
     """
     Decorator to mark a method as a workflow signal handler.
 
-    Example:
+    Signal handlers mutate workflow state in response to signals delivered
+    via history.  Both synchronous (``def``) and asynchronous (``async def``)
+    handlers are supported; they always run on the workflow's deterministic
+    event loop, never on a real thread.
+
+    Example::
+
         @workflow.signal(name="approval_channel")
-        async def approve(self, approved: bool):
+        def approve(self, approved: bool) -> None:
             self.approved = approved
+
+        @workflow.signal(name="async_approval")
+        async def approve_async(self, approved: bool) -> None:
+            self.approved = approved
+            await workflow.execute_activity("notify", ...)
+
+    Concurrency constraints:
+        * Do **not** use native threads inside signal handlers — they are not
+          replay-safe.
+        * Avoid anything that depends on wall-clock time or real I/O —
+          ``asyncio.sleep``, ``asyncio.wait_for(timeout=...)``, ``asyncio.to_thread``.
+          Pure asyncio primitives such as ``asyncio.Event``, ``asyncio.Lock``, and
+          ``asyncio.Queue`` are safe when used on the workflow's deterministic
+          event loop.
+        * Do **not** rely on the GIL for thread-safety; CPython now
+          supports free-threaded builds where the GIL can be disabled.
+        * Signal handlers should return ``None``; any returned value is
+          discarded.
 
     Args:
         name: The name of the signal
@@ -245,7 +375,49 @@ def signal(name: str | None = None) -> Callable[[T], T]:
         f._workflow_signal = name  # type: ignore
         return f
 
-    # Only allow @workflow.signal(name), require name to be explicitly provided
+    return decorator
+
+
+def query(name: str | None = None) -> Callable[[T], T]:
+    """
+    Decorator to mark a method as a workflow query handler.
+
+    Query handlers allow external callers to read workflow state without
+    affecting execution. They must return a value (non-None return type)
+    and must be synchronous (not async).
+
+    Example::
+
+        @workflow.query(name="get_status")
+        def get_status(self) -> str:
+            return self.status
+
+        @workflow.query(name="get_count")
+        def get_count(self, prefix: str) -> int:
+            return self.counts.get(prefix, 0)
+
+    Constraints:
+        * Query handlers must have a non-None return type.
+        * Query handlers must be synchronous (not async).
+        * Query handlers must not mutate workflow state.
+        * A method can only be one of @workflow.run, @workflow.signal, or @workflow.query.
+
+    Args:
+        name: The name of the query type. If not provided, use the function name.
+
+    Returns:
+        The decorated method with workflow query metadata
+
+    Raises:
+        ValueError: If name is not provided
+    """
+    if name is None:
+        raise ValueError("name is required")
+
+    def decorator(f: T) -> T:
+        f._workflow_query = name  # type: ignore[attr-defined]
+        return f
+
     return decorator
 
 
@@ -277,11 +449,19 @@ class WorkflowContext(ABC):
         **kwargs: Unpack[ActivityOptions],
     ) -> ResultType: ...
 
+    @abstractmethod
+    async def start_timer(self, duration: timedelta) -> None: ...
+
+    @abstractmethod
+    async def wait_condition(self, predicate: Callable[[], bool]) -> None: ...
+
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:
         token = WorkflowContext._var.set(self)
-        yield self
-        WorkflowContext._var.reset(token)
+        try:
+            yield self
+        finally:
+            WorkflowContext._var.reset(token)
 
     @staticmethod
     def is_set() -> bool:

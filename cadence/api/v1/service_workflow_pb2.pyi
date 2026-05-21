@@ -8,7 +8,9 @@ from cadence.api.v1 import workflow_pb2 as _workflow_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+import datetime
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -84,7 +86,7 @@ class StartWorkflowExecutionRequest(_message.Message):
     first_run_at: _timestamp_pb2.Timestamp
     cron_overlap_policy: _workflow_pb2.CronOverlapPolicy
     active_cluster_selection_policy: _common_pb2.ActiveClusterSelectionPolicy
-    def __init__(self, domain: _Optional[str] = ..., workflow_id: _Optional[str] = ..., workflow_type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., task_list: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., input: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., execution_start_to_close_timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., task_start_to_close_timeout: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., identity: _Optional[str] = ..., request_id: _Optional[str] = ..., workflow_id_reuse_policy: _Optional[_Union[_workflow_pb2.WorkflowIdReusePolicy, str]] = ..., retry_policy: _Optional[_Union[_common_pb2.RetryPolicy, _Mapping]] = ..., cron_schedule: _Optional[str] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., header: _Optional[_Union[_common_pb2.Header, _Mapping]] = ..., delay_start: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., jitter_start: _Optional[_Union[_duration_pb2.Duration, _Mapping]] = ..., first_run_at: _Optional[_Union[_timestamp_pb2.Timestamp, _Mapping]] = ..., cron_overlap_policy: _Optional[_Union[_workflow_pb2.CronOverlapPolicy, str]] = ..., active_cluster_selection_policy: _Optional[_Union[_common_pb2.ActiveClusterSelectionPolicy, _Mapping]] = ...) -> None: ...
+    def __init__(self, domain: _Optional[str] = ..., workflow_id: _Optional[str] = ..., workflow_type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., task_list: _Optional[_Union[_tasklist_pb2.TaskList, _Mapping]] = ..., input: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ..., execution_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., task_start_to_close_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., identity: _Optional[str] = ..., request_id: _Optional[str] = ..., workflow_id_reuse_policy: _Optional[_Union[_workflow_pb2.WorkflowIdReusePolicy, str]] = ..., retry_policy: _Optional[_Union[_common_pb2.RetryPolicy, _Mapping]] = ..., cron_schedule: _Optional[str] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., header: _Optional[_Union[_common_pb2.Header, _Mapping]] = ..., delay_start: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., jitter_start: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., first_run_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., cron_overlap_policy: _Optional[_Union[_workflow_pb2.CronOverlapPolicy, str]] = ..., active_cluster_selection_policy: _Optional[_Union[_common_pb2.ActiveClusterSelectionPolicy, _Mapping]] = ...) -> None: ...
 
 class StartWorkflowExecutionResponse(_message.Message):
     __slots__ = ("run_id",)
@@ -377,10 +379,12 @@ class GetWorkflowExecutionHistoryResponse(_message.Message):
     def __init__(self, history: _Optional[_Union[_history_pb2.History, _Mapping]] = ..., raw_history: _Optional[_Iterable[_Union[_common_pb2.DataBlob, _Mapping]]] = ..., next_page_token: _Optional[bytes] = ..., archived: bool = ...) -> None: ...
 
 class FeatureFlags(_message.Message):
-    __slots__ = ("workflow_execution_already_completed_error_enabled",)
+    __slots__ = ("workflow_execution_already_completed_error_enabled", "autoforwarding_enabled")
     WORKFLOW_EXECUTION_ALREADY_COMPLETED_ERROR_ENABLED_FIELD_NUMBER: _ClassVar[int]
+    AUTOFORWARDING_ENABLED_FIELD_NUMBER: _ClassVar[int]
     workflow_execution_already_completed_error_enabled: bool
-    def __init__(self, workflow_execution_already_completed_error_enabled: bool = ...) -> None: ...
+    autoforwarding_enabled: bool
+    def __init__(self, workflow_execution_already_completed_error_enabled: bool = ..., autoforwarding_enabled: bool = ...) -> None: ...
 
 class RefreshWorkflowTasksRequest(_message.Message):
     __slots__ = ("domain", "workflow_execution")

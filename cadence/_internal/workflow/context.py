@@ -7,15 +7,18 @@ from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
-from cadence.api.v1.common_pb2 import ActivityType
+from cadence.api.v1 import workflow_pb2
+from cadence.api.v1.common_pb2 import ActivityType, WorkflowType
 from cadence.api.v1.decision_pb2 import (
     ScheduleActivityTaskDecisionAttributes,
+    StartChildWorkflowExecutionDecisionAttributes,
     StartTimerDecisionAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
 from cadence.workflow import (
     ActivityOptions,
+    ChildWorkflowOptions,
     ResultType,
     WorkflowContext,
     WorkflowInfo,
@@ -103,6 +106,78 @@ class Context(WorkflowContext):
 
         result = self.data_converter().from_data(result_payload, [result_type])[0]
 
+        return cast(ResultType, result)
+
+    async def execute_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> ResultType:
+        execution_timeout = kwargs.get("execution_start_to_close_timeout")
+        if execution_timeout is None:
+            raise ValueError(
+                "execution_start_to_close_timeout is required for child workflow execution"
+            )
+        if execution_timeout <= timedelta(0):
+            raise ValueError("execution_start_to_close_timeout must be greater than 0")
+
+        task_timeout = kwargs.get("task_start_to_close_timeout", timedelta(seconds=10))
+        if task_timeout <= timedelta(0):
+            raise ValueError("task_start_to_close_timeout must be greater than 0")
+
+        domain = kwargs.get("domain") or self._info.workflow_domain
+        task_list = kwargs.get("task_list") or self._info.workflow_task_list
+
+        workflow_id = kwargs.get("workflow_id")
+        if not workflow_id:
+            workflow_id = (
+                f"{self._info.workflow_run_id}_{self._decision_manager._next_id()}"
+            )
+
+        parent_close_policy = kwargs.get(
+            "parent_close_policy",
+            workflow_pb2.PARENT_CLOSE_POLICY_TERMINATE,
+        )
+        workflow_id_reuse_policy = kwargs.get(
+            "workflow_id_reuse_policy",
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+        )
+        if (
+            workflow_id_reuse_policy
+            == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID
+        ):
+            raise ValueError(
+                "workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID"
+            )
+
+        child_input = self.data_converter().to_data(list(args))
+        schedule_attributes = StartChildWorkflowExecutionDecisionAttributes(
+            domain=domain,
+            workflow_id=workflow_id,
+            workflow_type=WorkflowType(name=workflow_type),
+            task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
+            input=child_input,
+            execution_start_to_close_timeout=_round_to_nearest_second(
+                execution_timeout
+            ),
+            task_start_to_close_timeout=_round_to_nearest_second(task_timeout),
+            parent_close_policy=parent_close_policy,
+            workflow_id_reuse_policy=workflow_id_reuse_policy,
+            retry_policy=retry_policy_to_proto(kwargs.get("retry_policy")),
+        )
+
+        cron_schedule = kwargs.get("cron_schedule")
+        if cron_schedule:
+            schedule_attributes.cron_schedule = cron_schedule
+
+        _execution_future, result_future = (
+            self._decision_manager.schedule_child_workflow(schedule_attributes)
+        )
+
+        result_payload = await result_future
+        result = self.data_converter().from_data(result_payload, [result_type])[0]
         return cast(ResultType, result)
 
     async def start_timer(self, duration: timedelta):

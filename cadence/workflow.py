@@ -57,6 +57,18 @@ class ActivityOptions(TypedDict, total=False):
     retry_policy: RetryPolicy
 
 
+class ChildWorkflowOptions(TypedDict, total=False):
+    workflow_id: str
+    domain: str
+    task_list: str
+    execution_start_to_close_timeout: timedelta
+    task_start_to_close_timeout: timedelta
+    parent_close_policy: int
+    workflow_id_reuse_policy: int
+    retry_policy: RetryPolicy
+    cron_schedule: str
+
+
 async def execute_activity(
     activity: str,
     result_type: Type[ResultType],
@@ -65,6 +77,17 @@ async def execute_activity(
 ) -> ResultType:
     return await WorkflowContext.get().execute_activity(
         activity, result_type, *args, **kwargs
+    )
+
+
+async def execute_child_workflow(
+    workflow_type: str,
+    result_type: Type[ResultType],
+    *args: Any,
+    **kwargs: Unpack[ChildWorkflowOptions],
+) -> ResultType:
+    return await WorkflowContext.get().execute_child_workflow(
+        workflow_type, result_type, *args, **kwargs
     )
 
 
@@ -447,6 +470,15 @@ class WorkflowContext(ABC):
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
+    ) -> ResultType: ...
+
+    @abstractmethod
+    async def execute_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
     ) -> ResultType: ...
 
     @abstractmethod

@@ -144,10 +144,7 @@ class Context(WorkflowContext):
             "workflow_id_reuse_policy",
             workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
         )
-        if (
-            workflow_id_reuse_policy
-            == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID
-        ):
+        if workflow_id_reuse_policy == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID:
             raise ValueError(
                 "workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID"
             )

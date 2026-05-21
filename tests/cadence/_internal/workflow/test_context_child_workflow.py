@@ -33,7 +33,9 @@ def _make_ctx(run_id: str = "rid") -> tuple[Context, MagicMock]:
 
 
 def _setup_schedule_mock(
-    dm: MagicMock, result_value: object = "result", loop: asyncio.AbstractEventLoop | None = None
+    dm: MagicMock,
+    result_value: object = "result",
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> None:
     dc = DefaultDataConverter()
     loop = loop or asyncio.get_event_loop()
@@ -130,7 +132,9 @@ async def test_execute_child_workflow_uses_provided_workflow_id():
 async def test_execute_child_workflow_raises_without_execution_timeout():
     ctx, dm = _make_ctx()
 
-    with pytest.raises(ValueError, match="execution_start_to_close_timeout is required"):
+    with pytest.raises(
+        ValueError, match="execution_start_to_close_timeout is required"
+    ):
         await ctx.execute_child_workflow("ChildWf", str)
 
 

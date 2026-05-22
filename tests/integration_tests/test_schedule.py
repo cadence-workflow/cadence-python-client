@@ -11,12 +11,19 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from google.protobuf import text_format
+from google.protobuf.duration_pb2 import Duration as PbDuration
 
 from cadence.api.v1 import common_pb2, schedule_pb2, tasklist_pb2
 from cadence.api.v1.service_schedule_pb2 import DescribeScheduleResponse
 from cadence.client import Client
 from cadence.error import QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
+
+
+def _make_duration(td: timedelta) -> PbDuration:
+    d = PbDuration()
+    d.FromTimedelta(td)
+    return d
 
 
 def _make_schedule_action() -> schedule_pb2.ScheduleAction:
@@ -27,8 +34,8 @@ def _make_schedule_action() -> schedule_pb2.ScheduleAction:
                 name="ScheduleIntegrationDummyWorkflow"
             ),
             task_list=tasklist_pb2.TaskList(name="schedule-integration-task-list"),
-            execution_start_to_close_timeout=timedelta(hours=1),
-            task_start_to_close_timeout=timedelta(seconds=10),
+            execution_start_to_close_timeout=_make_duration(timedelta(hours=1)),
+            task_start_to_close_timeout=_make_duration(timedelta(seconds=10)),
         )
     )
 

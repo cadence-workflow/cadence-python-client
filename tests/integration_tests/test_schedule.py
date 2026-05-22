@@ -7,6 +7,7 @@ Requires a running Cadence server. Run with:
 import asyncio
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from google.protobuf import text_format
@@ -26,6 +27,8 @@ def _make_schedule_action() -> schedule_pb2.ScheduleAction:
                 name="ScheduleIntegrationDummyWorkflow"
             ),
             task_list=tasklist_pb2.TaskList(name="schedule-integration-task-list"),
+            execution_start_to_close_timeout=timedelta(hours=1),
+            task_start_to_close_timeout=timedelta(seconds=10),
         )
     )
 
@@ -161,5 +164,46 @@ async def test_list_schedules_contains_created(helper: CadenceHelper):
 
             ids = [e.schedule_id async for e in client.list_schedules()]
             assert schedule_id in ids
+        finally:
+            await client.delete_schedule(schedule_id)
+
+
+@pytest.mark.usefixtures("helper")
+async def test_backfill(helper: CadenceHelper):
+    """Backfill starts workflow executions for past schedule slots."""
+    schedule_id = f"test-schedule-backfill-{uuid.uuid4()}"
+
+    async with helper.client() as client:
+        try:
+            await client.create_schedule(
+                schedule_id,
+                spec=schedule_pb2.ScheduleSpec(cron_expression="* * * * *"),
+                action=_make_schedule_action(),
+            )
+
+            now = datetime.now(timezone.utc)
+            await client.backfill_schedule(
+                schedule_id,
+                start_time=now - timedelta(minutes=3),
+                end_time=now - timedelta(minutes=1),
+            )
+
+            # The scheduler processes the backfill signal asynchronously.
+            # Poll until total_runs reflects at least one triggered workflow start.
+            deadline = time.monotonic() + 30.0
+            resp = None
+            while time.monotonic() < deadline:
+                try:
+                    resp = await client.describe_schedule(schedule_id)
+                    if resp.info.total_runs >= 1:
+                        break
+                except QueryFailedError:
+                    pass
+                await asyncio.sleep(0.5)
+
+            assert resp is not None, "describe_schedule never succeeded within 30s"
+            assert resp.info.total_runs >= 1, (
+                f"expected at least one backfilled run, got total_runs={resp.info.total_runs}"
+            )
         finally:
             await client.delete_schedule(schedule_id)

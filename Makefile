@@ -33,11 +33,11 @@ test:
 # Run integration tests
 integration-test:
 	@echo "Running integration tests..."
-	uv run pytest -v --integration-tests
+	uv run pytest -v tests/integration_tests --integration-tests
 
 integration-test-keep:
 	@echo "Running integration tests with cadence alive..."
-	uv run pytest -v --integration-tests --keep-cadence-alive
+	uv run pytest -v tests/integration_tests --integration-tests --keep-cadence-alive
 
 # Clean generated files and caches
 clean:
@@ -45,6 +45,7 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .mypy_cache
 
 # Show help
 help:

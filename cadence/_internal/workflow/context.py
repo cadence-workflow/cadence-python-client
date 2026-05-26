@@ -130,11 +130,7 @@ class Context(WorkflowContext):
         domain = kwargs.get("domain") or self._info.workflow_domain
         task_list = kwargs.get("task_list") or self._info.workflow_task_list
 
-        workflow_id = kwargs.get("workflow_id")
-        if not workflow_id:
-            workflow_id = (
-                f"{self._info.workflow_run_id}_{self._decision_manager._next_id()}"
-            )
+        workflow_id = kwargs.get("workflow_id") or ""
 
         parent_close_policy = kwargs.get(
             "parent_close_policy",
@@ -170,7 +166,10 @@ class Context(WorkflowContext):
             schedule_attributes.cron_schedule = cron_schedule
 
         _execution_future, result_future = (
-            self._decision_manager.schedule_child_workflow(schedule_attributes)
+            self._decision_manager.schedule_child_workflow(
+                schedule_attributes,
+                parent_workflow_run_id=self._info.workflow_run_id,
+            )
         )
 
         result_payload = await result_future

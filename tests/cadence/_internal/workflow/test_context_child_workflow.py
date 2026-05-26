@@ -65,7 +65,6 @@ def _setup_schedule_mock_error(
 async def test_execute_child_workflow_basic():
     ctx, dm = _make_ctx()
     _setup_schedule_mock(dm)
-    dm._next_id = MagicMock(return_value="0")
 
     result = await ctx.execute_child_workflow(
         "ChildWf",
@@ -93,7 +92,6 @@ async def test_execute_child_workflow_basic():
 async def test_execute_child_workflow_auto_generates_workflow_id():
     ctx, dm = _make_ctx(run_id="test-run-id")
     _setup_schedule_mock(dm)
-    dm._next_id = MagicMock(return_value="42")
 
     await ctx.execute_child_workflow(
         "ChildWf",
@@ -104,15 +102,16 @@ async def test_execute_child_workflow_auto_generates_workflow_id():
     attrs: StartChildWorkflowExecutionDecisionAttributes = (
         dm.schedule_child_workflow.call_args[0][0]
     )
-    assert attrs.workflow_id == "test-run-id_42"
-    dm._next_id.assert_called_once()
+    assert attrs.workflow_id == ""
+    assert dm.schedule_child_workflow.call_args.kwargs["parent_workflow_run_id"] == (
+        "test-run-id"
+    )
 
 
 @pytest.mark.asyncio
 async def test_execute_child_workflow_uses_provided_workflow_id():
     ctx, dm = _make_ctx()
     _setup_schedule_mock(dm)
-    dm._next_id = MagicMock(return_value="0")
 
     await ctx.execute_child_workflow(
         "ChildWf",
@@ -125,7 +124,6 @@ async def test_execute_child_workflow_uses_provided_workflow_id():
         dm.schedule_child_workflow.call_args[0][0]
     )
     assert attrs.workflow_id == "my-child-1"
-    dm._next_id.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -193,7 +191,6 @@ async def test_execute_child_workflow_raises_for_invalid_workflow_id_reuse_polic
 async def test_execute_child_workflow_default_values():
     ctx, dm = _make_ctx()
     _setup_schedule_mock(dm)
-    dm._next_id = MagicMock(return_value="0")
 
     await ctx.execute_child_workflow(
         "ChildWf",
@@ -216,7 +213,6 @@ async def test_execute_child_workflow_default_values():
 async def test_execute_child_workflow_custom_options():
     ctx, dm = _make_ctx()
     _setup_schedule_mock(dm)
-    dm._next_id = MagicMock(return_value="0")
 
     await ctx.execute_child_workflow(
         "ChildWf",
@@ -241,7 +237,6 @@ async def test_execute_child_workflow_custom_options():
 async def test_execute_child_workflow_retry_policy():
     ctx, dm = _make_ctx()
     _setup_schedule_mock(dm)
-    dm._next_id = MagicMock(return_value="0")
 
     await ctx.execute_child_workflow(
         "ChildWf",
@@ -268,7 +263,6 @@ async def test_execute_child_workflow_retry_policy():
 async def test_execute_child_workflow_deserializes_result():
     ctx, dm = _make_ctx()
     _setup_schedule_mock(dm, result_value=42)
-    dm._next_id = MagicMock(return_value="0")
 
     result = await ctx.execute_child_workflow(
         "ChildWf",
@@ -285,7 +279,6 @@ async def test_execute_child_workflow_propagates_errors():
     ctx, dm = _make_ctx()
     failure = ChildWorkflowExecutionFailed("child failed", failure=None)
     _setup_schedule_mock_error(dm, failure)
-    dm._next_id = MagicMock(return_value="0")
 
     with pytest.raises(ChildWorkflowExecutionFailed, match="child failed"):
         await ctx.execute_child_workflow(
@@ -299,7 +292,6 @@ async def test_execute_child_workflow_propagates_errors():
 async def test_execute_child_workflow_cron_schedule():
     ctx, dm = _make_ctx()
     _setup_schedule_mock(dm)
-    dm._next_id = MagicMock(return_value="0")
 
     await ctx.execute_child_workflow(
         "ChildWf",

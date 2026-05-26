@@ -20,6 +20,7 @@ from typing import (
 import inspect
 
 from cadence._internal.fn_signature import FnSignature
+from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DataConverter
 from cadence.error import ContinueAsNewError
 from cadence.query import QueryDefinition, QueryDefinitionOptions
@@ -63,8 +64,8 @@ class ChildWorkflowOptions(TypedDict, total=False):
     task_list: str
     execution_start_to_close_timeout: timedelta
     task_start_to_close_timeout: timedelta
-    parent_close_policy: int
-    workflow_id_reuse_policy: int
+    parent_close_policy: Union[workflow_pb2.ParentClosePolicy, str]
+    workflow_id_reuse_policy: Union[workflow_pb2.WorkflowIdReusePolicy, str]
     retry_policy: RetryPolicy
     cron_schedule: str
 

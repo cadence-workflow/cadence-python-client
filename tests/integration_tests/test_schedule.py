@@ -4,6 +4,8 @@ Requires a running Cadence server. Run with:
     uv run pytest tests/integration_tests/test_schedule.py --integration-tests -v
 """
 
+import asyncio
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -13,6 +15,7 @@ from google.protobuf.duration_pb2 import Duration as PbDuration
 
 from cadence.api.v1 import common_pb2, schedule_pb2, tasklist_pb2
 from cadence.api.v1.service_schedule_pb2 import DescribeScheduleResponse
+from cadence.error import QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
 
 

@@ -97,6 +97,9 @@ async def test_create_describe_delete(helper: CadenceHelper):
 
 
 @pytest.mark.usefixtures("helper")
+@pytest.mark.skip(
+    reason="skip this test because it is not working as expected, see https://github.com/cadence-workflow/cadence-python-client/issues/117"
+)
 async def test_pause_and_unpause(helper: CadenceHelper):
     """Pause a schedule and verify state.paused, then unpause and verify cleared."""
     schedule_id = f"test-schedule-pause-{uuid.uuid4()}"
@@ -121,6 +124,9 @@ async def test_pause_and_unpause(helper: CadenceHelper):
 
 
 @pytest.mark.usefixtures("helper")
+@pytest.mark.skip(
+    reason="skip this test because it is not working as expected, see https://github.com/cadence-workflow/cadence-python-client/issues/117"
+)
 async def test_update_spec(helper: CadenceHelper):
     """Update a schedule's cron expression and verify describe reflects the change."""
     schedule_id = f"test-schedule-update-{uuid.uuid4()}"

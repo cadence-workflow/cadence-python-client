@@ -2,7 +2,7 @@ import asyncio
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Type, Tuple, ClassVar, List, Iterator
+from typing import Any, Dict, Type, ClassVar, List, Iterator
 
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
@@ -35,7 +35,12 @@ from cadence._internal.workflow.statemachine.timer_state_machine import (
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
 
-DecisionAlias = Tuple[DecisionType, str | int]
+DecisionAlias = tuple[DecisionType, str | int]
+
+
+def _consume_future_exception(future: asyncio.Future[Any]) -> None:
+    if not future.cancelled():
+        future.exception()
 
 
 @dataclass(frozen=True)
@@ -118,14 +123,19 @@ class DecisionManager:
 
     # ----- Child Workflow API -----
     def schedule_child_workflow(
-        self, attrs: decision.StartChildWorkflowExecutionDecisionAttributes
-    ) -> tuple[asyncio.Future[WorkflowExecution], asyncio.Future[Payload]]:
+        self,
+        attrs: decision.StartChildWorkflowExecutionDecisionAttributes,
+        *,
+        parent_workflow_run_id: str,
+    ) -> tuple[DecisionFuture[WorkflowExecution], DecisionFuture[Payload]]:
+
+        if not attrs.workflow_id:
+            attrs.workflow_id = f"{parent_workflow_run_id}_{self._next_id()}"
         if self._replaying:
             self._determinism_tracker.validate_action(attrs)
         decision_id = DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id)
         execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
-        # Child workflows have two milestones: started execution and terminal result.
-        # The result future is also the cancellation handle after the child starts.
+        execution.add_done_callback(_consume_future_exception)
         result: DecisionFuture[Payload] = DecisionFuture(
             self._event_loop, lambda: self._request_cancel(decision_id)
         )

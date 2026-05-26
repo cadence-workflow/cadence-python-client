@@ -8,13 +8,14 @@ import asyncio
 import time
 import uuid
 
+import grpc
 import pytest
 from google.protobuf import text_format
 
 from cadence.api.v1 import common_pb2, schedule_pb2, tasklist_pb2
 from cadence.api.v1.service_schedule_pb2 import DescribeScheduleResponse
 from cadence.client import Client
-from cadence.error import QueryFailedError
+from cadence.error import CadenceRpcError, QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
 
 
@@ -28,6 +29,31 @@ def _make_schedule_action() -> schedule_pb2.ScheduleAction:
             task_list=tasklist_pb2.TaskList(name="schedule-integration-task-list"),
         )
     )
+
+
+def _skip_if_schedule_api_unimplemented(exc: CadenceRpcError) -> None:
+    if exc.code is grpc.StatusCode.UNIMPLEMENTED:
+        pytest.skip("Cadence ScheduleAPI is not enabled on this test server")
+
+
+@pytest.fixture
+async def schedule_api_available(helper: CadenceHelper) -> None:
+    schedule_id = f"test-schedule-probe-{uuid.uuid4()}"
+    async with helper.client() as client:
+        try:
+            await client.create_schedule(
+                schedule_id,
+                spec=schedule_pb2.ScheduleSpec(cron_expression="0 0 * * *"),
+                action=_make_schedule_action(),
+            )
+        except CadenceRpcError as exc:
+            _skip_if_schedule_api_unimplemented(exc)
+            raise
+        try:
+            await client.delete_schedule(schedule_id)
+        except CadenceRpcError as exc:
+            _skip_if_schedule_api_unimplemented(exc)
+            raise
 
 
 async def _describe_schedule_when_ready(
@@ -75,7 +101,7 @@ def _assert_describe_spec_and_action(
         )
 
 
-@pytest.mark.usefixtures("helper")
+@pytest.mark.usefixtures("helper", "schedule_api_available")
 async def test_create_describe_delete(helper: CadenceHelper):
     """Create a schedule, describe it to verify spec round-trips, then delete it."""
     schedule_id = f"test-schedule-{uuid.uuid4()}"
@@ -96,7 +122,7 @@ async def test_create_describe_delete(helper: CadenceHelper):
             await client.delete_schedule(schedule_id)
 
 
-@pytest.mark.usefixtures("helper")
+@pytest.mark.usefixtures("helper", "schedule_api_available")
 async def test_pause_and_unpause(helper: CadenceHelper):
     """Pause a schedule and verify state.paused, then unpause and verify cleared."""
     schedule_id = f"test-schedule-pause-{uuid.uuid4()}"
@@ -120,7 +146,7 @@ async def test_pause_and_unpause(helper: CadenceHelper):
             await client.delete_schedule(schedule_id)
 
 
-@pytest.mark.usefixtures("helper")
+@pytest.mark.usefixtures("helper", "schedule_api_available")
 async def test_update_spec(helper: CadenceHelper):
     """Update a schedule's cron expression and verify describe reflects the change."""
     schedule_id = f"test-schedule-update-{uuid.uuid4()}"
@@ -146,7 +172,7 @@ async def test_update_spec(helper: CadenceHelper):
             await client.delete_schedule(schedule_id)
 
 
-@pytest.mark.usefixtures("helper")
+@pytest.mark.usefixtures("helper", "schedule_api_available")
 async def test_list_schedules_contains_created(helper: CadenceHelper):
     """A created schedule appears in list_schedules() results."""
     schedule_id = f"test-schedule-list-{uuid.uuid4()}"

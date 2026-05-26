@@ -176,7 +176,8 @@ async def test_child_workflow_dispatch():
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
-        )
+        ),
+        parent_workflow_run_id="parent-run",
     )
 
     decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
@@ -195,6 +196,30 @@ async def test_child_workflow_dispatch():
     assert result.result() == Payload(data=b"done")
 
 
+async def test_schedule_child_workflow_generates_workflow_id():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    attrs = decision.StartChildWorkflowExecutionDecisionAttributes(
+        workflow_id="",
+        workflow_type=WorkflowType(name="MyWorkflow"),
+    )
+    _execution, result = decisions.schedule_child_workflow(
+        attrs, parent_workflow_run_id="parent-run-xyz"
+    )
+
+    assert attrs.workflow_id == "parent-run-xyz_0"
+
+    decisions.handle_history_event(child_wf_initiated(1, attrs.workflow_id))
+    decisions.handle_history_event(
+        child_wf_started(2, started_event_id=1, wf_id=attrs.workflow_id, run_id="run-1")
+    )
+    decisions.handle_history_event(
+        child_wf_completed(3, started_event_id=1, result=Payload(data=b"done"))
+    )
+
+    assert result.result() == Payload(data=b"done")
+
+
 async def test_child_workflow_initiation_failed_dispatch():
     decisions = DecisionManager(asyncio.get_event_loop())
 
@@ -202,7 +227,8 @@ async def test_child_workflow_initiation_failed_dispatch():
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
-        )
+        ),
+        parent_workflow_run_id="parent-run",
     )
 
     decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
@@ -226,11 +252,12 @@ async def test_child_workflow_initiation_failed_dispatch():
 async def test_child_workflow_cancel_dispatch():
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    execution, result = decisions.schedule_child_workflow(
+    _execution, result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
-        )
+        ),
+        parent_workflow_run_id="parent-run",
     )
 
     decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
@@ -269,11 +296,12 @@ async def test_child_workflow_errors_are_child_workflow_error():
     """All child workflow errors share a common base class."""
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    _, result = decisions.schedule_child_workflow(
+    _execution, result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
-        )
+        ),
+        parent_workflow_run_id="parent-run",
     )
 
     decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))

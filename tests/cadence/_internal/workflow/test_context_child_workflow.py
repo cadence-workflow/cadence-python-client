@@ -10,7 +10,7 @@ from cadence._internal.workflow.statemachine.child_workflow_execution_state_mach
     ChildWorkflowExecutionFailed,
 )
 from cadence.api.v1 import workflow_pb2
-from cadence.api.v1.common_pb2 import WorkflowType
+from cadence.api.v1.common_pb2 import WorkflowExecution, WorkflowType
 from cadence.api.v1.decision_pb2 import StartChildWorkflowExecutionDecisionAttributes
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DefaultDataConverter
@@ -36,11 +36,16 @@ def _setup_schedule_mock(
     dm: MagicMock,
     result_value: object = "result",
     loop: asyncio.AbstractEventLoop | None = None,
+    workflow_execution: WorkflowExecution | None = None,
 ) -> None:
     dc = DefaultDataConverter()
     loop = loop or asyncio.get_event_loop()
+    if workflow_execution is None:
+        workflow_execution = WorkflowExecution(
+            workflow_id="default-child", run_id="default-run"
+        )
     execution_future: asyncio.Future = loop.create_future()
-    execution_future.set_result(None)
+    execution_future.set_result(workflow_execution)
     result_future: asyncio.Future = loop.create_future()
     result_future.set_result(dc.to_data([result_value]))
     dm.schedule_child_workflow = MagicMock(
@@ -53,7 +58,9 @@ def _setup_schedule_mock_error(
 ) -> None:
     loop = loop or asyncio.get_event_loop()
     execution_future: asyncio.Future = loop.create_future()
-    execution_future.set_result(None)
+    execution_future.set_result(
+        WorkflowExecution(workflow_id="default-child", run_id="default-run")
+    )
     result_future: asyncio.Future = loop.create_future()
     result_future.set_exception(error)
     dm.schedule_child_workflow = MagicMock(
@@ -304,3 +311,123 @@ async def test_execute_child_workflow_cron_schedule():
         dm.schedule_child_workflow.call_args[0][0]
     )
     assert attrs.cron_schedule == "* * * * *"
+
+
+@pytest.mark.asyncio
+async def test_start_child_workflow_returns_future_with_ids():
+    ctx, dm = _make_ctx()
+    _setup_schedule_mock(
+        dm,
+        workflow_execution=WorkflowExecution(workflow_id="child-1", run_id="run-1"),
+    )
+
+    future = await ctx.start_child_workflow(
+        "ChildWf",
+        str,
+        execution_start_to_close_timeout=timedelta(minutes=5),
+    )
+
+    assert future.workflow_id == "child-1"
+    assert future.run_id == "run-1"
+
+
+@pytest.mark.asyncio
+async def test_start_child_workflow_future_awaitable():
+    ctx, dm = _make_ctx()
+    _setup_schedule_mock(
+        dm,
+        result_value=42,
+        workflow_execution=WorkflowExecution(workflow_id="child-1", run_id="run-1"),
+    )
+
+    future = await ctx.start_child_workflow(
+        "ChildWf",
+        int,
+        execution_start_to_close_timeout=timedelta(minutes=5),
+    )
+    result = await future
+
+    assert result == 42
+    assert isinstance(result, int)
+
+
+@pytest.mark.asyncio
+async def test_start_child_workflow_future_cancel():
+    ctx, dm = _make_ctx()
+    _setup_schedule_mock(
+        dm,
+        workflow_execution=WorkflowExecution(workflow_id="child-1", run_id="run-1"),
+    )
+
+    future = await ctx.start_child_workflow(
+        "ChildWf",
+        str,
+        execution_start_to_close_timeout=timedelta(minutes=5),
+    )
+    future._result_future = MagicMock()
+    future._result_future.cancel = MagicMock(return_value=True)
+
+    cancelled = future.cancel()
+
+    assert cancelled is True
+    future._result_future.cancel.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_start_child_workflow_raises_without_timeout():
+    ctx, _dm = _make_ctx()
+
+    with pytest.raises(
+        ValueError, match="execution_start_to_close_timeout is required"
+    ):
+        await ctx.start_child_workflow("ChildWf", str)
+
+
+@pytest.mark.asyncio
+async def test_start_child_workflow_passes_correct_attrs():
+    ctx, dm = _make_ctx()
+    _setup_schedule_mock(
+        dm,
+        workflow_execution=WorkflowExecution(workflow_id="child-1", run_id="run-1"),
+    )
+
+    await ctx.start_child_workflow(
+        "ChildWf",
+        str,
+        execution_start_to_close_timeout=timedelta(minutes=10),
+        workflow_id="my-child",
+    )
+
+    dm.schedule_child_workflow.assert_called_once()
+    attrs: StartChildWorkflowExecutionDecisionAttributes = (
+        dm.schedule_child_workflow.call_args[0][0]
+    )
+    assert attrs.workflow_type == WorkflowType(name="ChildWf")
+    assert attrs.workflow_id == "my-child"
+    assert attrs.execution_start_to_close_timeout == Duration(seconds=600)
+
+
+@pytest.mark.asyncio
+async def test_start_child_workflow_future_propagates_errors():
+    ctx, dm = _make_ctx()
+    loop = asyncio.get_event_loop()
+
+    execution_future: asyncio.Future = loop.create_future()
+    execution_future.set_result(
+        WorkflowExecution(workflow_id="child-1", run_id="run-1")
+    )
+    result_future: asyncio.Future = loop.create_future()
+    result_future.set_exception(
+        ChildWorkflowExecutionFailed("child failed", failure=None)
+    )
+    dm.schedule_child_workflow = MagicMock(
+        return_value=(execution_future, result_future)
+    )
+
+    future = await ctx.start_child_workflow(
+        "ChildWf",
+        str,
+        execution_start_to_close_timeout=timedelta(minutes=5),
+    )
+    with pytest.raises(ChildWorkflowExecutionFailed, match="child failed"):
+        await future

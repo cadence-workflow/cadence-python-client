@@ -1,3 +1,4 @@
+import asyncio
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -6,6 +7,7 @@ from datetime import timedelta
 from typing import (
     Iterator,
     Callable,
+    Generator,
     TypeVar,
     TypedDict,
     Type,
@@ -21,6 +23,7 @@ import inspect
 
 from cadence._internal.fn_signature import FnSignature
 from cadence.api.v1 import workflow_pb2
+from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DataConverter
 from cadence.error import ContinueAsNewError
 from cadence.query import QueryDefinition, QueryDefinitionOptions
@@ -70,6 +73,39 @@ class ChildWorkflowOptions(TypedDict, total=False):
     cron_schedule: str
 
 
+class ChildWorkflowFuture(Generic[ResultType]):
+    def __init__(
+        self,
+        workflow_id: str,
+        run_id: str,
+        result_future: "asyncio.Future[Payload]",
+        result_type: Type[ResultType],
+        data_converter: DataConverter,
+    ) -> None:
+        self._workflow_id = workflow_id
+        self._run_id = run_id
+        self._result_future = result_future
+        self._result_type = result_type
+        self._data_converter = data_converter
+
+    @property
+    def workflow_id(self) -> str:
+        return self._workflow_id
+
+    @property
+    def run_id(self) -> str:
+        return self._run_id
+
+    def cancel(self) -> bool:
+        """Request cancellation of the child workflow."""
+        return self._result_future.cancel()
+
+    def __await__(self) -> Generator[Any, None, ResultType]:
+        payload: Payload = yield from self._result_future.__await__()
+        result = self._data_converter.from_data(payload, [self._result_type])[0]
+        return cast(ResultType, result)
+
+
 async def execute_activity(
     activity: str,
     result_type: Type[ResultType],
@@ -88,6 +124,17 @@ async def execute_child_workflow(
     **kwargs: Unpack[ChildWorkflowOptions],
 ) -> ResultType:
     return await WorkflowContext.get().execute_child_workflow(
+        workflow_type, result_type, *args, **kwargs
+    )
+
+
+async def start_child_workflow(
+    workflow_type: str,
+    result_type: Type[ResultType],
+    *args: Any,
+    **kwargs: Unpack[ChildWorkflowOptions],
+) -> "ChildWorkflowFuture[ResultType]":
+    return await WorkflowContext.get().start_child_workflow(
         workflow_type, result_type, *args, **kwargs
     )
 
@@ -481,6 +528,15 @@ class WorkflowContext(ABC):
         *args: Any,
         **kwargs: Unpack[ChildWorkflowOptions],
     ) -> ResultType: ...
+
+    @abstractmethod
+    async def start_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> "ChildWorkflowFuture[ResultType]": ...
 
     @abstractmethod
     async def start_timer(self, duration: timedelta) -> None: ...

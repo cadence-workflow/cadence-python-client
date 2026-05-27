@@ -167,6 +167,9 @@ async def test_backfill(helper: CadenceHelper):
                 spec=schedule_pb2.ScheduleSpec(cron_expression="* * * * *"),
                 action=_make_schedule_action(),
             )
+            # Pause before backfilling so regular cron ticks cannot increment
+            # total_runs during the poll window and produce a false-positive.
+            await client.pause_schedule(schedule_id, reason="backfill-test")
 
             now = datetime.now(timezone.utc)
             await client.backfill_schedule(

@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
+    Awaitable,
     Iterator,
     Callable,
     Generator,
@@ -73,7 +74,7 @@ class ChildWorkflowOptions(TypedDict, total=False):
     cron_schedule: str
 
 
-class ChildWorkflowFuture(Generic[ResultType]):
+class ChildWorkflowFuture(Awaitable[ResultType]):
     def __init__(
         self,
         workflow_id: str,

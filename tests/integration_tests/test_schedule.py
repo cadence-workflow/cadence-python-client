@@ -162,11 +162,9 @@ async def test_backfill(helper: CadenceHelper):
 
     async with helper.client() as client:
         try:
-            # Use a yearly cron so no automatic tick can fire during the ~30s
-            # poll window and give a false-positive on total_runs.
             await client.create_schedule(
                 schedule_id,
-                spec=schedule_pb2.ScheduleSpec(cron_expression="0 0 1 1 *"),
+                spec=schedule_pb2.ScheduleSpec(cron_expression="* * * * *"),
                 action=_make_schedule_action(),
             )
 
@@ -178,21 +176,23 @@ async def test_backfill(helper: CadenceHelper):
             )
 
             # The scheduler processes the backfill signal asynchronously.
-            # Poll until total_runs reflects at least one triggered workflow start.
+            # The 2-minute window above covers exactly 2 slots for "* * * * *".
+            # Asserting >= 2 rules out a false-positive from a single ordinary
+            # cron tick that could fire during the ~30s poll window.
             deadline = time.monotonic() + 30.0
             resp = None
             while time.monotonic() < deadline:
                 try:
                     resp = await client.describe_schedule(schedule_id)
-                    if resp.info.total_runs >= 1:
+                    if resp.info.total_runs >= 2:
                         break
                 except QueryFailedError:
                     pass
                 await asyncio.sleep(0.5)
 
             assert resp is not None, "describe_schedule never succeeded within 30s"
-            assert resp.info.total_runs >= 1, (
-                f"expected at least one backfilled run, got total_runs={resp.info.total_runs}"
+            assert resp.info.total_runs >= 2, (
+                f"expected at least 2 backfilled runs, got total_runs={resp.info.total_runs}"
             )
         finally:
             await client.delete_schedule(schedule_id)

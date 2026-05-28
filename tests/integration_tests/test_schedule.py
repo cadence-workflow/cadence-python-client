@@ -169,6 +169,9 @@ async def test_backfill(helper: CadenceHelper):
                 schedule_id,
                 spec=schedule_pb2.ScheduleSpec(cron_expression="* * * * *"),
                 action=_make_schedule_action(),
+                policies=schedule_pb2.SchedulePolicies(
+                    overlap_policy=schedule_pb2.SCHEDULE_OVERLAP_POLICY_CONCURRENT,
+                ),
             )
 
             now = datetime.now(timezone.utc)
@@ -179,7 +182,8 @@ async def test_backfill(helper: CadenceHelper):
             )
 
             # The scheduler processes the backfill signal asynchronously.
-            # The 2-minute window above covers exactly 2 slots for "* * * * *".
+            # CONCURRENT overlap lets both slots in the 2-minute window fire
+            # even though the started workflows have no worker to complete them.
             # Asserting >= 2 rules out a false-positive from a single ordinary
             # cron tick that could fire during the ~30s poll window.
             deadline = time.monotonic() + 30.0

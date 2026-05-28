@@ -52,7 +52,6 @@ class SignalExternalWorkflowStateMachine(BaseDecisionStateMachine):
     def request_cancel(self) -> bool:
         return False
 
-    @signal_external_events.event(id_attr="control", event_id_is_alias=True)
     def handle_initiated(
         self,
         _: history.SignalExternalWorkflowExecutionInitiatedEventAttributes,

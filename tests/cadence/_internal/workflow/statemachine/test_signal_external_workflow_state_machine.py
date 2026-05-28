@@ -18,9 +18,7 @@ DOMAIN = "test-domain"
 def make_sm() -> tuple[SignalExternalWorkflowStateMachine, DecisionFuture[None]]:
     attrs = decision.SignalExternalWorkflowExecutionDecisionAttributes(
         domain=DOMAIN,
-        workflow_execution=WorkflowExecution(
-            workflow_id="child-wf-1", run_id=""
-        ),
+        workflow_execution=WorkflowExecution(workflow_id="child-wf-1", run_id=""),
         signal_name="my_signal",
         child_workflow_only=True,
         control=SIGNAL_ID.encode("utf-8"),
@@ -97,5 +95,7 @@ async def test_failed_rejects_future():
 
     assert sm.state is DecisionState.COMPLETED
     assert completed.done() is True
-    with pytest.raises(SignalExternalWorkflowFailed, match="signal external workflow failed"):
+    with pytest.raises(
+        SignalExternalWorkflowFailed, match="signal external workflow failed"
+    ):
         completed.result()

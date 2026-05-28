@@ -15,7 +15,7 @@ from google.protobuf.duration_pb2 import Duration as PbDuration
 
 from cadence.api.v1 import common_pb2, schedule_pb2, tasklist_pb2
 from cadence.api.v1.service_schedule_pb2 import DescribeScheduleResponse
-from cadence.error import CadenceRpcError, QueryFailedError
+from cadence.error import QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
 
 
@@ -193,7 +193,7 @@ async def test_backfill(helper: CadenceHelper):
                     resp = await client.describe_schedule(schedule_id)
                     if resp.info.total_runs >= 2:
                         break
-                except (QueryFailedError, CadenceRpcError):
+                except QueryFailedError:
                     pass
                 await asyncio.sleep(0.5)
 

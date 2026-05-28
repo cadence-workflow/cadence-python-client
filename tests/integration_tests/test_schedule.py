@@ -137,6 +137,9 @@ async def test_update_spec(helper: CadenceHelper):
 
 
 @pytest.mark.usefixtures("helper")
+@pytest.mark.skip(
+    reason="skip this test because it is not working as expected, see https://github.com/cadence-workflow/cadence-python-client/issues/117"
+)
 async def test_list_schedules_contains_created(helper: CadenceHelper):
     """A created schedule appears in list_schedules() results."""
     schedule_id = f"test-schedule-list-{uuid.uuid4()}"

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
 from asyncio import get_running_loop
 from datetime import timedelta
@@ -18,6 +20,7 @@ from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
 from cadence.workflow import (
     ActivityOptions,
+    ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
     WorkflowContext,
@@ -115,6 +118,42 @@ class Context(WorkflowContext):
         *args: Any,
         **kwargs: Unpack[ChildWorkflowOptions],
     ) -> ResultType:
+        future = await self.start_child_workflow(
+            workflow_type, result_type, *args, **kwargs
+        )
+        return await future
+
+    async def start_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> ChildWorkflowFuture[ResultType]:
+        schedule_attributes = self._build_child_workflow_attrs(
+            workflow_type, *args, **kwargs
+        )
+        execution_future, result_future = (
+            self._decision_manager.schedule_child_workflow(
+                schedule_attributes,
+                parent_workflow_run_id=self._info.workflow_run_id,
+            )
+        )
+        workflow_execution = await execution_future
+        return ChildWorkflowFuture(
+            workflow_id=workflow_execution.workflow_id,
+            run_id=workflow_execution.run_id,
+            result_future=result_future,
+            result_type=result_type,
+            data_converter=self.data_converter(),
+        )
+
+    def _build_child_workflow_attrs(
+        self,
+        workflow_type: str,
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> StartChildWorkflowExecutionDecisionAttributes:
         execution_timeout = kwargs.get("execution_start_to_close_timeout")
         if execution_timeout is None:
             raise ValueError(
@@ -165,16 +204,7 @@ class Context(WorkflowContext):
         if cron_schedule:
             schedule_attributes.cron_schedule = cron_schedule
 
-        _execution_future, result_future = (
-            self._decision_manager.schedule_child_workflow(
-                schedule_attributes,
-                parent_workflow_run_id=self._info.workflow_run_id,
-            )
-        )
-
-        result_payload = await result_future
-        result = self.data_converter().from_data(result_payload, [result_type])[0]
-        return cast(ResultType, result)
+        return schedule_attributes
 
     async def start_timer(self, duration: timedelta):
         if duration.total_seconds() <= 0:  # shortcut

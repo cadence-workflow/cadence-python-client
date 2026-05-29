@@ -54,6 +54,8 @@ def resolve_id_attr(obj: Any, path: str) -> Any:
         return None
     for part in path.split("."):
         obj = getattr(obj, part)
+    if isinstance(obj, bytes):
+        obj = obj.decode("utf-8")
     return obj
 
 

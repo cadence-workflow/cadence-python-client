@@ -99,25 +99,24 @@ async def test_succeeds(helper: CadenceHelper):
             )
         )
 
-        response = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
-            GetWorkflowExecutionHistoryRequest(
-                domain=DOMAIN_NAME,
-                workflow_execution=execution,
-                wait_for_new_event=True,
-                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_ALL_EVENT,
-                skip_archival=True,
-            )
-        )
-
-        # Uncomment to regenerate.
-        # helper.write_history("success.json", response.history)
-
         assert (
             '"hello world"'
             == response.history.events[
                 -1
             ].workflow_execution_completed_event_attributes.result.data.decode()
         )
+
+        # Full history for regenerating success.json (see write_history below).
+        response = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                skip_archival=True,
+            )
+        )
+
+        # Uncomment to regenerate.
+        # helper.write_history("success.json", response.history)
 
 
 @reg.workflow()

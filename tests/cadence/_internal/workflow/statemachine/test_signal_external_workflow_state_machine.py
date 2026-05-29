@@ -5,9 +5,9 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionState,
 )
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
-    SignalExternalWorkflowFailed,
     SignalExternalWorkflowStateMachine,
 )
+from cadence.error import SignalExternalWorkflowFailed
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import WorkflowExecution
 

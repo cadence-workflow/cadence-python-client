@@ -3,10 +3,7 @@ from asyncio import CancelledError
 
 import pytest
 
-from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
-    ChildWorkflowError,
-    StartChildWorkflowExecutionFailed,
-)
+from cadence.error import ChildWorkflowError, StartChildWorkflowExecutionFailed
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.event_dispatcher import (
     EventDispatcher,

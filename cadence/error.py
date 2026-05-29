@@ -40,6 +40,45 @@ class SignalFailure(Exception):
         self.message = message
 
 
+class SignalExternalWorkflowFailed(Exception):
+    def __init__(self, message: str, cause: Any) -> None:
+        super().__init__(message)
+        self.cause = cause
+
+
+class ChildWorkflowError(Exception):
+    """Base class for child workflow lifecycle errors."""
+
+
+class StartChildWorkflowExecutionFailed(ChildWorkflowError):
+    def __init__(self, message: str, cause: Any, workflow_id: str) -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.workflow_id = workflow_id
+
+
+class ChildWorkflowExecutionFailed(ChildWorkflowError):
+    def __init__(self, message: str, failure: Any) -> None:
+        super().__init__(message)
+        self.failure = failure
+
+
+class ChildWorkflowExecutionCanceled(ChildWorkflowError):
+    def __init__(self, message: str, details: Any) -> None:
+        super().__init__(message)
+        self.details = details
+
+
+class ChildWorkflowExecutionTimedOut(ChildWorkflowError):
+    def __init__(self, message: str, timeout_type: int) -> None:
+        super().__init__(message)
+        self.timeout_type = timeout_type
+
+
+class ChildWorkflowExecutionTerminated(ChildWorkflowError):
+    pass
+
+
 class CadenceRpcError(Exception):
     def __init__(self, message: str | None, code: grpc.StatusCode, *args):
         if message is None:

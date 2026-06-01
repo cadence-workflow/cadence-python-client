@@ -1,9 +1,11 @@
 import pytest
 
 from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
+    ChildWorkflowExecutionStateMachine,
+)
+from cadence.error import (
     ChildWorkflowExecutionCanceled,
     ChildWorkflowExecutionFailed,
-    ChildWorkflowExecutionStateMachine,
     ChildWorkflowExecutionTerminated,
     ChildWorkflowExecutionTimedOut,
     StartChildWorkflowExecutionFailed,

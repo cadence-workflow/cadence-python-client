@@ -26,11 +26,8 @@ def _make_ctx() -> tuple[Context, MagicMock]:
     return ctx, dm
 
 
-def _setup_signal_mock(
-    dm: MagicMock,
-    loop: asyncio.AbstractEventLoop | None = None,
-) -> None:
-    loop = loop or asyncio.get_event_loop()
+def _setup_signal_mock(dm: MagicMock) -> None:
+    loop = asyncio.get_running_loop()
     future: asyncio.Future[None] = loop.create_future()
     future.set_result(None)
     dm.signal_external_workflow = MagicMock(return_value=future)
@@ -216,8 +213,7 @@ async def test_child_workflow_future_signal_delegates_to_context():
     from cadence.workflow import ChildWorkflowFuture
 
     dc = DefaultDataConverter()
-    loop = asyncio.get_event_loop()
-    result_future: asyncio.Future = loop.create_future()
+    result_future: asyncio.Future = asyncio.get_running_loop().create_future()
 
     future = ChildWorkflowFuture(
         workflow_id="child-wf-1",

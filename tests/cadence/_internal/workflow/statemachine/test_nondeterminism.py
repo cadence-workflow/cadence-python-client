@@ -445,13 +445,17 @@ class TestDeterminismTracker:
             decision.SignalExternalWorkflowExecutionDecisionAttributes(
                 control=b"0", signal_name="my-signal"
             ),
-            Expectation(DecisionId(DecisionType.SIGNAL, "0"), {"signal_name": "my-signal"}),
+            Expectation(
+                DecisionId(DecisionType.SIGNAL, "0"), {"signal_name": "my-signal"}
+            ),
         ),
         (
             history.SignalExternalWorkflowExecutionInitiatedEventAttributes(
                 control=b"0", signal_name="my-signal"
             ),
-            Expectation(DecisionId(DecisionType.SIGNAL, "0"), {"signal_name": "my-signal"}),
+            Expectation(
+                DecisionId(DecisionType.SIGNAL, "0"), {"signal_name": "my-signal"}
+            ),
         ),
         (
             history.SignalExternalWorkflowExecutionFailedEventAttributes(control=b"0"),

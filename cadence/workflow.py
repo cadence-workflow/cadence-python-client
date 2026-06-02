@@ -101,6 +101,11 @@ class ChildWorkflowFuture(Awaitable[ResultType]):
         """Request cancellation of the child workflow."""
         return self._result_future.cancel()
 
+    async def signal(self, signal_name: str, *args: Any) -> None:
+        """Send a signal to this child workflow."""
+        ctx = WorkflowContext.get()
+        await ctx.signal_child_workflow(self._workflow_id, signal_name, *args)
+
     def __await__(self) -> Generator[Any, None, ResultType]:
         payload: Payload = yield from self._result_future.__await__()
         result = self._data_converter.from_data(payload, [self._result_type])[0]
@@ -137,6 +142,27 @@ async def start_child_workflow(
 ) -> "ChildWorkflowFuture[ResultType]":
     return await WorkflowContext.get().start_child_workflow(
         workflow_type, result_type, *args, **kwargs
+    )
+
+
+async def signal_external_workflow(
+    workflow_id: str,
+    signal_name: str,
+    *args: Any,
+    run_id: str = "",
+    domain: str = "",
+) -> None:
+    """Send a signal to an external workflow execution.
+
+    Args:
+        workflow_id: Target workflow ID.
+        signal_name: Name of the signal to deliver.
+        *args: Signal payload arguments, serialized via DataConverter.
+        run_id: Target run ID. Empty string targets the currently running execution.
+        domain: Target domain. Empty string defaults to the current workflow's domain.
+    """
+    await WorkflowContext.get().signal_external_workflow(
+        workflow_id, signal_name, *args, run_id=run_id, domain=domain
     )
 
 
@@ -538,6 +564,24 @@ class WorkflowContext(ABC):
         *args: Any,
         **kwargs: Unpack[ChildWorkflowOptions],
     ) -> "ChildWorkflowFuture[ResultType]": ...
+
+    @abstractmethod
+    async def signal_child_workflow(
+        self,
+        child_workflow_id: str,
+        signal_name: str,
+        *args: Any,
+    ) -> None: ...
+
+    @abstractmethod
+    async def signal_external_workflow(
+        self,
+        workflow_id: str,
+        signal_name: str,
+        *args: Any,
+        run_id: str = "",
+        domain: str = "",
+    ) -> None: ...
 
     @abstractmethod
     async def start_timer(self, duration: timedelta) -> None: ...

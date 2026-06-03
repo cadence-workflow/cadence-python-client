@@ -1,4 +1,5 @@
 import asyncio
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -34,7 +35,10 @@ def _setup_signal_mock(dm: MagicMock) -> None:
 
 
 def _attrs(dm: MagicMock) -> SignalExternalWorkflowExecutionDecisionAttributes:
-    return dm.signal_external_workflow.call_args[0][0]
+    return cast(
+        SignalExternalWorkflowExecutionDecisionAttributes,
+        dm.signal_external_workflow.call_args[0][0],
+    )
 
 
 # ---------------------------------------------------------------------------

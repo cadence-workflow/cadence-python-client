@@ -10,9 +10,10 @@ from cadence._internal.workflow.deterministic_event_loop import DeterministicEve
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1 import workflow_pb2
-from cadence.api.v1.common_pb2 import ActivityType, WorkflowType
+from cadence.api.v1.common_pb2 import ActivityType, WorkflowType, WorkflowExecution
 from cadence.api.v1.decision_pb2 import (
     ScheduleActivityTaskDecisionAttributes,
+    SignalExternalWorkflowExecutionDecisionAttributes,
     StartChildWorkflowExecutionDecisionAttributes,
     StartTimerDecisionAttributes,
 )
@@ -206,6 +207,32 @@ class Context(WorkflowContext):
 
         return schedule_attributes
 
+    async def signal_child_workflow(
+        self,
+        child_workflow_id: str,
+        signal_name: str,
+        *args: Any,
+    ) -> None:
+        if not child_workflow_id:
+            raise ValueError("child_workflow_id must not be empty")
+        await self._signal_workflow(
+            child_workflow_id, signal_name, args, child_workflow_only=True
+        )
+
+    async def signal_external_workflow(
+        self,
+        workflow_id: str,
+        signal_name: str,
+        *args: Any,
+        run_id: str = "",
+        domain: str = "",
+    ) -> None:
+        if not workflow_id:
+            raise ValueError("workflow_id must not be empty")
+        await self._signal_workflow(
+            workflow_id, signal_name, args, run_id=run_id, domain=domain
+        )
+
     async def start_timer(self, duration: timedelta):
         if duration.total_seconds() <= 0:  # shortcut
             return
@@ -243,6 +270,30 @@ class Context(WorkflowContext):
             yield self
         finally:
             WorkflowContext._var.reset(token)
+
+    async def _signal_workflow(
+        self,
+        workflow_id: str,
+        signal_name: str,
+        args: tuple,
+        *,
+        run_id: str = "",
+        domain: str = "",
+        child_workflow_only: bool = False,
+    ) -> None:
+        if not signal_name:
+            raise ValueError("signal_name must not be empty")
+        attrs = SignalExternalWorkflowExecutionDecisionAttributes(
+            domain=domain or self._info.workflow_domain,
+            workflow_execution=WorkflowExecution(
+                workflow_id=workflow_id,
+                run_id=run_id,
+            ),
+            signal_name=signal_name,
+            input=self.data_converter().to_data(list(args)),
+            child_workflow_only=child_workflow_only,
+        )
+        await self._decision_manager.signal_external_workflow(attrs)
 
 
 def _round_to_nearest_second(delta: timedelta) -> timedelta:

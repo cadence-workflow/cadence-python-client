@@ -7,6 +7,7 @@ from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence.api.v1 import workflow_pb2
@@ -204,6 +205,10 @@ class Context(WorkflowContext):
         cron_schedule = kwargs.get("cron_schedule")
         if cron_schedule:
             schedule_attributes.cron_schedule = cron_schedule
+
+        memo_proto = memo_to_proto(self.data_converter(), kwargs.get("memo"))
+        if memo_proto is not None:
+            schedule_attributes.memo.CopyFrom(memo_proto)
 
         return schedule_attributes
 

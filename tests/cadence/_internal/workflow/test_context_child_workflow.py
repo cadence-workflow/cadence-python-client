@@ -94,6 +94,27 @@ async def test_execute_child_workflow_basic():
 
 
 @pytest.mark.asyncio
+async def test_execute_child_workflow_with_memo():
+    ctx, dm = _make_ctx()
+    _setup_schedule_mock(dm)
+    dc = ctx.data_converter()
+
+    await ctx.execute_child_workflow(
+        "ChildWf",
+        str,
+        execution_start_to_close_timeout=timedelta(minutes=10),
+        memo={"k1": "v1", "k2": 99},
+    )
+
+    attrs: StartChildWorkflowExecutionDecisionAttributes = (
+        dm.schedule_child_workflow.call_args[0][0]
+    )
+    assert len(attrs.memo.fields) == 2
+    assert attrs.memo.fields["k1"] == dc.to_data(["v1"])
+    assert attrs.memo.fields["k2"] == dc.to_data([99])
+
+
+@pytest.mark.asyncio
 async def test_execute_child_workflow_auto_generates_workflow_id():
     ctx, dm = _make_ctx(run_id="test-run-id")
     _setup_schedule_mock(dm)

@@ -13,6 +13,7 @@ from cadence._internal.workflow.statemachine.child_workflow_execution_state_mach
     ChildWorkflowExecutionStateMachine,
 )
 from cadence._internal.workflow.statemachine.completion_state_machine import (
+    COMPLETION_ID,
     CompletionStateMachine,
 )
 from cadence._internal.workflow.statemachine.decision_state_machine import (
@@ -238,6 +239,15 @@ class DecisionManager:
     # ----- Decision aggregation -----
 
     def collect_pending_decisions(self) -> List[decision.Decision]:
+        # Once a workflow closes, Cadence closes outstanding commands as part of
+        # workflow completion/cancellation. Do not send pending cancel decisions
+        # alongside the terminal close decision.
+        completion = self.state_machines.get(COMPLETION_ID)
+        if completion is not None:
+            completion_decision = completion.get_decision()
+            if completion_decision is not None:
+                return [completion_decision]
+
         decisions: List[decision.Decision] = []
 
         for machine in self.state_machines.values():
@@ -262,3 +272,9 @@ class DecisionManager:
             self.state_machines.move_to_end(decision_id)
             return True
         return False
+
+    def request_cancel_pending_decisions(self, message: str | None = None) -> None:
+        for decision_id in list(self.state_machines):
+            machine = self._get_machine(decision_id)
+            self._request_cancel(decision_id)
+            machine.force_cancel(message)

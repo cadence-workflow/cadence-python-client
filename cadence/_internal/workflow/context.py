@@ -23,9 +23,11 @@ from cadence.workflow import (
     ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
+    WorkflowCancellationInfo,
     WorkflowContext,
     WorkflowInfo,
 )
+from cadence.api.v1.history_pb2 import WorkflowExecutionCancelRequestedEventAttributes
 
 _DEFAULT_ACTIVITY_OPTIONS: ActivityOptions = {
     "schedule_to_close_timeout": timedelta(hours=1),
@@ -43,6 +45,7 @@ class Context(WorkflowContext):
         self._replay_mode = True
         self._replay_current_time_milliseconds: Optional[int] = None
         self._decision_manager = decision_manager
+        self._cancellation_info: WorkflowCancellationInfo | None = None
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -235,6 +238,21 @@ class Context(WorkflowContext):
     async def wait_condition(self, predicate: Callable[[], bool]) -> None:
         loop = cast(DeterministicEventLoop, get_running_loop())
         await loop.create_waiter(predicate)
+
+    def request_cancel(
+        self, attrs: WorkflowExecutionCancelRequestedEventAttributes
+    ) -> None:
+        self._cancellation_info = WorkflowCancellationInfo(
+            cause=attrs.cause,
+            identity=attrs.identity,
+            request_id=attrs.request_id,
+        )
+
+    def is_cancel_requested(self) -> bool:
+        return self._cancellation_info is not None
+
+    def cancellation_info(self) -> WorkflowCancellationInfo | None:
+        return self._cancellation_info
 
     @contextmanager
     def _activate(self) -> Iterator["Context"]:

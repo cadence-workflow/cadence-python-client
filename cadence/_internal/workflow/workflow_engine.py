@@ -14,14 +14,16 @@ from cadence._internal.workflow.deterministic_event_loop import (
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.api.v1.decision_pb2 import (
+    CancelWorkflowExecutionDecisionAttributes,
     Decision,
     FailWorkflowExecutionDecisionAttributes,
     CompleteWorkflowExecutionDecisionAttributes,
     ContinueAsNewWorkflowExecutionDecisionAttributes,
 )
-from cadence.api.v1.common_pb2 import Failure, WorkflowType
+from cadence.api.v1.common_pb2 import Failure, Payload, WorkflowType
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
+    WorkflowExecutionCancelRequestedEventAttributes,
     WorkflowExecutionSignaledEventAttributes,
     WorkflowExecutionStartedEventAttributes,
 )
@@ -217,7 +219,20 @@ class WorkflowEngine:
                 )
             else:
                 return None
-        except (CancelledError, InvalidStateError, FatalDecisionError):
+        except CancelledError as e:
+            if not self._context.is_cancel_requested():
+                raise
+            details = (
+                self._context.data_converter().to_data(list(e.args))
+                if e.args
+                else Payload()
+            )
+            return Decision(
+                cancel_workflow_execution_decision_attributes=CancelWorkflowExecutionDecisionAttributes(
+                    details=details,
+                )
+            )
+        except (InvalidStateError, FatalDecisionError):
             raise
         except ContinueAsNewError as e:
             # Use execution's workflow type and task list when not overridden
@@ -279,6 +294,18 @@ class WorkflowEngine:
         self, attrs: WorkflowExecutionSignaledEventAttributes, event: HistoryEvent
     ) -> None:
         self._workflow_instance.handle_signal(attrs.signal_name, attrs.input)
+
+    @_handle_input_event.register
+    def _handle_cancel_requested_input_event(
+        self,
+        attrs: WorkflowExecutionCancelRequestedEventAttributes,
+        event: HistoryEvent,
+    ) -> None:
+        self._context.request_cancel(attrs)
+        info = self._context.cancellation_info()
+        assert info is not None
+        self._decision_manager.request_cancel_pending_decisions(info.cause)
+        self._workflow_instance.request_cancel(info)
 
 
 def _failure_from_exception(e: Exception) -> Failure:

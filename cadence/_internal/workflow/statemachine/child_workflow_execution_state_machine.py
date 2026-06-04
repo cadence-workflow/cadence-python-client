@@ -104,18 +104,24 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         match self.state:
             case DecisionState.REQUESTED:
                 self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
-                self.execution.force_cancel()
-                self.result.force_cancel()
+                self.force_cancel()
                 return True
             case DecisionState.RECORDED:
                 self._transition(DecisionState.CANCELED_AFTER_RECORDED)
-                self.execution.force_cancel()
+                if not self.execution.done():
+                    self.execution.force_cancel()
                 return True
             case DecisionState.STARTED:
                 self._transition(DecisionState.CANCELED_AFTER_STARTED)
                 return True
             case _:
                 return False
+
+    def force_cancel(self, message: str | None = None) -> None:
+        if not self.execution.done():
+            self.execution.force_cancel(message)
+        if not self.result.done():
+            self.result.force_cancel(message)
 
     @child_workflow_events.event("workflow_id", event_id_is_alias=True)
     def handle_initiated(

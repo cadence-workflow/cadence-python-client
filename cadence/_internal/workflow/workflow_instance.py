@@ -10,7 +10,7 @@ from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DataConverter
 from cadence.error import SignalFailure
 from cadence.signal import SignalDefinition
-from cadence.workflow import WorkflowDefinition
+from cadence.workflow import WorkflowCancellationInfo, WorkflowDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,10 @@ class WorkflowInstance:
             )
 
             self._task = self._loop.create_task(self._run(run_method, workflow_input))
+
+    def request_cancel(self, info: WorkflowCancellationInfo) -> None:
+        if self._task is not None and not self._task.done():
+            self._task.cancel(info.cause)
 
     async def _run(
         self, workflow_fn: Callable[[Any], Awaitable[Any]], args: list[Any]

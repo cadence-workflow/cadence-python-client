@@ -23,3 +23,6 @@ class CompletionStateMachine(DecisionStateMachine):
 
     def request_cancel(self) -> bool:
         return False
+
+    def force_cancel(self, message: str | None = None) -> None:
+        pass

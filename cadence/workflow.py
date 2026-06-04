@@ -528,6 +528,7 @@ class WorkflowInfo:
     workflow_run_id: str
     workflow_task_list: str
     data_converter: DataConverter
+    memo: dict[str, Any] | None = None
 
 
 class WorkflowContext(ABC):

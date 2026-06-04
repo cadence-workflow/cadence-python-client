@@ -1,4 +1,4 @@
-"""Convert user memo maps to protobuf :class:`cadence.api.v1.common_pb2.Memo`."""
+"""Convert user memo maps to/from protobuf :class:`cadence.api.v1.common_pb2.Memo`."""
 
 from __future__ import annotations
 
@@ -23,3 +23,18 @@ def memo_to_proto(
     for key, value in memo.items():
         out.fields[key].CopyFrom(data_converter.to_data([value]))
     return out
+
+
+def memo_from_proto(
+    data_converter: DataConverter,
+    memo: common_pb2.Memo,
+) -> dict[str, Any]:
+    """Deserialize a protobuf ``Memo`` back to a plain dict.
+
+    Each field payload was encoded as a single-element list; we unwrap that
+    first element to recover the original value.
+    """
+    return {
+        key: data_converter.from_data(payload, [None])[0]
+        for key, payload in memo.fields.items()
+    }

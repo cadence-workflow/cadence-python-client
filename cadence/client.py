@@ -15,6 +15,7 @@ from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
 from cadence._internal.workflow.active_cluster_selection_policy import (
     active_cluster_selection_policy_to_proto,
 )
+from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence.api.v1 import schedule_pb2
 from cadence.api.v1.common_pb2 import (
@@ -84,6 +85,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
     retry_policy: RetryPolicy
     active_cluster_selection_policy: ActiveClusterSelectionPolicy
+    memo: dict[str, Any]
 
 
 def _validate_and_apply_defaults(
@@ -318,6 +320,10 @@ class Client:
         )
         if acsp_proto is not None:
             request.active_cluster_selection_policy.CopyFrom(acsp_proto)
+
+        memo_proto = memo_to_proto(self.data_converter, options.get("memo"))
+        if memo_proto is not None:
+            request.memo.CopyFrom(memo_proto)
 
         return request
 

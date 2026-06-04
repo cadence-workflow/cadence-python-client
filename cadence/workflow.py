@@ -72,6 +72,7 @@ class ChildWorkflowOptions(TypedDict, total=False):
     workflow_id_reuse_policy: Union[workflow_pb2.WorkflowIdReusePolicy, str]
     retry_policy: RetryPolicy
     cron_schedule: str
+    memo: dict[str, Any]
 
 
 class ChildWorkflowFuture(Awaitable[ResultType]):

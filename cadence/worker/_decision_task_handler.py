@@ -5,6 +5,7 @@ from typing import Optional
 
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.workflow.memo import memo_from_proto
+from cadence.api.v1.history_pb2 import HistoryEvent, WorkflowExecutionStartedEventAttributes
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
@@ -120,7 +121,17 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             event async for event in iterate_history_events(task, self._client)
         ]
 
+        if not workflow_events:
+            raise ValueError(
+                "Workflow history yielded no events; cannot process decision task."
+            )
+
         started_attrs = workflow_events[0].workflow_execution_started_event_attributes
+        if started_attrs is None:
+            raise ValueError(
+                "Workflow history does not contain a WorkflowExecutionStarted event."
+            )
+
         memo = (
             memo_from_proto(self._client.data_converter, started_attrs.memo)
             if started_attrs.HasField("memo")

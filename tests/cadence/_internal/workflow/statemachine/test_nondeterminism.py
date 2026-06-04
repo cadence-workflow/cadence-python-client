@@ -288,6 +288,25 @@ class TestDeterminismTracker:
             DecisionId(DecisionType.ACTIVITY, "0"), {"activity_type": "actual"}
         )
 
+    def test_signal_external_workflow_failed_event_matches_decision(self):
+        # If the server records a SignalExternalWorkflowExecutionFailed event (instead of
+        # Initiated), replay must still validate the signal decision successfully.
+        tracker = DeterminismTracker()
+        tracker.add_expectation(
+            history.HistoryEvent(
+                event_id=1,
+                signal_external_workflow_execution_failed_event_attributes=history.SignalExternalWorkflowExecutionFailedEventAttributes(
+                    control=b"0"
+                ),
+            )
+        )
+        tracker.validate_action(
+            decision.SignalExternalWorkflowExecutionDecisionAttributes(
+                control=b"0", signal_name="my-signal"
+            )
+        )
+        tracker.complete_replay()
+
     def test_expectations_out_of_order_nondeterminism(self):
         tracker = DeterminismTracker()
         tracker.add_expectation(
@@ -420,6 +439,27 @@ class TestDeterminismTracker:
                 workflow_execution=common.WorkflowExecution(workflow_id="0"),
             ),
             Expectation(DecisionId(DecisionType.CHILD_WORKFLOW, "0"), CANCEL),
+        ),
+        # Signal external workflow
+        (
+            decision.SignalExternalWorkflowExecutionDecisionAttributes(
+                control=b"0", signal_name="my-signal"
+            ),
+            Expectation(
+                DecisionId(DecisionType.SIGNAL, "0"), {"signal_name": "my-signal"}
+            ),
+        ),
+        (
+            history.SignalExternalWorkflowExecutionInitiatedEventAttributes(
+                control=b"0", signal_name="my-signal"
+            ),
+            Expectation(
+                DecisionId(DecisionType.SIGNAL, "0"), {"signal_name": "my-signal"}
+            ),
+        ),
+        (
+            history.SignalExternalWorkflowExecutionFailedEventAttributes(control=b"0"),
+            Expectation(DecisionId(DecisionType.SIGNAL, "0"), {}),
         ),
         # Workflow complete
         (

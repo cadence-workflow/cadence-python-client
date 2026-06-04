@@ -323,6 +323,38 @@ def _(
     )
 
 
+# Signal External Workflow - Enforce signal_name
+@to_expectation.register
+def _(
+    attrs: decision.SignalExternalWorkflowExecutionDecisionAttributes,
+) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.SIGNAL, attrs.control.decode("utf-8")),
+        {"signal_name": attrs.signal_name},
+    )
+
+
+@to_expectation.register
+def _(
+    attrs: history.SignalExternalWorkflowExecutionInitiatedEventAttributes,
+) -> Expectation:
+    return Expectation(
+        DecisionId(DecisionType.SIGNAL, attrs.control.decode("utf-8")),
+        {"signal_name": attrs.signal_name},
+    )
+
+
+@to_expectation.register
+def _(
+    attrs: history.SignalExternalWorkflowExecutionFailedEventAttributes,
+) -> Expectation:
+    # signal_name is not present in failed attrs; control still identifies the decision
+    return Expectation(
+        DecisionId(DecisionType.SIGNAL, attrs.control.decode("utf-8")),
+        {},
+    )
+
+
 # Workflow Completion - Enforce complete vs failure. Maybe we should enforce the output data?
 @to_expectation.register
 def _(_: decision.CompleteWorkflowExecutionDecisionAttributes) -> Expectation:

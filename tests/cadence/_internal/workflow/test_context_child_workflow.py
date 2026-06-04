@@ -6,14 +6,12 @@ import pytest
 from google.protobuf.duration_pb2 import Duration
 
 from cadence._internal.workflow.context import Context
-from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
-    ChildWorkflowExecutionFailed,
-)
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.common_pb2 import WorkflowExecution, WorkflowType
 from cadence.api.v1.decision_pb2 import StartChildWorkflowExecutionDecisionAttributes
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DefaultDataConverter
+from cadence.error import ChildWorkflowExecutionFailed
 from cadence.workflow import WorkflowInfo
 
 

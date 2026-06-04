@@ -28,6 +28,10 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
     resolve_id_attr,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
+from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
+    signal_external_events,
+    SignalExternalWorkflowStateMachine,
+)
 from cadence._internal.workflow.statemachine.timer_state_machine import (
     TimerStateMachine,
     timer_events,
@@ -78,6 +82,7 @@ class DecisionManager:
             DecisionType.ACTIVITY: activity_events,
             DecisionType.TIMER: timer_events,
             DecisionType.CHILD_WORKFLOW: child_workflow_events,
+            DecisionType.SIGNAL: signal_external_events,
         }
     )
 
@@ -143,6 +148,22 @@ class DecisionManager:
         self._add_state_machine(machine)
         return execution, result
 
+    # ----- Signal External Workflow API -----
+
+    def signal_external_workflow(
+        self,
+        attrs: decision.SignalExternalWorkflowExecutionDecisionAttributes,
+    ) -> asyncio.Future[None]:
+        signal_id = self._next_id()
+        attrs.control = signal_id.encode("utf-8")
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
+        decision_id = DecisionId(DecisionType.SIGNAL, signal_id)
+        future: DecisionFuture[None] = self._create_future(decision_id)
+        machine = SignalExternalWorkflowStateMachine(attrs, future, signal_id)
+        self._add_state_machine(machine)
+        return future
+
     # ----- Workflow API -----
     def complete_workflow(self, decision: decision.Decision) -> None:
         if self._replaying:
@@ -175,9 +196,10 @@ class DecisionManager:
     def handle_history_event(self, event: history.HistoryEvent) -> None:
         """Dispatch history event to typed handlers using the global transition map."""
         attr = event.WhichOneof("attributes")
+        event_attributes = getattr(event, attr)
+
         # Based on the type of the event, determine what DecisionType it's referencing and
         # the correct action to take
-        event_attributes = getattr(event, attr)
         event_action = DecisionManager.type_to_action.get(
             event_attributes.__class__, None
         )

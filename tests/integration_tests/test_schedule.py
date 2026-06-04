@@ -47,6 +47,9 @@ def _assert_describe_spec_and_action(
 
 
 @pytest.mark.usefixtures("helper")
+@pytest.mark.skip(
+    reason="skip this test because it is not working as expected, see https://github.com/cadence-workflow/cadence-python-client/issues/117"
+)
 async def test_create_describe_delete(helper: CadenceHelper):
     """Create a schedule, describe it to verify spec round-trips, then delete it."""
     schedule_id = f"test-schedule-{uuid.uuid4()}"

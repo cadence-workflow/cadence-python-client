@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     BaseDecisionStateMachine,
     DecisionFuture,
@@ -15,41 +13,15 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
+from cadence.error import (
+    ChildWorkflowExecutionCanceled,
+    ChildWorkflowExecutionFailed,
+    ChildWorkflowExecutionTerminated,
+    ChildWorkflowExecutionTimedOut,
+    StartChildWorkflowExecutionFailed,
+)
 
 child_workflow_events = EventDispatcher("initiated_event_id")
-
-
-class ChildWorkflowError(Exception):
-    """Base class for internal child workflow lifecycle errors."""
-
-
-class StartChildWorkflowExecutionFailed(ChildWorkflowError):
-    def __init__(self, message: str, cause: Any, workflow_id: str) -> None:
-        super().__init__(message)
-        self.cause = cause
-        self.workflow_id = workflow_id
-
-
-class ChildWorkflowExecutionFailed(ChildWorkflowError):
-    def __init__(self, message: str, failure: Any) -> None:
-        super().__init__(message)
-        self.failure = failure
-
-
-class ChildWorkflowExecutionCanceled(ChildWorkflowError):
-    def __init__(self, message: str, details: Any) -> None:
-        super().__init__(message)
-        self.details = details
-
-
-class ChildWorkflowExecutionTimedOut(ChildWorkflowError):
-    def __init__(self, message: str, timeout_type: int) -> None:
-        super().__init__(message)
-        self.timeout_type = timeout_type
-
-
-class ChildWorkflowExecutionTerminated(ChildWorkflowError):
-    pass
 
 
 class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):

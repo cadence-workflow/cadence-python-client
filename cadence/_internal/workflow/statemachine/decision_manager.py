@@ -31,6 +31,7 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
     signal_external_events,
+    SignalExternalWorkflowStateMachine,
 )
 from cadence._internal.workflow.statemachine.timer_state_machine import (
     TimerStateMachine,
@@ -147,6 +148,22 @@ class DecisionManager:
         machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
         self._add_state_machine(machine)
         return execution, result
+
+    # ----- Signal External Workflow API -----
+
+    def signal_external_workflow(
+        self,
+        attrs: decision.SignalExternalWorkflowExecutionDecisionAttributes,
+    ) -> asyncio.Future[None]:
+        signal_id = self._next_id()
+        attrs.control = signal_id.encode("utf-8")
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
+        decision_id = DecisionId(DecisionType.SIGNAL, signal_id)
+        future: DecisionFuture[None] = self._create_future(decision_id)
+        machine = SignalExternalWorkflowStateMachine(attrs, future, signal_id)
+        self._add_state_machine(machine)
+        return future
 
     # ----- Workflow API -----
     def complete_workflow(self, decision: decision.Decision) -> None:

@@ -680,6 +680,9 @@ class Client:
 
         Fetches the current schedule state, passes it to ``updater`` for
         modification, then sends the full updated state to the server.
+
+        Note: concurrent updates to the same schedule_id are not safe —
+        last write wins. The server API exposes no conflict token.
         """
         current = await self.describe_schedule(schedule_id)
         updater(current)

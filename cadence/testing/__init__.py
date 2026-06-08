@@ -6,11 +6,9 @@ public ``Client`` interface.
 """
 
 from cadence.testing._workflow_environment import (
-    MockClient,
     TestWorkflowEnvironment,
 )
 
 __all__ = [
-    "MockClient",
     "TestWorkflowEnvironment",
 ]

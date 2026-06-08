@@ -144,9 +144,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
     ) -> ResultType:
-        return await self._env._invoke_activity(
-            activity, result_type, args, self._info
-        )
+        return await self._env._invoke_activity(activity, result_type, args, self._info)
 
     async def execute_child_workflow(
         self,
@@ -238,7 +236,7 @@ class _Execution:
                 self.error = exc
 
 
-class MockClient(Client):
+class _MockClient(Client):
     """A drop-in replacement for :class:`cadence.client.Client`.
 
     Implements the workflow-execution portion of the ``Client`` interface
@@ -295,9 +293,6 @@ class MockClient(Client):
             workflow_id, query_type, query_args, result_type
         )
 
-    async def cancel_workflow(self, workflow_id: str, run_id: str) -> None:
-        raise Not
-
     async def signal_with_start_workflow(
         self,
         workflow: Union[str, WorkflowDefinition],
@@ -327,8 +322,10 @@ class TestWorkflowEnvironment:
 
     Example::
 
-        env = TestWorkflowEnvironment()
-        env.register_workflow(GreetingWorkflow)
+        registry = Registry()
+        registry.workflow(GreetingWorkflow)
+
+        env = TestWorkflowEnvironment(registry)
         env.on_activity("greet", result="hello world")
 
         client = env.client  # implements the Client interface
@@ -343,14 +340,14 @@ class TestWorkflowEnvironment:
 
     def __init__(
         self,
-        registry: Optional[Registry] = None,
+        registry: Registry,
         *,
         domain: str = "test-domain",
         task_list: str = "test-task-list",
         data_converter: Optional[DataConverter] = None,
         start_time: Optional[datetime] = None,
     ) -> None:
-        self._registry = registry if registry is not None else Registry()
+        self._registry = registry
         self._domain = domain
         self._default_task_list = task_list
         self._data_converter = data_converter or DefaultDataConverter()
@@ -361,7 +358,7 @@ class TestWorkflowEnvironment:
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="cadence-test-env"
         )
-        self._client = MockClient(self)
+        self._client = _MockClient(self)
 
     # ------------------------------------------------------------------
     # Public surface
@@ -375,24 +372,6 @@ class TestWorkflowEnvironment:
     @property
     def registry(self) -> Registry:
         return self._registry
-
-    def register_workflow(
-        self, workflow: Type, *, name: Optional[str] = None
-    ) -> Type:
-        """Register a workflow class with the environment's registry."""
-        if name is not None:
-            self._registry.workflow(name=name)(workflow)
-        else:
-            self._registry.workflow(workflow)
-        return workflow
-
-    def register_activity(self, activity: Any) -> None:
-        """Register a single activity definition (``@activity.defn``)."""
-        self._registry.register_activity(activity)
-
-    def register_activities(self, obj: object) -> None:
-        """Register all activity methods found on ``obj``."""
-        self._registry.register_activities(obj)
 
     def on_activity(
         self,
@@ -419,9 +398,7 @@ class TestWorkflowEnvironment:
         """Return the current workflow (virtual) time."""
         return self._now
 
-    def is_workflow_completed(
-        self, workflow_id: str = "", run_id: str = ""
-    ) -> bool:
+    def is_workflow_completed(self, workflow_id: str = "", run_id: str = "") -> bool:
         return self._get_execution(workflow_id).completed
 
     def get_workflow_result(
@@ -442,9 +419,9 @@ class TestWorkflowEnvironment:
             raise execution.error
         if execution.result_payload is None:
             return None
-        return self._data_converter.from_data(
-            execution.result_payload, [result_type]
-        )[0]
+        return self._data_converter.from_data(execution.result_payload, [result_type])[
+            0
+        ]
 
     def get_workflow_error(
         self, workflow_id: str = "", run_id: str = ""
@@ -587,9 +564,7 @@ class TestWorkflowEnvironment:
             result = await self._run_real_activity(definition, call_args, name, info)
 
         result_payload = dc.to_data([result])
-        return cast(
-            ResultType, dc.from_data(result_payload, [result_type])[0]
-        )
+        return cast(ResultType, dc.from_data(result_payload, [result_type])[0])
 
     async def _run_real_activity(
         self,

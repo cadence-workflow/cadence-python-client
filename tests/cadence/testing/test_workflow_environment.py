@@ -2,20 +2,29 @@ from datetime import timedelta
 
 import pytest
 
-from cadence import activity, workflow
-from cadence.testing import MockClient, TestWorkflowEnvironment
+from cadence import workflow
+from cadence.testing import TestWorkflowEnvironment
 from cadence.worker import Registry
 
 
 # --- Sample workflows and activities -------------------------------------
 
+registry = Registry()
 
+
+@registry.activity(name="greet")
+async def greet_activity(name: str) -> str:
+    return f"hello {name}"
+
+
+@registry.workflow
 class EchoWorkflow:
     @workflow.run
     async def run(self, value: str) -> str:
         return f"echo: {value}"
 
 
+@registry.workflow
 class ActivityWorkflow:
     @workflow.run
     async def run(self, value: str) -> str:
@@ -28,6 +37,7 @@ class ActivityWorkflow:
         return f"workflow:{result}"
 
 
+@registry.workflow
 class SignalWorkflow:
     def __init__(self) -> None:
         self._approved = False
@@ -48,6 +58,7 @@ class SignalWorkflow:
         return "approved" if self._approved else "pending"
 
 
+@registry.workflow
 class TimerWorkflow:
     @workflow.run
     async def run(self) -> str:
@@ -55,12 +66,14 @@ class TimerWorkflow:
         return "done"
 
 
+@registry.workflow
 class ChildWorkflow:
     @workflow.run
     async def run(self, value: str) -> str:
         return f"child:{value}"
 
 
+@registry.workflow
 class ParentWorkflow:
     @workflow.run
     async def run(self, value: str) -> str:
@@ -73,15 +86,11 @@ class ParentWorkflow:
         return f"parent:{result}"
 
 
+@registry.workflow
 class FailingWorkflow:
     @workflow.run
     async def run(self) -> str:
         raise ValueError("boom")
-
-
-@activity.defn(name="greet")
-async def greet_activity(name: str) -> str:
-    return f"hello {name}"
 
 
 # --- Fixtures -------------------------------------------------------------
@@ -89,14 +98,6 @@ async def greet_activity(name: str) -> str:
 
 @pytest.fixture
 def env() -> TestWorkflowEnvironment:
-    registry = Registry()
-    registry.workflow(EchoWorkflow)
-    registry.workflow(ActivityWorkflow)
-    registry.workflow(SignalWorkflow)
-    registry.workflow(TimerWorkflow)
-    registry.workflow(ChildWorkflow)
-    registry.workflow(ParentWorkflow)
-    registry.workflow(FailingWorkflow)
     environment = TestWorkflowEnvironment(registry)
     yield environment
     environment.close()
@@ -107,7 +108,6 @@ def env() -> TestWorkflowEnvironment:
 
 @pytest.mark.asyncio
 async def test_client_is_client_interface(env: TestWorkflowEnvironment):
-    assert isinstance(env.client, MockClient)
     from cadence.client import Client
 
     assert isinstance(env.client, Client)
@@ -115,9 +115,7 @@ async def test_client_is_client_interface(env: TestWorkflowEnvironment):
 
 @pytest.mark.asyncio
 async def test_start_simple_workflow(env: TestWorkflowEnvironment):
-    execution = await env.client.start_workflow(
-        "EchoWorkflow", "world", task_list="tl"
-    )
+    execution = await env.client.start_workflow("EchoWorkflow", "world", task_list="tl")
     assert execution.workflow_id
     assert execution.run_id
     assert env.is_workflow_completed(execution.workflow_id)
@@ -126,7 +124,6 @@ async def test_start_simple_workflow(env: TestWorkflowEnvironment):
 
 @pytest.mark.asyncio
 async def test_real_activity_execution(env: TestWorkflowEnvironment):
-    env.register_activity(greet_activity)
     await env.client.start_workflow("ActivityWorkflow", "bob", task_list="tl")
     assert env.get_workflow_result(str) == "workflow:hello bob"
 
@@ -146,10 +143,14 @@ async def test_mock_activity_with_function(env: TestWorkflowEnvironment):
 
 
 @pytest.mark.asyncio
-async def test_unmocked_activity_raises(env: TestWorkflowEnvironment):
-    await env.client.start_workflow("ActivityWorkflow", "bob", task_list="tl")
-    error = env.get_workflow_error()
-    assert isinstance(error, KeyError)
+async def test_unmocked_activity_raises():
+    # A registry without the "greet" activity registered.
+    bare_registry = Registry()
+    bare_registry.workflow(ActivityWorkflow)
+    with TestWorkflowEnvironment(bare_registry) as env:
+        await env.client.start_workflow("ActivityWorkflow", "bob", task_list="tl")
+        error = env.get_workflow_error()
+        assert isinstance(error, KeyError)
 
 
 @pytest.mark.asyncio
@@ -164,9 +165,7 @@ async def test_signal_and_query(env: TestWorkflowEnvironment):
         == "pending"
     )
 
-    await env.client.signal_workflow(
-        execution.workflow_id, "", "approve", "yes"
-    )
+    await env.client.signal_workflow(execution.workflow_id, "", "approve", "yes")
     assert env.is_workflow_completed(execution.workflow_id)
     assert env.get_workflow_result(str, execution.workflow_id) == "approved:yes"
 
@@ -208,21 +207,7 @@ async def test_failing_workflow(env: TestWorkflowEnvironment):
 
 
 @pytest.mark.asyncio
-async def test_register_workflow_helper():
-
-    registry = Registry().workflow(EchoWorkflow)
-    registry.workflow(EchoWorkflow)
-    env = TestWorkflowEnvironment(registry)
-    try:
-        await env.client.start_workflow("EchoWorkflow", "hi", task_list="tl")
-        assert env.get_workflow_result(str) == "echo: hi"
-    finally:
-        env.close()
-
-
-@pytest.mark.asyncio
 async def test_context_manager_closes():
-    with TestWorkflowEnvironment() as env:
-        env.register_workflow(EchoWorkflow)
+    with TestWorkflowEnvironment(registry) as env:
         await env.client.start_workflow("EchoWorkflow", "ctx", task_list="tl")
         assert env.get_workflow_result(str) == "echo: ctx"

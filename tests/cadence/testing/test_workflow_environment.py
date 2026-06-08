@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from datetime import timedelta
 
 import pytest
@@ -106,9 +107,7 @@ class ExternalSignalerWorkflow:
 class ChildSignalerWorkflow:
     @workflow.run
     async def run(self, target_id: str, value: str) -> str:
-        await WorkflowContext.get().signal_child_workflow(
-            target_id, "approve", value
-        )
+        await WorkflowContext.get().signal_child_workflow(target_id, "approve", value)
         return "signaled"
 
 
@@ -116,7 +115,7 @@ class ChildSignalerWorkflow:
 
 
 @pytest.fixture
-def env() -> TestWorkflowEnvironment:
+def env() -> Iterator[TestWorkflowEnvironment]:
     environment = TestWorkflowEnvironment(registry)
     yield environment
     environment.close()

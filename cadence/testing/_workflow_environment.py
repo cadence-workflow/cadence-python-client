@@ -296,7 +296,7 @@ class MockClient(Client):
         )
 
     async def cancel_workflow(self, workflow_id: str, run_id: str) -> None:
-        raise NotImplementedError("cancel_workflow is not implemented")
+        raise Not
 
     async def signal_with_start_workflow(
         self,

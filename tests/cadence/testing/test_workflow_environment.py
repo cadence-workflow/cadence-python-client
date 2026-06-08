@@ -209,9 +209,11 @@ async def test_failing_workflow(env: TestWorkflowEnvironment):
 
 @pytest.mark.asyncio
 async def test_register_workflow_helper():
-    env = TestWorkflowEnvironment()
+
+    registry = Registry().workflow(EchoWorkflow)
+    registry.workflow(EchoWorkflow)
+    env = TestWorkflowEnvironment(registry)
     try:
-        env.register_workflow(EchoWorkflow)
         await env.client.start_workflow("EchoWorkflow", "hi", task_list="tl")
         assert env.get_workflow_result(str) == "echo: hi"
     finally:

@@ -9,13 +9,14 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import grpc
 import pytest
 from google.protobuf import text_format
 from google.protobuf.duration_pb2 import Duration as PbDuration
 
 from cadence.api.v1 import common_pb2, schedule_pb2, tasklist_pb2
 from cadence.api.v1.service_schedule_pb2 import DescribeScheduleResponse
-from cadence.error import QueryFailedError
+from cadence.error import CadenceRpcError, QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
 
 
@@ -188,8 +189,10 @@ async def test_backfill(helper: CadenceHelper):
             # CONCURRENT overlap lets both slots in the 2-minute window fire
             # even though the started workflows have no worker to complete them.
             # Asserting >= 2 rules out a false-positive from a single ordinary
-            # cron tick that could fire during the ~30s poll window.
-            deadline = time.monotonic() + 30.0
+            # cron tick that could fire during the poll window.
+            # DescribeSchedule can also briefly time out while the server is
+            # processing the backfill, so keep polling through that transient.
+            deadline = time.monotonic() + 60.0
             resp = None
             while time.monotonic() < deadline:
                 try:
@@ -198,9 +201,12 @@ async def test_backfill(helper: CadenceHelper):
                         break
                 except QueryFailedError:
                     pass
+                except CadenceRpcError as exc:
+                    if exc.code != grpc.StatusCode.DEADLINE_EXCEEDED:
+                        raise
                 await asyncio.sleep(0.5)
 
-            assert resp is not None, "describe_schedule never succeeded within 30s"
+            assert resp is not None, "describe_schedule never succeeded within 60s"
             assert resp.info.total_runs >= 2, (
                 f"expected at least 2 backfilled runs, got total_runs={resp.info.total_runs}"
             )

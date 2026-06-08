@@ -2,7 +2,11 @@ import pytest
 from contextlib import contextmanager
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock
 
-from cadence.api.v1.history_pb2 import History
+from cadence.api.v1.history_pb2 import (
+    History,
+    HistoryEvent,
+    WorkflowExecutionStartedEventAttributes,
+)
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.client import Client
 from cadence.worker._decision_task_handler import DecisionTaskHandler
@@ -55,7 +59,13 @@ class TestTaskHandlerIntegration:
         # Add the missing attributes that are now accessed directly
         task.started_event_id = 1
         task.attempt = 1
-        task.history = History()
+        task.history = History(
+            events=[
+                HistoryEvent(
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes()
+                )
+            ]
+        )
         task.next_page_token = b""
         task.HasField = Mock(return_value=False)
         return task
@@ -207,7 +217,13 @@ class TestTaskHandlerIntegration:
         task1.workflow_type.name = "TestWorkflow"
         task1.started_event_id = 1
         task1.attempt = 1
-        task1.history = History()
+        task1.history = History(
+            events=[
+                HistoryEvent(
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes()
+                )
+            ]
+        )
         task1.next_page_token = b""
         task1.HasField = Mock(return_value=False)
 
@@ -220,7 +236,13 @@ class TestTaskHandlerIntegration:
         task2.workflow_type.name = "TestWorkflow"
         task2.started_event_id = 2
         task2.attempt = 1
-        task2.history = History()
+        task2.history = History(
+            events=[
+                HistoryEvent(
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes()
+                )
+            ]
+        )
         task2.next_page_token = b""
         task2.HasField = Mock(return_value=False)
 
@@ -362,7 +384,13 @@ class TestTaskHandlerIntegration:
             task.workflow_type.name = "TestWorkflow"
             task.started_event_id = i + 1
             task.attempt = 1
-            task.history = History()
+            task.history = History(
+                events=[
+                    HistoryEvent(
+                        workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes()
+                    )
+                ]
+            )
             task.next_page_token = b""
             task.HasField = Mock(return_value=False)
             tasks.append(task)

@@ -1,8 +1,12 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, PropertyMock
 
-from cadence.api.v1.common_pb2 import Payload
-from cadence.api.v1.history_pb2 import History
+from cadence.api.v1.common_pb2 import Memo, Payload
+from cadence.api.v1.history_pb2 import (
+    History,
+    HistoryEvent,
+    WorkflowExecutionStartedEventAttributes,
+)
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
     RespondDecisionTaskCompletedRequest,
@@ -10,6 +14,7 @@ from cadence.api.v1.service_worker_pb2 import (
 from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.api.v1.decision_pb2 import Decision
 from cadence.client import Client
+from cadence.data_converter import DefaultDataConverter
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
 from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
@@ -28,6 +33,7 @@ class TestDecisionTaskHandler:
         client.worker_stub.RespondDecisionTaskCompleted = AsyncMock()
         client.worker_stub.RespondDecisionTaskFailed = AsyncMock()
         client.worker_stub.RespondQueryTaskCompleted = AsyncMock()
+        client.data_converter = DefaultDataConverter()
         type(client).domain = PropertyMock(return_value="test_domain")
         return client
 
@@ -57,12 +63,19 @@ class TestDecisionTaskHandler:
         task.workflow_execution.run_id = "test_run_id"
         task.workflow_type = Mock()
         task.workflow_type.name = "TestWorkflow"
-        # Add the missing attributes that are now accessed directly
         task.started_event_id = 1
         task.attempt = 1
-        task.history = History()
         task.next_page_token = b""
         task.HasField = Mock(return_value=False)
+
+        memo = Memo()
+        memo.fields["env"].CopyFrom(Payload(data=b'"prod"'))
+        started = HistoryEvent(
+            workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                memo=memo
+            )
+        )
+        task.history = History(events=[started])
         return task
 
     def test_initialization(self, mock_client, mock_registry):
@@ -227,7 +240,13 @@ class TestDecisionTaskHandler:
         task1.workflow_type.name = "TestWorkflow"
         task1.started_event_id = 1
         task1.attempt = 1
-        task1.history = History()
+        task1.history = History(
+            events=[
+                HistoryEvent(
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes()
+                )
+            ]
+        )
         task1.next_page_token = b""
         task1.HasField = Mock(return_value=False)
 
@@ -240,7 +259,13 @@ class TestDecisionTaskHandler:
         task2.workflow_type.name = "TestWorkflow"
         task2.started_event_id = 2
         task2.attempt = 1
-        task2.history = History()
+        task2.history = History(
+            events=[
+                HistoryEvent(
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes()
+                )
+            ]
+        )
         task2.next_page_token = b""
         task2.HasField = Mock(return_value=False)
 
@@ -453,6 +478,7 @@ class TestDecisionTaskHandler:
                         "workflow_run_id": "test_run_id",
                         "workflow_task_list": "test_task_list",
                         "data_converter": handler._client.data_converter,
+                        "memo": {"env": "prod"},
                     }
 
                 # Verify WorkflowEngine was created with correct parameters

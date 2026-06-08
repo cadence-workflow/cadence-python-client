@@ -218,7 +218,7 @@ class Client:
         return self._schedule_stub
 
     @property
-    def metrics_emitter(self) -> MetricsEmitter:
+    def _metrics_emitter(self) -> MetricsEmitter:
         return self._options["metrics_emitter"]
 
     async def ready(self) -> None:
@@ -362,7 +362,7 @@ class Client:
             )
 
             # Emit metrics if available
-            if self.metrics_emitter:
+            if self._metrics_emitter:
                 # TODO: Add workflow start metrics similar to Go client
                 pass
 

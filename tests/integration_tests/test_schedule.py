@@ -200,6 +200,9 @@ async def test_backfill(helper: CadenceHelper):
                     if resp.info.total_runs >= 2:
                         break
                 except QueryFailedError:
+                    # The schedule can exist before the server has finished
+                    # materializing state for DescribeSchedule immediately after
+                    # a backfill request.
                     pass
                 except CadenceRpcError as exc:
                     if exc.code != grpc.StatusCode.DEADLINE_EXCEEDED:

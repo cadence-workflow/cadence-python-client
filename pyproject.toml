@@ -134,6 +134,7 @@ omit = [
     "*/test_*",
     "*/__pycache__/*",
     "*/venv/*",
+    "cadence/sample/*",
 ]
 
 [tool.coverage.report]

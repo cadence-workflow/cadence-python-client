@@ -75,12 +75,10 @@ async def main(target: str, domain: str) -> None:
             )
             print("Unpaused schedule")
 
-            # Update: change the cron expression using read-modify-write
+            # Update: change only the cron field; other spec fields are preserved
             await client.update_schedule(
                 schedule_id,
-                lambda d: d.spec.CopyFrom(
-                    schedule_pb2.ScheduleSpec(cron_expression="0 18 * * *")
-                ),
+                lambda d: setattr(d.spec, "cron_expression", "0 18 * * *"),
             )
             print("Updated cron to 18:00 UTC")
 

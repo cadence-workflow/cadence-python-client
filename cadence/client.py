@@ -3,6 +3,7 @@ import socket
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
+from collections.abc import Callable
 from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
@@ -673,25 +674,24 @@ class Client:
     async def update_schedule(
         self,
         schedule_id: str,
-        *,
-        spec: schedule_pb2.ScheduleSpec | None = None,
-        action: schedule_pb2.ScheduleAction | None = None,
-        policies: schedule_pb2.SchedulePolicies | None = None,
-        search_attributes: SearchAttributes | None = None,
+        updater: Callable[[DescribeScheduleResponse], None],
     ) -> None:
-        """Update the schedule configuration. Only supplied fields are applied."""
+        """Update a schedule using a read-modify-write pattern.
+
+        Fetches the current schedule state, passes it to ``updater`` for
+        modification, then sends the full updated state to the server.
+        """
+        current = await self.describe_schedule(schedule_id)
+        updater(current)
         req = UpdateScheduleRequest(
             domain=self.domain,
             schedule_id=schedule_id,
         )
-        if spec is not None:
-            req.spec.CopyFrom(spec)
-        if action is not None:
-            req.action.CopyFrom(action)
-        if policies is not None:
-            req.policies.CopyFrom(policies)
-        if search_attributes is not None:
-            req.search_attributes.CopyFrom(search_attributes)
+        req.spec.CopyFrom(current.spec)
+        req.action.CopyFrom(current.action)
+        req.policies.CopyFrom(current.policies)
+        if current.HasField("search_attributes"):
+            req.search_attributes.CopyFrom(current.search_attributes)
         await self._schedule_stub.UpdateSchedule(req)
 
     async def backfill_schedule(

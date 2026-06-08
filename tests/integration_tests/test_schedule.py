@@ -4,6 +4,8 @@ Requires a running Cadence server. Run with:
     uv run pytest tests/integration_tests/test_schedule.py --integration-tests -v
 """
 
+import asyncio
+import time
 import uuid
 
 import pytest
@@ -87,12 +89,29 @@ async def test_pause_and_unpause(helper: CadenceHelper):
             )
 
             await client.pause_schedule(schedule_id, reason="integration-test")
-            paused_resp = await client.describe_schedule(schedule_id)
-            assert paused_resp.state.paused
+            # Signals are processed asynchronously; poll until the state propagates.
+            deadline = time.monotonic() + 10.0
+            paused_resp = None
+            while time.monotonic() < deadline:
+                paused_resp = await client.describe_schedule(schedule_id)
+                if paused_resp.state.paused:
+                    break
+                await asyncio.sleep(0.5)
+            assert paused_resp is not None and paused_resp.state.paused, (
+                f"schedule was not paused within timeout; last state: {paused_resp}"
+            )
 
             await client.unpause_schedule(schedule_id, reason="done")
-            resumed_resp = await client.describe_schedule(schedule_id)
-            assert not resumed_resp.state.paused
+            deadline = time.monotonic() + 10.0
+            resumed_resp = None
+            while time.monotonic() < deadline:
+                resumed_resp = await client.describe_schedule(schedule_id)
+                if not resumed_resp.state.paused:
+                    break
+                await asyncio.sleep(0.5)
+            assert resumed_resp is not None and not resumed_resp.state.paused, (
+                f"schedule was not unpaused within timeout; last state: {resumed_resp}"
+            )
         finally:
             await client.delete_schedule(schedule_id)
 
@@ -117,10 +136,18 @@ async def test_update_spec(helper: CadenceHelper):
             updated_spec = schedule_pb2.ScheduleSpec(cron_expression="0 18 * * *")
             await client.update_schedule(
                 schedule_id,
-                spec=updated_spec,
+                lambda d: d.spec.CopyFrom(updated_spec),
             )
 
-            resp = await client.describe_schedule(schedule_id)
+            # Signals are processed asynchronously; poll until the spec change propagates.
+            deadline = time.monotonic() + 10.0
+            resp = None
+            while time.monotonic() < deadline:
+                resp = await client.describe_schedule(schedule_id)
+                if resp.spec.cron_expression == updated_spec.cron_expression:
+                    break
+                await asyncio.sleep(0.5)
+            assert resp is not None, "describe_schedule never succeeded"
             _assert_describe_spec_and_action(resp, updated_spec, expected_action)
         finally:
             await client.delete_schedule(schedule_id)
@@ -142,7 +169,15 @@ async def test_list_schedules_contains_created(helper: CadenceHelper):
                 action=_make_schedule_action(),
             )
 
-            ids = [e.schedule_id async for e in client.list_schedules()]
-            assert schedule_id in ids
+            # Visibility is eventually consistent; poll until the entry appears.
+            deadline = time.monotonic() + 30.0
+            found = False
+            while time.monotonic() < deadline:
+                ids = [e.schedule_id async for e in client.list_schedules()]
+                if schedule_id in ids:
+                    found = True
+                    break
+                await asyncio.sleep(1.0)
+            assert found, f"schedule {schedule_id!r} not found in list within 30s"
         finally:
             await client.delete_schedule(schedule_id)

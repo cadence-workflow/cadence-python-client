@@ -5,6 +5,7 @@ import pytest
 from cadence import workflow
 from cadence.testing import TestWorkflowEnvironment
 from cadence.worker import Registry
+from cadence.workflow import WorkflowContext
 
 
 # --- Sample workflows and activities -------------------------------------
@@ -93,6 +94,24 @@ class FailingWorkflow:
         raise ValueError("boom")
 
 
+@registry.workflow
+class ExternalSignalerWorkflow:
+    @workflow.run
+    async def run(self, target_id: str, value: str) -> str:
+        await workflow.signal_external_workflow(target_id, "approve", value)
+        return "signaled"
+
+
+@registry.workflow
+class ChildSignalerWorkflow:
+    @workflow.run
+    async def run(self, target_id: str, value: str) -> str:
+        await WorkflowContext.get().signal_child_workflow(
+            target_id, "approve", value
+        )
+        return "signaled"
+
+
 # --- Fixtures -------------------------------------------------------------
 
 
@@ -168,6 +187,48 @@ async def test_signal_and_query(env: TestWorkflowEnvironment):
     await env.client.signal_workflow(execution.workflow_id, "", "approve", "yes")
     assert env.is_workflow_completed(execution.workflow_id)
     assert env.get_workflow_result(str, execution.workflow_id) == "approved:yes"
+
+
+@pytest.mark.asyncio
+async def test_signal_external_workflow(env: TestWorkflowEnvironment):
+    await env.client.start_workflow(
+        "SignalWorkflow", task_list="tl", workflow_id="target-1"
+    )
+    assert not env.is_workflow_completed("target-1")
+
+    await env.client.start_workflow(
+        "ExternalSignalerWorkflow", "target-1", "ext", task_list="tl"
+    )
+
+    assert env.is_workflow_completed("target-1")
+    assert env.get_workflow_result(str, "target-1") == "approved:ext"
+
+
+@pytest.mark.asyncio
+async def test_signal_child_workflow_routes_by_id(env: TestWorkflowEnvironment):
+    await env.client.start_workflow(
+        "SignalWorkflow", task_list="tl", workflow_id="target-2"
+    )
+    assert not env.is_workflow_completed("target-2")
+
+    await env.client.start_workflow(
+        "ChildSignalerWorkflow", "target-2", "kid", task_list="tl"
+    )
+
+    assert env.is_workflow_completed("target-2")
+    assert env.get_workflow_result(str, "target-2") == "approved:kid"
+
+
+@pytest.mark.asyncio
+async def test_signal_external_unknown_workflow_is_dropped(
+    env: TestWorkflowEnvironment,
+):
+    # Signaling a non-existent workflow id should not raise.
+    execution = await env.client.start_workflow(
+        "ExternalSignalerWorkflow", "does-not-exist", "x", task_list="tl"
+    )
+    assert env.is_workflow_completed(execution.workflow_id)
+    assert env.get_workflow_result(str, execution.workflow_id) == "signaled"
 
 
 @pytest.mark.asyncio

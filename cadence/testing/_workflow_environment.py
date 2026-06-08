@@ -178,6 +178,39 @@ class _InMemoryWorkflowContext(WorkflowContext):
         loop = cast(DeterministicEventLoop, get_running_loop())
         await loop.create_waiter(predicate)
 
+    async def signal_child_workflow(
+        self,
+        child_workflow_id: str,
+        signal_name: str,
+        *args: Any,
+    ) -> None:
+        """Signal a child workflow by its workflow id.
+
+        Routing is identical to :meth:`signal_external_workflow`: the signal is
+        buffered and delivered to the matching execution after the current
+        decision finishes. Note that child workflows started via
+        ``start_child_workflow`` run inline to completion, so they can only be
+        signaled while still running.
+        """
+        self._env._enqueue_signal(child_workflow_id, signal_name, args)
+
+    async def signal_external_workflow(
+        self,
+        workflow_id: str,
+        signal_name: str,
+        *args: Any,
+        run_id: str = "",
+        domain: str = "",
+    ) -> None:
+        """Signal another workflow running in this environment.
+
+        The signal is buffered and delivered to the target execution after the
+        current decision finishes (mirroring Cadence's asynchronous external
+        signal delivery). Signals to unknown or already-completed executions are
+        dropped, matching the behavior of signaling a closed workflow.
+        """
+        self._env._enqueue_signal(workflow_id, signal_name, args)
+
 
 class _Execution:
     """Holds the in-memory state machine for a single workflow execution."""
@@ -354,6 +387,9 @@ class TestWorkflowEnvironment:
         self._activity_mocks: dict[str, Union[_ValueMock, _FnMock]] = {}
         self._executions: dict[str, _Execution] = {}
         self._last_execution: Optional[_Execution] = None
+        # Signals emitted via signal_external_workflow/signal_child_workflow,
+        # delivered after the current decision completes.
+        self._pending_signals: list[Tuple[str, str, Payload]] = []
         self._now = start_time or datetime.now(timezone.utc)
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="cadence-test-env"
@@ -500,6 +536,7 @@ class TestWorkflowEnvironment:
             signal = (signal_name, self._data_converter.to_data(list(signal_args)))
 
         await self._drive(execution.run_start, payload, signal)
+        await self._flush_pending_signals()
         return WorkflowExecution(workflow_id=workflow_id, run_id=run_id)
 
     async def _signal_workflow(
@@ -508,6 +545,23 @@ class TestWorkflowEnvironment:
         execution = self._get_execution(workflow_id)
         payload = self._data_converter.to_data(list(signal_args))
         await self._drive(execution.run_signal, signal_name, payload)
+        await self._flush_pending_signals()
+
+    def _enqueue_signal(
+        self, workflow_id: str, signal_name: str, args: Tuple[Any, ...]
+    ) -> None:
+        payload = self._data_converter.to_data(list(args))
+        self._pending_signals.append((workflow_id, signal_name, payload))
+
+    async def _flush_pending_signals(self) -> None:
+        # Each delivery may enqueue further signals (a workflow signaling
+        # another), so drain until the queue is empty.
+        while self._pending_signals:
+            workflow_id, signal_name, payload = self._pending_signals.pop(0)
+            execution = self._executions.get(workflow_id)
+            if execution is None or execution.completed:
+                continue
+            await self._drive(execution.run_signal, signal_name, payload)
 
     async def _query_workflow(
         self,

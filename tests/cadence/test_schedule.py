@@ -8,6 +8,7 @@ import grpc.aio
 import pytest
 
 from cadence.api.v1 import schedule_pb2
+from cadence.api.v1.common_pb2 import WorkflowType
 from cadence.api.v1.service_schedule_pb2 import (
     BackfillScheduleRequest,
     BackfillScheduleResponse,
@@ -45,6 +46,9 @@ class _FakeScheduleServicer(ScheduleAPIServicer):
         self.last_backfill: BackfillScheduleRequest | None = None
         self.list_pages: list[ListSchedulesResponse] = []
         self._list_call_count = 0
+        self.describe_response: DescribeScheduleResponse = DescribeScheduleResponse(
+            spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
+        )
 
     async def CreateSchedule(self, request, context):
         self.last_create = request
@@ -52,9 +56,7 @@ class _FakeScheduleServicer(ScheduleAPIServicer):
 
     async def DescribeSchedule(self, request, context):
         self.last_describe = request
-        return DescribeScheduleResponse(
-            spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
-        )
+        return self.describe_response
 
     async def PauseSchedule(self, request, context):
         self.last_pause = request
@@ -218,14 +220,42 @@ class TestDeleteSchedule:
 class TestUpdateSchedule:
     @pytest.mark.asyncio
     async def test_update_spec(self, client, servicer):
+        """update_schedule describes first then sends the full modified state."""
         new_spec = schedule_pb2.ScheduleSpec(cron_expression="0 12 * * *")
-        await client.update_schedule("sched-upd", spec=new_spec)
+        await client.update_schedule("sched-upd", lambda d: d.spec.CopyFrom(new_spec))
         assert servicer.last_update.spec.cron_expression == "0 12 * * *"
 
     @pytest.mark.asyncio
-    async def test_update_no_fields_sends_empty(self, client, servicer):
-        await client.update_schedule("sched-upd")
-        assert not servicer.last_update.HasField("spec")
+    async def test_update_preserves_unmodified_fields(self, client, servicer):
+        """Fields not touched by the updater callback are read from describe and preserved."""
+        original_action = schedule_pb2.ScheduleAction(
+            start_workflow=schedule_pb2.ScheduleAction.StartWorkflowAction(
+                workflow_type=WorkflowType(name="my-workflow"),
+            )
+        )
+        servicer.describe_response = DescribeScheduleResponse(
+            spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
+            action=original_action,
+            policies=schedule_pb2.SchedulePolicies(
+                overlap_policy=schedule_pb2.SCHEDULE_OVERLAP_POLICY_SKIP_NEW,
+            ),
+        )
+        new_spec = schedule_pb2.ScheduleSpec(cron_expression="0 18 * * *")
+        await client.update_schedule("sched-upd", lambda d: d.spec.CopyFrom(new_spec))
+        assert servicer.last_update.spec.cron_expression == "0 18 * * *"
+        assert servicer.last_update.action == original_action
+        assert (
+            servicer.last_update.policies.overlap_policy
+            == schedule_pb2.SCHEDULE_OVERLAP_POLICY_SKIP_NEW
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_sends_full_state(self, client, servicer):
+        """UpdateScheduleRequest always contains spec, action, and policies from describe."""
+        await client.update_schedule("sched-upd", lambda d: None)
+        assert servicer.last_update.HasField("spec")
+        assert servicer.last_update.domain == "test-domain"
+        assert servicer.last_update.schedule_id == "sched-upd"
 
 
 # ---------------------------------------------------------------------------

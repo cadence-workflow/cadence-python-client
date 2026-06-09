@@ -32,12 +32,14 @@ TASK_LIST_TYPE_DECISION: TaskListType
 TASK_LIST_TYPE_ACTIVITY: TaskListType
 
 class TaskList(_message.Message):
-    __slots__ = ("name", "kind")
+    __slots__ = ("name", "kind", "base_name")
     NAME_FIELD_NUMBER: _ClassVar[int]
     KIND_FIELD_NUMBER: _ClassVar[int]
+    BASE_NAME_FIELD_NUMBER: _ClassVar[int]
     name: str
     kind: TaskListKind
-    def __init__(self, name: _Optional[str] = ..., kind: _Optional[_Union[TaskListKind, str]] = ...) -> None: ...
+    base_name: str
+    def __init__(self, name: _Optional[str] = ..., kind: _Optional[_Union[TaskListKind, str]] = ..., base_name: _Optional[str] = ...) -> None: ...
 
 class TaskListMetadata(_message.Message):
     __slots__ = ("max_tasks_per_second",)

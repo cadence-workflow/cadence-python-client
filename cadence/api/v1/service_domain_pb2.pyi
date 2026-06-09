@@ -116,16 +116,18 @@ class UpdateDomainResponse(_message.Message):
     def __init__(self, domain: _Optional[_Union[_domain_pb2.Domain, _Mapping]] = ...) -> None: ...
 
 class FailoverDomainRequest(_message.Message):
-    __slots__ = ("domain_name", "domain_active_cluster_name", "active_clusters", "reason")
+    __slots__ = ("domain_name", "domain_active_cluster_name", "active_clusters", "reason", "failover_timeout")
     DOMAIN_NAME_FIELD_NUMBER: _ClassVar[int]
     DOMAIN_ACTIVE_CLUSTER_NAME_FIELD_NUMBER: _ClassVar[int]
     ACTIVE_CLUSTERS_FIELD_NUMBER: _ClassVar[int]
     REASON_FIELD_NUMBER: _ClassVar[int]
+    FAILOVER_TIMEOUT_FIELD_NUMBER: _ClassVar[int]
     domain_name: str
     domain_active_cluster_name: str
     active_clusters: _domain_pb2.ActiveClusters
     reason: str
-    def __init__(self, domain_name: _Optional[str] = ..., domain_active_cluster_name: _Optional[str] = ..., active_clusters: _Optional[_Union[_domain_pb2.ActiveClusters, _Mapping]] = ..., reason: _Optional[str] = ...) -> None: ...
+    failover_timeout: _duration_pb2.Duration
+    def __init__(self, domain_name: _Optional[str] = ..., domain_active_cluster_name: _Optional[str] = ..., active_clusters: _Optional[_Union[_domain_pb2.ActiveClusters, _Mapping]] = ..., reason: _Optional[str] = ..., failover_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
 
 class FailoverDomainResponse(_message.Message):
     __slots__ = ("domain",)

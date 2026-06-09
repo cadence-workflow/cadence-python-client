@@ -22,12 +22,6 @@ class IsolationGroupState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     ISOLATION_GROUP_STATE_HEALTHY: _ClassVar[IsolationGroupState]
     ISOLATION_GROUP_STATE_DRAINED: _ClassVar[IsolationGroupState]
 
-class ActiveClusterSelectionStrategy(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
-    __slots__ = ()
-    ACTIVE_CLUSTER_SELECTION_STRATEGY_INVALID: _ClassVar[ActiveClusterSelectionStrategy]
-    ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY: _ClassVar[ActiveClusterSelectionStrategy]
-    ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY: _ClassVar[ActiveClusterSelectionStrategy]
-
 class FailoverType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     FAILOVER_TYPE_INVALID: _ClassVar[FailoverType]
@@ -40,9 +34,6 @@ ENCODING_TYPE_PROTO3: EncodingType
 ISOLATION_GROUP_STATE_INVALID: IsolationGroupState
 ISOLATION_GROUP_STATE_HEALTHY: IsolationGroupState
 ISOLATION_GROUP_STATE_DRAINED: IsolationGroupState
-ACTIVE_CLUSTER_SELECTION_STRATEGY_INVALID: ActiveClusterSelectionStrategy
-ACTIVE_CLUSTER_SELECTION_STRATEGY_REGION_STICKY: ActiveClusterSelectionStrategy
-ACTIVE_CLUSTER_SELECTION_STRATEGY_EXTERNAL_ENTITY: ActiveClusterSelectionStrategy
 FAILOVER_TYPE_INVALID: FailoverType
 FAILOVER_TYPE_FORCE: FailoverType
 FAILOVER_TYPE_GRACEFUL: FailoverType
@@ -187,16 +178,10 @@ class AsyncWorkflowConfiguration(_message.Message):
     def __init__(self, enabled: bool = ..., predefined_queue_name: _Optional[str] = ..., queue_type: _Optional[str] = ..., queue_config: _Optional[_Union[DataBlob, _Mapping]] = ...) -> None: ...
 
 class ActiveClusterSelectionPolicy(_message.Message):
-    __slots__ = ("strategy", "active_cluster_sticky_region_config", "active_cluster_external_entity_config", "cluster_attribute")
-    STRATEGY_FIELD_NUMBER: _ClassVar[int]
-    ACTIVE_CLUSTER_STICKY_REGION_CONFIG_FIELD_NUMBER: _ClassVar[int]
-    ACTIVE_CLUSTER_EXTERNAL_ENTITY_CONFIG_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("cluster_attribute",)
     CLUSTER_ATTRIBUTE_FIELD_NUMBER: _ClassVar[int]
-    strategy: ActiveClusterSelectionStrategy
-    active_cluster_sticky_region_config: ActiveClusterStickyRegionConfig
-    active_cluster_external_entity_config: ActiveClusterExternalEntityConfig
     cluster_attribute: ClusterAttribute
-    def __init__(self, strategy: _Optional[_Union[ActiveClusterSelectionStrategy, str]] = ..., active_cluster_sticky_region_config: _Optional[_Union[ActiveClusterStickyRegionConfig, _Mapping]] = ..., active_cluster_external_entity_config: _Optional[_Union[ActiveClusterExternalEntityConfig, _Mapping]] = ..., cluster_attribute: _Optional[_Union[ClusterAttribute, _Mapping]] = ...) -> None: ...
+    def __init__(self, cluster_attribute: _Optional[_Union[ClusterAttribute, _Mapping]] = ...) -> None: ...
 
 class ClusterAttribute(_message.Message):
     __slots__ = ("scope", "name")
@@ -205,20 +190,6 @@ class ClusterAttribute(_message.Message):
     scope: str
     name: str
     def __init__(self, scope: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
-
-class ActiveClusterStickyRegionConfig(_message.Message):
-    __slots__ = ("sticky_region",)
-    STICKY_REGION_FIELD_NUMBER: _ClassVar[int]
-    sticky_region: str
-    def __init__(self, sticky_region: _Optional[str] = ...) -> None: ...
-
-class ActiveClusterExternalEntityConfig(_message.Message):
-    __slots__ = ("external_entity_type", "external_entity_key")
-    EXTERNAL_ENTITY_TYPE_FIELD_NUMBER: _ClassVar[int]
-    EXTERNAL_ENTITY_KEY_FIELD_NUMBER: _ClassVar[int]
-    external_entity_type: str
-    external_entity_key: str
-    def __init__(self, external_entity_type: _Optional[str] = ..., external_entity_key: _Optional[str] = ...) -> None: ...
 
 class PaginationOptions(_message.Message):
     __slots__ = ("page_size", "next_page_token")

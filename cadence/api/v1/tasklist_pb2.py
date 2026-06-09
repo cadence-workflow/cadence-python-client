@@ -27,7 +27,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 from google.protobuf import wrappers_pb2 as google_dot_protobuf_dot_wrappers__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1d\x63\x61\x64\x65nce/api/v1/tasklist.proto\x12\x13uber.cadence.api.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"I\n\x08TaskList\x12\x0c\n\x04name\x18\x01 \x01(\t\x12/\n\x04kind\x18\x02 \x01(\x0e\x32!.uber.cadence.api.v1.TaskListKind\"N\n\x10TaskListMetadata\x12:\n\x14max_tasks_per_second\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.DoubleValue\"A\n\x19TaskListPartitionMetadata\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x17\n\x0fowner_host_name\x18\x02 \x01(\t\"K\n\x15IsolationGroupMetrics\x12\x1c\n\x14new_tasks_per_second\x18\x01 \x01(\x01\x12\x14\n\x0cpoller_count\x18\x02 \x01(\x03\"\x9d\x03\n\x0eTaskListStatus\x12\x1a\n\x12\x62\x61\x63klog_count_hint\x18\x01 \x01(\x03\x12\x12\n\nread_level\x18\x02 \x01(\x03\x12\x11\n\tack_level\x18\x03 \x01(\x03\x12\x17\n\x0frate_per_second\x18\x04 \x01(\x01\x12\x37\n\rtask_id_block\x18\x05 \x01(\x0b\x32 .uber.cadence.api.v1.TaskIDBlock\x12_\n\x17isolation_group_metrics\x18\x06 \x03(\x0b\x32>.uber.cadence.api.v1.TaskListStatus.IsolationGroupMetricsEntry\x12\x1c\n\x14new_tasks_per_second\x18\x07 \x01(\x01\x12\r\n\x05\x65mpty\x18\x08 \x01(\x08\x1ah\n\x1aIsolationGroupMetricsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x39\n\x05value\x18\x02 \x01(\x0b\x32*.uber.cadence.api.v1.IsolationGroupMetrics:\x02\x38\x01\"/\n\x0bTaskIDBlock\x12\x10\n\x08start_id\x18\x01 \x01(\x03\x12\x0e\n\x06\x65nd_id\x18\x02 \x01(\x03\"m\n\nPollerInfo\x12\x34\n\x10last_access_time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x10\n\x08identity\x18\x02 \x01(\t\x12\x17\n\x0frate_per_second\x18\x03 \x01(\x01\"\x92\x01\n\x19StickyExecutionAttributes\x12\x37\n\x10worker_task_list\x18\x01 \x01(\x0b\x32\x1d.uber.cadence.api.v1.TaskList\x12<\n\x19schedule_to_start_timeout\x18\x02 \x01(\x0b\x32\x19.google.protobuf.Duration\"-\n\x11TaskListPartition\x12\x18\n\x10isolation_groups\x18\x01 \x03(\t\"\xe4\x03\n\x17TaskListPartitionConfig\x12\x0f\n\x07version\x18\x01 \x01(\x03\x12\x1f\n\x13num_read_partitions\x18\x02 \x01(\x05\x42\x02\x18\x01\x12 \n\x14num_write_partitions\x18\x03 \x01(\x05\x42\x02\x18\x01\x12Y\n\x0fread_partitions\x18\x04 \x03(\x0b\x32@.uber.cadence.api.v1.TaskListPartitionConfig.ReadPartitionsEntry\x12[\n\x10write_partitions\x18\x05 \x03(\x0b\x32\x41.uber.cadence.api.v1.TaskListPartitionConfig.WritePartitionsEntry\x1a]\n\x13ReadPartitionsEntry\x12\x0b\n\x03key\x18\x01 \x01(\x05\x12\x35\n\x05value\x18\x02 \x01(\x0b\x32&.uber.cadence.api.v1.TaskListPartition:\x02\x38\x01\x1a^\n\x14WritePartitionsEntry\x12\x0b\n\x03key\x18\x01 \x01(\x05\x12\x35\n\x05value\x18\x02 \x01(\x0b\x32&.uber.cadence.api.v1.TaskListPartition:\x02\x38\x01*~\n\x0cTaskListKind\x12\x1a\n\x16TASK_LIST_KIND_INVALID\x10\x00\x12\x19\n\x15TASK_LIST_KIND_NORMAL\x10\x01\x12\x19\n\x15TASK_LIST_KIND_STICKY\x10\x02\x12\x1c\n\x18TASK_LIST_KIND_EPHEMERAL\x10\x03*d\n\x0cTaskListType\x12\x1a\n\x16TASK_LIST_TYPE_INVALID\x10\x00\x12\x1b\n\x17TASK_LIST_TYPE_DECISION\x10\x01\x12\x1b\n\x17TASK_LIST_TYPE_ACTIVITY\x10\x02\x42]\n\x17\x63om.uber.cadence.api.v1B\rTaskListProtoP\x01Z1github.com/uber/cadence-idl/go/proto/api/v1;apiv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1d\x63\x61\x64\x65nce/api/v1/tasklist.proto\x12\x13uber.cadence.api.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\\\n\x08TaskList\x12\x0c\n\x04name\x18\x01 \x01(\t\x12/\n\x04kind\x18\x02 \x01(\x0e\x32!.uber.cadence.api.v1.TaskListKind\x12\x11\n\tbase_name\x18\x03 \x01(\t\"N\n\x10TaskListMetadata\x12:\n\x14max_tasks_per_second\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.DoubleValue\"A\n\x19TaskListPartitionMetadata\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x17\n\x0fowner_host_name\x18\x02 \x01(\t\"K\n\x15IsolationGroupMetrics\x12\x1c\n\x14new_tasks_per_second\x18\x01 \x01(\x01\x12\x14\n\x0cpoller_count\x18\x02 \x01(\x03\"\x9d\x03\n\x0eTaskListStatus\x12\x1a\n\x12\x62\x61\x63klog_count_hint\x18\x01 \x01(\x03\x12\x12\n\nread_level\x18\x02 \x01(\x03\x12\x11\n\tack_level\x18\x03 \x01(\x03\x12\x17\n\x0frate_per_second\x18\x04 \x01(\x01\x12\x37\n\rtask_id_block\x18\x05 \x01(\x0b\x32 .uber.cadence.api.v1.TaskIDBlock\x12_\n\x17isolation_group_metrics\x18\x06 \x03(\x0b\x32>.uber.cadence.api.v1.TaskListStatus.IsolationGroupMetricsEntry\x12\x1c\n\x14new_tasks_per_second\x18\x07 \x01(\x01\x12\r\n\x05\x65mpty\x18\x08 \x01(\x08\x1ah\n\x1aIsolationGroupMetricsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x39\n\x05value\x18\x02 \x01(\x0b\x32*.uber.cadence.api.v1.IsolationGroupMetrics:\x02\x38\x01\"/\n\x0bTaskIDBlock\x12\x10\n\x08start_id\x18\x01 \x01(\x03\x12\x0e\n\x06\x65nd_id\x18\x02 \x01(\x03\"m\n\nPollerInfo\x12\x34\n\x10last_access_time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x10\n\x08identity\x18\x02 \x01(\t\x12\x17\n\x0frate_per_second\x18\x03 \x01(\x01\"\x92\x01\n\x19StickyExecutionAttributes\x12\x37\n\x10worker_task_list\x18\x01 \x01(\x0b\x32\x1d.uber.cadence.api.v1.TaskList\x12<\n\x19schedule_to_start_timeout\x18\x02 \x01(\x0b\x32\x19.google.protobuf.Duration\"-\n\x11TaskListPartition\x12\x18\n\x10isolation_groups\x18\x01 \x03(\t\"\xe4\x03\n\x17TaskListPartitionConfig\x12\x0f\n\x07version\x18\x01 \x01(\x03\x12\x1f\n\x13num_read_partitions\x18\x02 \x01(\x05\x42\x02\x18\x01\x12 \n\x14num_write_partitions\x18\x03 \x01(\x05\x42\x02\x18\x01\x12Y\n\x0fread_partitions\x18\x04 \x03(\x0b\x32@.uber.cadence.api.v1.TaskListPartitionConfig.ReadPartitionsEntry\x12[\n\x10write_partitions\x18\x05 \x03(\x0b\x32\x41.uber.cadence.api.v1.TaskListPartitionConfig.WritePartitionsEntry\x1a]\n\x13ReadPartitionsEntry\x12\x0b\n\x03key\x18\x01 \x01(\x05\x12\x35\n\x05value\x18\x02 \x01(\x0b\x32&.uber.cadence.api.v1.TaskListPartition:\x02\x38\x01\x1a^\n\x14WritePartitionsEntry\x12\x0b\n\x03key\x18\x01 \x01(\x05\x12\x35\n\x05value\x18\x02 \x01(\x0b\x32&.uber.cadence.api.v1.TaskListPartition:\x02\x38\x01*~\n\x0cTaskListKind\x12\x1a\n\x16TASK_LIST_KIND_INVALID\x10\x00\x12\x19\n\x15TASK_LIST_KIND_NORMAL\x10\x01\x12\x19\n\x15TASK_LIST_KIND_STICKY\x10\x02\x12\x1c\n\x18TASK_LIST_KIND_EPHEMERAL\x10\x03*d\n\x0cTaskListType\x12\x1a\n\x16TASK_LIST_TYPE_INVALID\x10\x00\x12\x1b\n\x17TASK_LIST_TYPE_DECISION\x10\x01\x12\x1b\n\x17TASK_LIST_TYPE_ACTIVITY\x10\x02\x42]\n\x17\x63om.uber.cadence.api.v1B\rTaskListProtoP\x01Z1github.com/uber/cadence-idl/go/proto/api/v1;apiv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -45,34 +45,34 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_TASKLISTPARTITIONCONFIG'].fields_by_name['num_read_partitions']._serialized_options = b'\030\001'
   _globals['_TASKLISTPARTITIONCONFIG'].fields_by_name['num_write_partitions']._loaded_options = None
   _globals['_TASKLISTPARTITIONCONFIG'].fields_by_name['num_write_partitions']._serialized_options = b'\030\001'
-  _globals['_TASKLISTKIND']._serialized_start=1709
-  _globals['_TASKLISTKIND']._serialized_end=1835
-  _globals['_TASKLISTTYPE']._serialized_start=1837
-  _globals['_TASKLISTTYPE']._serialized_end=1937
+  _globals['_TASKLISTKIND']._serialized_start=1728
+  _globals['_TASKLISTKIND']._serialized_end=1854
+  _globals['_TASKLISTTYPE']._serialized_start=1856
+  _globals['_TASKLISTTYPE']._serialized_end=1956
   _globals['_TASKLIST']._serialized_start=151
-  _globals['_TASKLIST']._serialized_end=224
-  _globals['_TASKLISTMETADATA']._serialized_start=226
-  _globals['_TASKLISTMETADATA']._serialized_end=304
-  _globals['_TASKLISTPARTITIONMETADATA']._serialized_start=306
-  _globals['_TASKLISTPARTITIONMETADATA']._serialized_end=371
-  _globals['_ISOLATIONGROUPMETRICS']._serialized_start=373
-  _globals['_ISOLATIONGROUPMETRICS']._serialized_end=448
-  _globals['_TASKLISTSTATUS']._serialized_start=451
-  _globals['_TASKLISTSTATUS']._serialized_end=864
-  _globals['_TASKLISTSTATUS_ISOLATIONGROUPMETRICSENTRY']._serialized_start=760
-  _globals['_TASKLISTSTATUS_ISOLATIONGROUPMETRICSENTRY']._serialized_end=864
-  _globals['_TASKIDBLOCK']._serialized_start=866
-  _globals['_TASKIDBLOCK']._serialized_end=913
-  _globals['_POLLERINFO']._serialized_start=915
-  _globals['_POLLERINFO']._serialized_end=1024
-  _globals['_STICKYEXECUTIONATTRIBUTES']._serialized_start=1027
-  _globals['_STICKYEXECUTIONATTRIBUTES']._serialized_end=1173
-  _globals['_TASKLISTPARTITION']._serialized_start=1175
-  _globals['_TASKLISTPARTITION']._serialized_end=1220
-  _globals['_TASKLISTPARTITIONCONFIG']._serialized_start=1223
-  _globals['_TASKLISTPARTITIONCONFIG']._serialized_end=1707
-  _globals['_TASKLISTPARTITIONCONFIG_READPARTITIONSENTRY']._serialized_start=1518
-  _globals['_TASKLISTPARTITIONCONFIG_READPARTITIONSENTRY']._serialized_end=1611
-  _globals['_TASKLISTPARTITIONCONFIG_WRITEPARTITIONSENTRY']._serialized_start=1613
-  _globals['_TASKLISTPARTITIONCONFIG_WRITEPARTITIONSENTRY']._serialized_end=1707
+  _globals['_TASKLIST']._serialized_end=243
+  _globals['_TASKLISTMETADATA']._serialized_start=245
+  _globals['_TASKLISTMETADATA']._serialized_end=323
+  _globals['_TASKLISTPARTITIONMETADATA']._serialized_start=325
+  _globals['_TASKLISTPARTITIONMETADATA']._serialized_end=390
+  _globals['_ISOLATIONGROUPMETRICS']._serialized_start=392
+  _globals['_ISOLATIONGROUPMETRICS']._serialized_end=467
+  _globals['_TASKLISTSTATUS']._serialized_start=470
+  _globals['_TASKLISTSTATUS']._serialized_end=883
+  _globals['_TASKLISTSTATUS_ISOLATIONGROUPMETRICSENTRY']._serialized_start=779
+  _globals['_TASKLISTSTATUS_ISOLATIONGROUPMETRICSENTRY']._serialized_end=883
+  _globals['_TASKIDBLOCK']._serialized_start=885
+  _globals['_TASKIDBLOCK']._serialized_end=932
+  _globals['_POLLERINFO']._serialized_start=934
+  _globals['_POLLERINFO']._serialized_end=1043
+  _globals['_STICKYEXECUTIONATTRIBUTES']._serialized_start=1046
+  _globals['_STICKYEXECUTIONATTRIBUTES']._serialized_end=1192
+  _globals['_TASKLISTPARTITION']._serialized_start=1194
+  _globals['_TASKLISTPARTITION']._serialized_end=1239
+  _globals['_TASKLISTPARTITIONCONFIG']._serialized_start=1242
+  _globals['_TASKLISTPARTITIONCONFIG']._serialized_end=1726
+  _globals['_TASKLISTPARTITIONCONFIG_READPARTITIONSENTRY']._serialized_start=1537
+  _globals['_TASKLISTPARTITIONCONFIG_READPARTITIONSENTRY']._serialized_end=1630
+  _globals['_TASKLISTPARTITIONCONFIG_WRITEPARTITIONSENTRY']._serialized_start=1632
+  _globals['_TASKLISTPARTITIONCONFIG_WRITEPARTITIONSENTRY']._serialized_end=1726
 # @@protoc_insertion_point(module_scope)

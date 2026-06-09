@@ -277,6 +277,7 @@ class DecisionManager:
                 decisions.append(d)
 
         if is_completing:
+            assert completion_decision is not None  # same predicate as is_completing
             decisions.append(completion_decision)
 
         self._forced_cancellations.clear()

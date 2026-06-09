@@ -96,6 +96,9 @@ class DecisionManager:
             OrderedDict()
         )
         self.aliases: Dict[DecisionAlias, DecisionStateMachine] = dict()
+        # Tracks IDs force-cancelled by workflow-level cancel. When the workflow also
+        # completes in the same task, we omit these redundant cancel commands.
+        self._forced_cancellations: set[DecisionId] = set()
 
     # ----- Activity API -----
 
@@ -256,22 +259,27 @@ class DecisionManager:
     # ----- Decision aggregation -----
 
     def collect_pending_decisions(self) -> List[decision.Decision]:
-        # Once a workflow closes, Cadence closes outstanding commands as part of
-        # workflow completion/cancellation. Do not send pending cancel decisions
-        # alongside the terminal close decision.
-        completion = self.state_machines.get(COMPLETION_ID)
-        if completion is not None:
-            completion_decision = completion.get_decision()
-            if completion_decision is not None:
-                return [completion_decision]
+        completion_machine = self.state_machines.get(COMPLETION_ID)
+        completion_decision = (
+            completion_machine.get_decision() if completion_machine else None
+        )
+        is_completing = completion_decision is not None
 
         decisions: List[decision.Decision] = []
+        for decision_id, machine in self.state_machines.items():
+            if decision_id == COMPLETION_ID:
+                continue
+            # When completing, Cadence closes force-cancelled commands automatically.
+            if is_completing and decision_id in self._forced_cancellations:
+                continue
+            d = machine.get_decision()
+            if d is not None:
+                decisions.append(d)
 
-        for machine in self.state_machines.values():
-            to_send = machine.get_decision()
-            if to_send is not None:
-                decisions.append(to_send)
+        if is_completing:
+            decisions.append(completion_decision)
 
+        self._forced_cancellations.clear()
         return decisions
 
     def _create_future(self, decision_id: DecisionId) -> DecisionFuture[T]:
@@ -292,6 +300,11 @@ class DecisionManager:
 
     def request_cancel_pending_decisions(self, message: str | None = None) -> None:
         for decision_id in list(self.state_machines):
+            if decision_id == COMPLETION_ID:
+                continue
             machine = self._get_machine(decision_id)
-            self._request_cancel(decision_id)
+            # force_cancel must come before request_cancel: the latter resolves
+            # futures immediately, making a subsequent force_cancel(message) a no-op.
             machine.force_cancel(message)
+            self._request_cancel(decision_id)
+            self._forced_cancellations.add(decision_id)

@@ -273,12 +273,13 @@ class Context(WorkflowContext):
 
     def request_cancel(
         self, attrs: WorkflowExecutionCancelRequestedEventAttributes
-    ) -> None:
+    ) -> WorkflowCancellationInfo:
         self._cancellation_info = WorkflowCancellationInfo(
             cause=attrs.cause,
             identity=attrs.identity,
             request_id=attrs.request_id,
         )
+        return self._cancellation_info
 
     def is_cancel_requested(self) -> bool:
         return self._cancellation_info is not None

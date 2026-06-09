@@ -301,9 +301,7 @@ class WorkflowEngine:
         attrs: WorkflowExecutionCancelRequestedEventAttributes,
         event: HistoryEvent,
     ) -> None:
-        self._context.request_cancel(attrs)
-        info = self._context.cancellation_info()
-        assert info is not None
+        info = self._context.request_cancel(attrs)
         self._decision_manager.request_cancel_pending_decisions(info.cause)
         self._workflow_instance.request_cancel(info)
 

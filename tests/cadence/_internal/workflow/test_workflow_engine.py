@@ -83,8 +83,9 @@ class PendingActivityCancellationWorkflow:
             await workflow.execute_activity(
                 "act", str, schedule_to_close_timeout=timedelta(minutes=5)
             )
-        except asyncio.CancelledError:
-            return "activity-cancelled"
+        except asyncio.CancelledError as e:
+            arg = e.args[0] if e.args else ""
+            return f"activity-cancelled:{arg}"
         return "unreachable"
 
 
@@ -93,8 +94,9 @@ class PendingTimerCancellationWorkflow:
     async def run(self):
         try:
             await workflow.sleep(timedelta(minutes=5))
-        except asyncio.CancelledError:
-            return "timer-cancelled"
+        except asyncio.CancelledError as e:
+            arg = e.args[0] if e.args else ""
+            return f"timer-cancelled:{arg}"
         return "unreachable"
 
 
@@ -347,7 +349,7 @@ class TestWorkflowEngine:
             decision_result.decisions[
                 0
             ].complete_workflow_execution_decision_attributes.result
-            == DefaultDataConverter().to_data(["activity-cancelled"])
+            == DefaultDataConverter().to_data(["activity-cancelled:activity cancel"])
         )
 
     def test_root_cancel_interrupts_pending_timer_and_suppresses_cancel_decision(self):
@@ -376,7 +378,7 @@ class TestWorkflowEngine:
             decision_result.decisions[
                 0
             ].complete_workflow_execution_decision_attributes.result
-            == DefaultDataConverter().to_data(["timer-cancelled"])
+            == DefaultDataConverter().to_data(["timer-cancelled:timer cancel"])
         )
 
     def test_root_cancel_interrupts_pending_child_and_suppresses_cancel_decision(self):

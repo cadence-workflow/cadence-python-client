@@ -115,7 +115,7 @@ class ActivityExecutor:
         self, task: PollForActivityTaskResponse, details: list[Any] | None = None
     ) -> None:
         as_payload = (
-            self._data_converter.to_data(details) if details is not None else Payload()
+            self._data_converter.to_data(details) if details else Payload()
         )
 
         try:

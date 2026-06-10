@@ -35,7 +35,10 @@ class _Context(ActivityContext):
 
         self._cancellation.register_cancel_callback(cancel_activity_task)
         try:
-            return await activity_task
+            result = await activity_task
+            if self._cancellation.is_requested():
+                raise asyncio.CancelledError()
+            return result
         finally:
             await self._wait_pending_heartbeats()
 

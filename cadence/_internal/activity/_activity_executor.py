@@ -114,9 +114,7 @@ class ActivityExecutor:
     async def _report_cancelled(
         self, task: PollForActivityTaskResponse, details: list[Any] | None = None
     ) -> None:
-        as_payload = (
-            self._data_converter.to_data(details) if details else Payload()
-        )
+        as_payload = self._data_converter.to_data(details) if details else Payload()
 
         try:
             await self._client.worker_stub.RespondActivityTaskCanceled(

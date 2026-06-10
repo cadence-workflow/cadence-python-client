@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
@@ -5,17 +6,20 @@ from typing import Any, Callable, Union, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
 
+from cadence._internal.activity._cancellation import _ActivityCancellation
 from cadence._internal.activity._context import _Context, _SyncContext
 from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityDefinition
-from cadence.api.v1.common_pb2 import Failure
+from cadence.api.v1.common_pb2 import Failure, Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForActivityTaskResponse,
+    RespondActivityTaskCanceledRequest,
     RespondActivityTaskFailedRequest,
     RespondActivityTaskCompletedRequest,
 )
 from cadence.client import Client
+from cadence.error import ActivityCancelledError
 
 _logger = getLogger(__name__)
 
@@ -38,11 +42,23 @@ class ActivityExecutor:
             max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
         )
 
-    async def execute(self, task: PollForActivityTaskResponse):
+    async def execute(self, task: PollForActivityTaskResponse) -> None:
+        context: Union[_Context, _SyncContext] | None = None
         try:
             context = self._create_context(task)
             result = await context.execute(task.input)
             await self._report_success(task, result)
+        except asyncio.CancelledError:
+            if context is not None and context.is_cancelled():
+                await self._report_cancelled(task)
+                return
+            raise
+        except ActivityCancelledError as e:
+            if context is not None and context.is_cancelled():
+                await self._report_cancelled(task, e.details)
+                return
+            _logger.exception("Activity failed")
+            await self._report_failure(task, e)
         except Exception as e:
             _logger.exception("Activity failed")
             await self._report_failure(task, e)
@@ -57,16 +73,20 @@ class ActivityExecutor:
             raise KeyError(f"Activity type not found: {activity_type}") from None
 
         info = self._create_info(task)
+        cancellation = _ActivityCancellation()
         heartbeat_sender = _HeartbeatSender(
             self._client.worker_stub,
             self._data_converter,
             task.task_token,
             self._identity,
             task.heartbeat_details,
+            cancellation,
         )
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:
-            return _Context(self._client, info, activity_def, heartbeat_sender)
+            return _Context(
+                self._client, info, activity_def, heartbeat_sender, cancellation
+            )
         else:
             return _SyncContext(
                 self._client,
@@ -74,6 +94,7 @@ class ActivityExecutor:
                 activity_def,
                 self._thread_pool,
                 heartbeat_sender,
+                cancellation,
             )
 
     async def _report_failure(
@@ -89,6 +110,24 @@ class ActivityExecutor:
             )
         except Exception:
             _logger.exception("Exception reporting activity failure")
+
+    async def _report_cancelled(
+        self, task: PollForActivityTaskResponse, details: list[Any] | None = None
+    ) -> None:
+        as_payload = (
+            self._data_converter.to_data(details) if details is not None else Payload()
+        )
+
+        try:
+            await self._client.worker_stub.RespondActivityTaskCanceled(
+                RespondActivityTaskCanceledRequest(
+                    task_token=task.task_token,
+                    details=as_payload,
+                    identity=self._identity,
+                )
+            )
+        except Exception:
+            _logger.exception("Exception reporting activity cancelled")
 
     async def _report_success(self, task: PollForActivityTaskResponse, result: Any):
         as_payload = self._data_converter.to_data([result])

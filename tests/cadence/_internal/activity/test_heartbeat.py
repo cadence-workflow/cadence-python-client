@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from cadence._internal.activity._cancellation import _ActivityCancellation
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import (
@@ -26,13 +27,19 @@ def worker_stub() -> AsyncMock:
 
 
 @pytest.fixture
-def sender(worker_stub, data_converter) -> _HeartbeatSender:
+def cancellation() -> _ActivityCancellation:
+    return _ActivityCancellation()
+
+
+@pytest.fixture
+def sender(worker_stub, data_converter, cancellation) -> _HeartbeatSender:
     return _HeartbeatSender(
         worker_stub=worker_stub,
         data_converter=data_converter,
         task_token=b"task_token",
         identity="test-identity",
         previous_details=Payload(),
+        cancellation=cancellation,
     )
 
 
@@ -79,6 +86,7 @@ async def test_heartbeat_updates_previous_details(sender, worker_stub):
 async def test_heartbeat_details_not_updated_on_failure(
     worker_stub,
     data_converter,
+    cancellation,
 ):
     worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
         side_effect=Exception("rpc error")
@@ -89,9 +97,26 @@ async def test_heartbeat_details_not_updated_on_failure(
         task_token=b"task_token",
         identity="test-identity",
         previous_details=Payload(data=b'"old"'),
+        cancellation=cancellation,
     )
 
     await sender.send_heartbeat("new_value")
 
     details = sender.get_details(str)
     assert details == ["old"]
+
+
+async def test_heartbeat_requests_cancellation(sender, worker_stub, cancellation):
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    await sender.send_heartbeat()
+
+    assert cancellation.is_requested()
+
+
+async def test_heartbeat_does_not_request_cancellation_by_default(sender, cancellation):
+    await sender.send_heartbeat()
+
+    assert not cancellation.is_requested()

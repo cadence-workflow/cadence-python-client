@@ -3,6 +3,7 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Any, Type
 
 from cadence import Client
+from cadence._internal.activity._cancellation import _ActivityCancellation
 from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityContext
@@ -16,20 +17,31 @@ class _Context(ActivityContext):
         info: ActivityInfo,
         activity_def: BaseDefinition[[Any], Any],
         heartbeat_sender: _HeartbeatSender,
+        cancellation: _ActivityCancellation,
     ):
         self._client = client
         self._info = info
         self._activity_def = activity_def
         self._heartbeat_sender = heartbeat_sender
+        self._cancellation = cancellation
         self._heartbeat_tasks: set[asyncio.Future[None]] = set()
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
+        activity_task = asyncio.create_task(self._run_activity(params))
+
+        def cancel_activity_task() -> None:
+            activity_task.cancel()
+
+        self._cancellation.register_cancel_callback(cancel_activity_task)
         try:
-            with self._activate():
-                return await self._activity_def.impl_fn(*params)
+            return await activity_task
         finally:
             await self._wait_pending_heartbeats()
+
+    async def _run_activity(self, params: list[Any]) -> Any:
+        with self._activate():
+            return await self._activity_def.impl_fn(*params)
 
     async def _wait_pending_heartbeats(self) -> None:
         if not self._heartbeat_tasks:
@@ -58,6 +70,9 @@ class _Context(ActivityContext):
     def heartbeat_details(self, *types: Type) -> list[Any]:
         return self._heartbeat_sender.get_details(*types)
 
+    def is_cancelled(self) -> bool:
+        return self._cancellation.is_requested()
+
 
 class _SyncContext(_Context):
     def __init__(
@@ -67,8 +82,9 @@ class _SyncContext(_Context):
         activity_def: BaseDefinition[[Any], Any],
         executor: ThreadPoolExecutor,
         heartbeat_sender: _HeartbeatSender,
+        cancellation: _ActivityCancellation,
     ):
-        super().__init__(client, info, activity_def, heartbeat_sender)
+        super().__init__(client, info, activity_def, heartbeat_sender, cancellation)
         self._executor = executor
 
     async def execute(self, payload: Payload) -> Any:

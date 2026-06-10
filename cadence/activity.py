@@ -79,6 +79,11 @@ def heartbeat_details(*types: Type) -> list[Any]:
     return ActivityContext.get().heartbeat_details(*types)
 
 
+def is_cancelled() -> bool:
+    """Return whether cancellation has been requested for the current activity."""
+    return ActivityContext.get().is_cancelled()
+
+
 class ActivityContext(ABC):
     _var: ContextVar["ActivityContext"] = ContextVar("activity")
 
@@ -93,6 +98,9 @@ class ActivityContext(ABC):
 
     @abstractmethod
     def heartbeat_details(self, *types: Type) -> list[Any]: ...
+
+    @abstractmethod
+    def is_cancelled(self) -> bool: ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:

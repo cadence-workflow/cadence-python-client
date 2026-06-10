@@ -1,4 +1,9 @@
-from typing import TypedDict
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from cadence.metrics import MetricsEmitter
 
 
 class WorkerOptions(TypedDict, total=False):
@@ -11,6 +16,7 @@ class WorkerOptions(TypedDict, total=False):
     disable_workflow_worker: bool
     disable_activity_worker: bool
     identity: str
+    metrics_emitter: MetricsEmitter
 
 
 _DEFAULT_WORKER_OPTIONS: WorkerOptions = {

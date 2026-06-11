@@ -84,6 +84,23 @@ def is_cancelled() -> bool:
     return ActivityContext.get().is_cancelled()
 
 
+def wait_for_cancelled(timeout: timedelta | float | None = None) -> bool:
+    """Block until cancellation is requested for this sync activity.
+
+    Args:
+        timeout: Maximum time to wait. ``None`` waits indefinitely. May be a
+            ``timedelta`` or a number of seconds.
+
+    Returns:
+        ``True`` if cancellation was requested, ``False`` if the timeout
+        elapsed first.
+
+    Async activities are cancelled with ``asyncio.CancelledError`` when a
+    heartbeat observes cancellation, so this helper is only for sync activities.
+    """
+    return ActivityContext.get().wait_for_cancelled(timeout)
+
+
 class ActivityContext(ABC):
     _var: ContextVar["ActivityContext"] = ContextVar("activity")
 
@@ -101,6 +118,9 @@ class ActivityContext(ABC):
 
     @abstractmethod
     def is_cancelled(self) -> bool: ...
+
+    @abstractmethod
+    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool: ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:

@@ -1,7 +1,11 @@
 import asyncio
+import time
 from datetime import timedelta
 
+import pytest
+
 from cadence import workflow, Registry, activity
+from cadence.error import ActivityCancelledError
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
@@ -39,6 +43,43 @@ class HeartbeatWorkflow:
             schedule_to_close_timeout=timedelta(seconds=30),
             heartbeat_timeout=timedelta(seconds=2),
         ).execute(iterations)
+
+
+@registry.activity()
+def sync_wait_cancel_activity(timeout_kind: str) -> str:
+    """Sync activity using ``wait_for_cancelled`` with timedelta or float timeouts."""
+    while True:
+        activity.heartbeat("waiting")
+        if timeout_kind == "timedelta":
+            cancelled = activity.wait_for_cancelled(timedelta(milliseconds=300))
+        else:
+            cancelled = activity.wait_for_cancelled(0.3)
+        if cancelled:
+            raise ActivityCancelledError("bye")
+        time.sleep(0.05)
+
+
+@registry.workflow()
+class SyncWaitForCancelledWorkflow:
+    @workflow.run
+    async def run(self, timeout_kind: str) -> str:
+        activity_task = asyncio.create_task(
+            sync_wait_cancel_activity.with_options(
+                schedule_to_close_timeout=timedelta(seconds=30),
+                start_to_close_timeout=timedelta(seconds=30),
+                heartbeat_timeout=timedelta(seconds=2),
+            ).execute(timeout_kind)
+        )
+
+        await workflow.sleep(timedelta(seconds=1))
+        activity_task.cancel()
+
+        try:
+            await activity_task
+        except asyncio.CancelledError:
+            return "activity cancelled"
+
+        return "activity completed"
 
 
 @registry.workflow()
@@ -199,3 +240,49 @@ async def test_activity_cancellation_is_delivered_by_heartbeat(
             if event.HasField("activity_task_cancel_requested_event_attributes")
         ]
         assert cancel_requested_events
+
+
+@pytest.mark.parametrize("timeout_kind", ["timedelta", "float"])
+async def test_sync_wait_for_cancelled_with_timedelta_or_float_timeout(
+    helper: CadenceHelper, timeout_kind: str
+):
+    """Integration: sync ``wait_for_cancelled`` accepts timedelta or float timeouts."""
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "SyncWaitForCancelledWorkflow",
+            timeout_kind,
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        response: GetWorkflowExecutionHistoryResponse = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
+        )
+
+        assert (
+            '"activity cancelled"'
+            == response.history.events[
+                -1
+            ].workflow_execution_completed_event_attributes.result.data.decode()
+        )
+
+        response = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                skip_archival=True,
+            )
+        )
+
+        canceled_events = [
+            event
+            for event in response.history.events
+            if event.HasField("activity_task_canceled_event_attributes")
+        ]
+        assert canceled_events

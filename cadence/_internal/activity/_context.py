@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures.thread import ThreadPoolExecutor
+from datetime import timedelta
 from typing import Any, Type
 
 from cadence import Client
@@ -79,6 +80,12 @@ class _Context(ActivityContext):
     def is_cancelled(self) -> bool:
         return self._heartbeat_sender.is_cancel_requested()
 
+    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool:
+        raise RuntimeError(
+            "wait_for_cancelled is only supported in sync activities; "
+            "handle asyncio.CancelledError in async activities instead"
+        )
+
 
 class _SyncContext(_Context):
     def __init__(
@@ -114,3 +121,13 @@ class _SyncContext(_Context):
         wrapped = asyncio.wrap_future(future, loop=self._loop)
         self._heartbeat_tasks.add(wrapped)
         wrapped.add_done_callback(self._heartbeat_tasks.discard)
+
+    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool:
+        if timeout is None:
+            sec: float | None = None
+        elif isinstance(timeout, timedelta):
+            sec = timeout.total_seconds()
+        else:
+            sec = float(timeout)
+        return self._heartbeat_sender.wait_for_cancellation(sec)
+

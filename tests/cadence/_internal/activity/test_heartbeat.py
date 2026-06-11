@@ -111,3 +111,17 @@ async def test_heartbeat_does_not_request_cancellation_by_default(sender):
     await sender.send_heartbeat()
 
     assert not sender.is_cancel_requested()
+
+
+async def test_wait_for_cancellation_returns_true_after_request(sender, worker_stub):
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    await sender.send_heartbeat()
+
+    assert sender.wait_for_cancellation() is True
+
+
+def test_wait_for_cancellation_times_out_when_not_requested(sender):
+    assert sender.wait_for_cancellation(timeout=0.01) is False

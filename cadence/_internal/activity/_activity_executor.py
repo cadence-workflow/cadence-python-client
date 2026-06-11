@@ -81,14 +81,13 @@ class ActivityExecutor:
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:
             return _Context(self._client, info, activity_def, heartbeat_sender)
-        else:
-            return _SyncContext(
-                self._client,
-                info,
-                activity_def,
-                self._thread_pool,
-                heartbeat_sender,
-            )
+        return _SyncContext(
+            self._client,
+            info,
+            activity_def,
+            self._thread_pool,
+            heartbeat_sender,
+        )
 
     async def _report_failure(
         self, task: PollForActivityTaskResponse, error: Exception

@@ -1,7 +1,6 @@
 from logging import getLogger
 from typing import Any, Type
 
-from cadence._internal.activity._cancellation import _ActivityCancellation
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import RecordActivityTaskHeartbeatRequest
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
@@ -18,14 +17,16 @@ class _HeartbeatSender:
         task_token: bytes,
         identity: str,
         previous_details: Payload,
-        cancellation: _ActivityCancellation,
     ):
         self._worker_stub = worker_stub
         self._data_converter = data_converter
         self._task_token = task_token
         self._identity = identity
         self._previous_details = previous_details
-        self._cancellation = cancellation
+        self._cancel_requested = False
+
+    def is_cancel_requested(self) -> bool:
+        return self._cancel_requested
 
     def get_details(self, *types: Type) -> list[Any]:
         return self._data_converter.from_data(self._previous_details, list(types))
@@ -42,6 +43,6 @@ class _HeartbeatSender:
             )
             self._previous_details = payload
             if response.cancel_requested:
-                self._cancellation.request()
+                self._cancel_requested = True
         except Exception:
             _logger.warning("Heartbeat failed", exc_info=True)

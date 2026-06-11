@@ -130,4 +130,3 @@ class _SyncContext(_Context):
         else:
             sec = float(timeout)
         return self._heartbeat_sender.wait_for_cancellation(sec)
-

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Any, Callable
 
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.llm_agent import LlmAgent
@@ -11,7 +11,8 @@ from google.adk.runners import Runner
 
 from cadence.contrib.google_adk.cadence_model import CadenceModel
 
-_original_unraisablehook = sys.unraisablehook
+_original_unraisablehook: Callable[[Any], None] | None = None
+
 
 def _suppress_adk_cleanup_error_hook(args) -> None:
     message = str(args.exc_value)
@@ -23,29 +24,48 @@ def _suppress_adk_cleanup_error_hook(args) -> None:
         "aclose(): asynchronous generator is already running" in message
     ):
         return
-    _original_unraisablehook(args)
+    if _original_unraisablehook is not None:
+        _original_unraisablehook(args)
+        return
+    sys.__unraisablehook__(args)
 
-sys.unraisablehook = _suppress_adk_cleanup_error_hook
 
-try:
-    from opentelemetry import context as _otel_context
-except ImportError:
-    _otel_context = None
+def _install_suppression_hooks() -> None:
+    global _original_unraisablehook
+    _original_unraisablehook = sys.unraisablehook
+    sys.unraisablehook = _suppress_adk_cleanup_error_hook
 
-if _otel_context is not None:
+    try:
+        from opentelemetry import context as otel_context
+    except ImportError:
+        return
 
     def _suppress_otel_context_detach(token) -> None:
         try:
-            _otel_context._RUNTIME_CONTEXT.detach(token)
+            otel_context._RUNTIME_CONTEXT.detach(token)
         except ValueError as exc:
             if "was created in a different Context" in str(exc):
                 return
             raise
 
-    _otel_context.detach = _suppress_otel_context_detach
+    otel_context.detach = _suppress_otel_context_detach
+
 
 class CadenceAgentRunner(Runner):
+    """ADK runner that routes model calls through Cadence activities.
+
+    Register GoogleADKActivities with the worker registry used for these workflows.
+    Pass suppress_adk_cleanup_errors=False to avoid installing cleanup-error hooks.
+    """
+
+    _hooks_installed: bool = False
+
     def __init__(self, **kwargs: Any) -> None:
+        suppress_adk_cleanup_errors = kwargs.pop("suppress_adk_cleanup_errors", True)
+        if suppress_adk_cleanup_errors and not CadenceAgentRunner._hooks_installed:
+            _install_suppression_hooks()
+            CadenceAgentRunner._hooks_installed = True
+
         agent = kwargs.get("agent")
         app = kwargs.get("app")
 

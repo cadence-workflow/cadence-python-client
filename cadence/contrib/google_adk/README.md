@@ -11,12 +11,13 @@ A single agent with one tool. The tool is registered as a Cadence activity, then
 ### Step 1: Write Agent as Cadence Workflow, tools as Cadence Activity (`book_flight_agent.py`)
 
 ```python
+from dataclasses import asdict, dataclass
 
 import cadence
-from google.adk.agents import LlmAgent
 from cadence.contrib.google_adk import CadenceAgentRunner, GoogleADKActivities
+from google.adk.agents import LlmAgent
 from google.adk.sessions import InMemorySessionService
-from dataclasses import asdict, dataclass
+from google.genai import types
 
 cadence_registry = cadence.Registry()
 cadence_registry.register_activities(GoogleADKActivities())
@@ -46,12 +47,12 @@ class BookFlightAgentWorkflow:
 
         final_text = ""
         async for event in runner.run_async(
-                user_id="user",
-                session_id=session_id,
-                new_message=types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=user_input)],
-                ),
+            user_id="user",
+            session_id=session_id,
+            new_message=types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=user_input)],
+            ),
         ):
             if not event.is_final_response():
                 continue
@@ -97,6 +98,8 @@ async def book_flight(
 ```
 
 The tool keeps its normal Python signature. ADK uses that signature to build the tool schema, while Cadence executes the registered function as an activity when it is called from workflow code.
+
+`GoogleADKActivities` must be registered with the same worker registry as the workflow so Cadence can execute ADK model-call activity tasks.
 
 ### Step 2: Start Cadence Server
 

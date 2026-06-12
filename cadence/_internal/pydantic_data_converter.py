@@ -3,6 +3,7 @@ import datetime as dt
 import enum
 import json as json_module
 import logging
+import threading
 from json import JSONDecoder
 from typing import Any, List, Sequence, Type
 
@@ -21,18 +22,22 @@ class PydanticDataConverter(DataConverter):
     def __init__(self) -> None:
         self._decoder = JSONDecoder(strict=False)
         self._adapter_cache: dict[Any, TypeAdapter[Any] | None] = {}
+        self._adapter_cache_lock = threading.Lock()
 
     def _get_adapter(self, type_hint: Any) -> TypeAdapter[Any] | None:
-        cached = self._adapter_cache.get(type_hint, _SENTINEL)
-        if cached is not _SENTINEL:
-            return cached  # type: ignore[return-value]
-        try:
-            adapter: TypeAdapter[Any] | None = TypeAdapter(type_hint)
-        except Exception:
-            logger.debug("TypeAdapter failed for %s, will use raw values", type_hint)
-            adapter = None
-        self._adapter_cache[type_hint] = adapter
-        return adapter
+        with self._adapter_cache_lock:
+            cached = self._adapter_cache.get(type_hint, _SENTINEL)
+            if cached is not _SENTINEL:
+                return cached  # type: ignore[return-value]
+            try:
+                adapter: TypeAdapter[Any] | None = TypeAdapter(type_hint)
+            except Exception:
+                logger.debug(
+                    "TypeAdapter failed for %s, will use raw values", type_hint
+                )
+                adapter = None
+            self._adapter_cache[type_hint] = adapter
+            return adapter
 
     def from_data(
         self, payload: Payload, type_hints: Sequence[Type | None]
@@ -90,6 +95,11 @@ class PydanticDataConverter(DataConverter):
             start += value_end + 1
             results.append(value)
         return results
+
+    def _decode_provided_values(
+        self, payload: Payload, type_hints: Sequence[Type | None]
+    ) -> List[Any]:
+        return self._from_payload(payload, type_hints, fill_missing_defaults=False)
 
     def to_data(self, values: List[Any]) -> Payload:
         result = bytearray()

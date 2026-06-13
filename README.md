@@ -120,6 +120,10 @@ make integration-test
 make pr
 ```
 
+## Samples
+
+See [`samples/`](samples/README.md) for runnable examples covering schedules and more.
+
 ## License
 
 Apache 2.0 License, please see [LICENSE](LICENSE) for details.

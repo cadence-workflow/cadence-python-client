@@ -50,12 +50,12 @@ class ScheduleSampleWorkflow:
 
 
 async def run_worker(args: argparse.Namespace) -> None:
-    client = Client(domain=args.domain, target=args.target)
-    print(f"Worker running on task list {TASK_LIST!r} — Ctrl-C to stop")
     from cadence.worker import Worker
 
-    async with Worker(client, TASK_LIST, registry):
-        await asyncio.Event().wait()
+    async with Client(domain=args.domain, target=args.target) as client:
+        print(f"Worker running on task list {TASK_LIST!r} — Ctrl-C to stop")
+        async with Worker(client, TASK_LIST, registry):
+            await asyncio.Event().wait()
 
 
 # ---------------------------------------------------------------------------

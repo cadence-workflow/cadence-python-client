@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from typing import Any, Callable
 
 from google.adk.agents.base_agent import BaseAgent
@@ -12,6 +13,7 @@ from google.adk.runners import Runner
 from cadence.contrib.google_adk.cadence_model import CadenceModel
 
 _original_unraisablehook: Callable[[Any], None] | None = None
+_hooks_install_lock = threading.Lock()
 
 
 def _suppress_adk_cleanup_error_hook(args) -> None:
@@ -32,6 +34,8 @@ def _suppress_adk_cleanup_error_hook(args) -> None:
 
 def _install_suppression_hooks() -> None:
     global _original_unraisablehook
+    if sys.unraisablehook is _suppress_adk_cleanup_error_hook:
+        return
     _original_unraisablehook = sys.unraisablehook
     sys.unraisablehook = _suppress_adk_cleanup_error_hook
 
@@ -62,9 +66,11 @@ class CadenceAgentRunner(Runner):
 
     def __init__(self, **kwargs: Any) -> None:
         suppress_adk_cleanup_errors = kwargs.pop("suppress_adk_cleanup_errors", True)
-        if suppress_adk_cleanup_errors and not CadenceAgentRunner._hooks_installed:
-            _install_suppression_hooks()
-            CadenceAgentRunner._hooks_installed = True
+        if suppress_adk_cleanup_errors:
+            with _hooks_install_lock:
+                if not CadenceAgentRunner._hooks_installed:
+                    _install_suppression_hooks()
+                    CadenceAgentRunner._hooks_installed = True
 
         agent = kwargs.get("agent")
         app = kwargs.get("app")

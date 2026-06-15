@@ -34,4 +34,4 @@ uv run python samples/schedule_sample.py worker
 uv run python samples/schedule_sample.py demo
 ```
 
-Both subcommands accept `--target` (default `localhost:7833`) and `--domain` (default `samples-domain`).
+Both subcommands accept `--target` (default `localhost:7833`) and `--domain` (default `test-domain`, which is pre-registered by the Docker Compose stack).

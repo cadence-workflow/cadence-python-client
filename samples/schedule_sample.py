@@ -84,7 +84,9 @@ async def run_demo(args: argparse.Namespace) -> None:
     async with Client(domain=args.domain, target=args.target) as client:
         try:
             # --- create ---
-            await client.create_schedule(sid, spec=spec, action=action, policies=policies)
+            await client.create_schedule(
+                sid, spec=spec, action=action, policies=policies
+            )
             print(f"Created  : {sid}")
 
             # --- describe ---
@@ -118,7 +120,9 @@ async def run_demo(args: argparse.Namespace) -> None:
                 end_time=end,
                 overlap_policy=schedule_pb2.SCHEDULE_OVERLAP_POLICY_BUFFER,
             )
-            print(f"Backfill : submitted 2-hour window ({start:%H:%M} → {end:%H:%M} UTC)")
+            print(
+                f"Backfill : submitted 2-hour window ({start:%H:%M} → {end:%H:%M} UTC)"
+            )
 
             # --- update (change cron) ---
             def set_hourly(d: object) -> None:

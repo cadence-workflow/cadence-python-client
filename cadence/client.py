@@ -60,7 +60,7 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionRequest,
     SignalWithStartWorkflowExecutionResponse,
 )
-from cadence.error import CadenceRpcError, QueryFailedError
+from cadence.error import QueryFailedError, ServiceBusyError
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
@@ -618,12 +618,9 @@ class Client:
         )
 
     async def describe_schedule(self, schedule_id: str) -> DescribeScheduleResponse:
-        """Return the current configuration and state of the schedule.
-
-        Retries transparently when the scheduler workflow is mid-ContinueAsNew,
-        which is a transient condition the server itself instructs callers to retry.
-        """
-        for _ in range(10):
+        """Return the current configuration and state of the schedule."""
+        _max_attempts = 10
+        for attempt in range(_max_attempts):
             try:
                 return cast(
                     DescribeScheduleResponse,
@@ -634,19 +631,12 @@ class Client:
                         )
                     ),
                 )
-            except CadenceRpcError as e:
-                if "ContinueAsNew" not in str(e):
+            except ServiceBusyError as e:
+                # The scheduler emits ServiceBusyError(reason="...ContinueAsNew...")
+                # during its periodic history resets; this is transient.
+                if attempt == _max_attempts - 1 or "ContinueAsNew" not in e.reason:
                     raise
                 await asyncio.sleep(2)
-        return cast(
-            DescribeScheduleResponse,
-            await self._schedule_stub.DescribeSchedule(
-                DescribeScheduleRequest(
-                    domain=self.domain,
-                    schedule_id=schedule_id,
-                )
-            ),
-        )
 
     async def pause_schedule(
         self,

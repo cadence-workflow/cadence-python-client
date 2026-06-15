@@ -637,6 +637,7 @@ class Client:
                 if attempt == _max_attempts - 1 or "ContinueAsNew" not in e.reason:
                     raise
                 await asyncio.sleep(2)
+        raise AssertionError("unreachable")
 
     async def pause_schedule(
         self,

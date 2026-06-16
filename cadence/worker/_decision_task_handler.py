@@ -1,4 +1,5 @@
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import Optional
@@ -18,8 +19,30 @@ from cadence.api.v1.query_pb2 import (
 )
 from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.client import Client
+from cadence.metrics import MetricsEmitter
+from cadence.metrics.constants import (
+    DECISION_EXECUTION_FAILED_COUNTER,
+    DECISION_EXECUTION_LATENCY,
+    DECISION_RESPONSE_FAILED_COUNTER,
+    DECISION_RESPONSE_LATENCY,
+    DECISION_TASK_COMPLETED_COUNTER,
+    DECISION_TASK_FORCE_COMPLETED_COUNTER,
+    DECISION_TASK_PANIC_COUNTER,
+    TAG_DOMAIN,
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_TYPE,
+    WORKFLOW_CANCELED_COUNTER,
+    WORKFLOW_COMPLETED_COUNTER,
+    WORKFLOW_CONTINUE_AS_NEW_COUNTER,
+    WORKFLOW_END_TO_END_LATENCY,
+    WORKFLOW_FAILED_COUNTER,
+)
 from cadence.worker._base_task_handler import BaseTaskHandler
-from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
+from cadence._internal.workflow.workflow_engine import (
+    WorkflowEngine,
+    DecisionResult,
+    _outcome_from_decision,
+)
 from cadence.workflow import WorkflowInfo
 from cadence.worker._registry import Registry
 
@@ -82,6 +105,13 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
 
         is_query_task = task.HasField("query")
 
+        wf_tags = {
+            TAG_WORKFLOW_TYPE: workflow_type_name,
+            TAG_DOMAIN: self._client.domain,
+            TAG_TASK_LIST: self.task_list,
+        }
+        emitter = self._metrics_emitter.with_tags(wf_tags)
+
         logger.info(
             "Received decision task for workflow",
             extra={
@@ -117,7 +147,9 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         # fetch full workflow history
         # TODO sticky cache
         workflow_events = [
-            event async for event in iterate_history_events(task, self._client)
+            event async for event in iterate_history_events(
+                task, self._client, emitter
+            )
         ]
 
         if not workflow_events:
@@ -154,18 +186,35 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_definition=workflow_definition,
         )
 
-        decision_result = await asyncio.get_running_loop().run_in_executor(
-            self._executor,
-            workflow_engine.process_decision,
-            workflow_events,
-            task.query if is_query_task else None,
-        )
+        exec_start = time.monotonic()
+        try:
+            decision_result = await asyncio.get_running_loop().run_in_executor(
+                self._executor,
+                workflow_engine.process_decision,
+                workflow_events,
+                task.query if is_query_task else None,
+            )
+        except Exception:
+            emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
+            raise
+        finally:
+            emitter.histogram(
+                DECISION_EXECUTION_LATENCY, time.monotonic() - exec_start
+            )
         if is_query_task:
             if not decision_result.query_result:
                 raise ValueError("Query result is empty")
-            await self._respond_query_task_completed(task, decision_result.query_result)
+            await self._respond_query_task_completed(task, decision_result.query_result, emitter)
         else:
-            await self._respond_decision_task_completed(task, decision_result)
+            await self._respond_decision_task_completed(task, decision_result, emitter)
+            outcome = next(
+                (o for d in decision_result.decisions if (o := _outcome_from_decision(d))),
+                None,
+            )
+            if outcome is not None:
+                self._emit_workflow_outcome_metrics(
+                    outcome, workflow_events, emitter
+                )
 
         logger.info(
             "Successfully processed decision task",
@@ -191,6 +240,14 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             task: The task that failed
             error: The exception that occurred
         """
+        wf_type = task.workflow_type.name if task.workflow_type else "unknown"
+        panic_tags = {
+            TAG_WORKFLOW_TYPE: wf_type,
+            TAG_DOMAIN: self._client.domain,
+            TAG_TASK_LIST: self.task_list,
+        }
+        self._metrics_emitter.with_tags(panic_tags).counter(DECISION_TASK_PANIC_COUNTER)
+
         workflow_execution = task.workflow_execution
         workflow_id = (
             workflow_execution.workflow_id if workflow_execution else "unknown"
@@ -262,8 +319,29 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 exc_info=True,
             )
 
+    def _emit_workflow_outcome_metrics(
+        self, outcome: str, workflow_events: list, emitter: MetricsEmitter
+    ) -> None:
+        counter_map = {
+            "completed": WORKFLOW_COMPLETED_COUNTER,
+            "failed": WORKFLOW_FAILED_COUNTER,
+            "canceled": WORKFLOW_CANCELED_COUNTER,
+            "continue_as_new": WORKFLOW_CONTINUE_AS_NEW_COUNTER,
+        }
+        if counter := counter_map.get(outcome):
+            emitter.counter(counter)
+
+        if workflow_events and workflow_events[0].event_time.seconds:
+            start_ts = (
+                workflow_events[0].event_time.seconds
+                + workflow_events[0].event_time.nanos / 1e9
+            )
+            e2e = time.time() - start_ts
+            emitter.histogram(WORKFLOW_END_TO_END_LATENCY, max(0.0, e2e))
+
     async def _respond_decision_task_completed(
-        self, task: PollForDecisionTaskResponse, decision_result: DecisionResult
+        self, task: PollForDecisionTaskResponse, decision_result: DecisionResult,
+        emitter: Optional[MetricsEmitter] = None,
     ) -> None:
         """
         Respond to the service that the decision task has been completed.
@@ -272,6 +350,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             task: The original decision task
             decision_result: The result containing decisions
         """
+        emitter = emitter if emitter is not None else self._metrics_emitter
+        resp_start = time.monotonic()
         try:
             request = RespondDecisionTaskCompletedRequest(
                 task_token=task.task_token,
@@ -281,6 +361,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
 
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)
+            emitter.counter(DECISION_TASK_COMPLETED_COUNTER)
 
             workflow_execution = task.workflow_execution
             logger.debug(
@@ -305,6 +386,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
 
         except Exception as e:
+            emitter.counter(DECISION_RESPONSE_FAILED_COUNTER)
             workflow_execution = task.workflow_execution
             logger.error(
                 "Error responding to decision task completion",
@@ -325,16 +407,23 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 exc_info=True,
             )
             raise
+        finally:
+            emitter.histogram(
+                DECISION_RESPONSE_LATENCY, time.monotonic() - resp_start
+            )
 
     async def _respond_query_task_completed(
-        self, task: PollForDecisionTaskResponse, result: WorkflowQueryResult
+        self, task: PollForDecisionTaskResponse, result: WorkflowQueryResult,
+        emitter: Optional[MetricsEmitter] = None,
     ) -> None:
+        emitter = emitter if emitter is not None else self._metrics_emitter
         try:
             request = RespondQueryTaskCompletedRequest(
                 task_token=task.task_token,
                 result=result,
             )
             await self._client.worker_stub.RespondQueryTaskCompleted(request)
+            emitter.counter(DECISION_TASK_FORCE_COMPLETED_COUNTER)
 
             logger.debug(
                 "Query task completion response sent",

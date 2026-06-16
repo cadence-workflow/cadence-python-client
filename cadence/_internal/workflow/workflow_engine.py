@@ -47,10 +47,11 @@ class WorkflowEngine:
     def __init__(self, info: WorkflowInfo, workflow_definition: WorkflowDefinition):
         self._event_loop = DeterministicEventLoop()
         self._decision_manager = DecisionManager(self._event_loop)
+        self._data_converter = info.data_converter
+        self._workflow_definition = workflow_definition
         self._workflow_instance = WorkflowInstance(
             self._event_loop,
             workflow_definition,
-            info.data_converter,
         )
         self._context = Context(info, self._decision_manager)
 
@@ -116,14 +117,20 @@ class WorkflowEngine:
             raise
 
     def _execute_query(self, query: WorkflowQuery) -> DecisionResult:
-        result_payload = self._workflow_instance.handle_query(
-            query.query_type, query.query_args
-        )
+        query_def = self._workflow_definition.queries.get(query.query_type)
+        if query_def is None:
+            raise ValueError(
+                f"Unknown query type '{query.query_type}'. "
+                f"Known types: {list(self._workflow_definition.queries.keys())}"
+            )
+
+        args = query_def.params_from_payload(self._data_converter, query.query_args)
+        result = self._workflow_instance.handle_query(query_def, args)
         return DecisionResult(
             decisions=[],
             query_result=WorkflowQueryResult(
                 result_type=QUERY_RESULT_TYPE_ANSWERED,
-                answer=result_payload,
+                answer=self._data_converter.to_data([result]),
             ),
         )
 
@@ -208,15 +215,15 @@ class WorkflowEngine:
                 self._decision_manager.handle_history_event(event)
 
     def _maybe_complete_workflow(self) -> Optional[Decision]:
+        if not self._workflow_instance.is_done():
+            return None
         try:
-            if result := self._workflow_instance.get_result():
-                return Decision(
-                    complete_workflow_execution_decision_attributes=CompleteWorkflowExecutionDecisionAttributes(
-                        result=result,
-                    )
+            result = self._workflow_instance.get_result()
+            return Decision(
+                complete_workflow_execution_decision_attributes=CompleteWorkflowExecutionDecisionAttributes(
+                    result=self._data_converter.to_data([result]),
                 )
-            else:
-                return None
+            )
         except (CancelledError, InvalidStateError, FatalDecisionError):
             raise
         except ContinueAsNewError as e:
@@ -225,7 +232,7 @@ class WorkflowEngine:
             attrs = ContinueAsNewWorkflowExecutionDecisionAttributes(
                 workflow_type=WorkflowType(name=e.workflow_type or info.workflow_type),
                 task_list=TaskList(name=e.task_list or info.workflow_task_list),
-                input=info.data_converter.to_data(list(e.workflow_args)),
+                input=self._data_converter.to_data(list(e.workflow_args)),
             )
             if e.execution_start_to_close_timeout is not None:
                 attrs.execution_start_to_close_timeout.FromTimedelta(
@@ -272,13 +279,34 @@ class WorkflowEngine:
     def _handle_started_input_event(
         self, attrs: WorkflowExecutionStartedEventAttributes, event: HistoryEvent
     ) -> None:
-        self._workflow_instance.start(attrs.input)
+        args = self._workflow_definition.run_signature.params_from_payload(
+            self._data_converter, attrs.input
+        )
+        self._workflow_instance.start(args)
 
     @_handle_input_event.register
     def _handle_signaled_input_event(
         self, attrs: WorkflowExecutionSignaledEventAttributes, event: HistoryEvent
     ) -> None:
-        self._workflow_instance.handle_signal(attrs.signal_name, attrs.input)
+        signal_def = self._workflow_definition.signals.get(attrs.signal_name)
+        if signal_def is None:
+            logger.warning(
+                "Received signal '%s' but no handler registered, dropping",
+                attrs.signal_name,
+            )
+            return
+
+        try:
+            args = signal_def.params_from_payload(self._data_converter, attrs.input)
+        except Exception as e:
+            logger.warning(
+                "Failed to decode payload for signal '%s', dropping: %s",
+                attrs.signal_name,
+                e,
+            )
+            return
+
+        self._workflow_instance.handle_signal(signal_def, args)
 
 
 def _failure_from_exception(e: Exception) -> Failure:

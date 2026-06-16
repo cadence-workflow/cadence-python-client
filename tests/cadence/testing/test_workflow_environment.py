@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Iterator
 from datetime import timedelta
 
@@ -65,6 +66,26 @@ class TimerWorkflow:
     @workflow.run
     async def run(self) -> str:
         await workflow.sleep(timedelta(hours=1))
+        return "done"
+
+
+@registry.workflow
+class SequentialTimerWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        await workflow.sleep(timedelta(hours=1))
+        await workflow.sleep(timedelta(hours=2))
+        return "done"
+
+
+@registry.workflow
+class ConcurrentTimerWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        await asyncio.gather(
+            workflow.sleep(timedelta(hours=1)),
+            workflow.sleep(timedelta(hours=2)),
+        )
         return "done"
 
 
@@ -248,6 +269,24 @@ async def test_timer_advances_virtual_clock(env: TestWorkflowEnvironment):
     await env.client.start_workflow("TimerWorkflow", task_list="tl")
     assert env.get_workflow_result(str) == "done"
     assert env.now() - before == timedelta(hours=1)
+
+
+@pytest.mark.asyncio
+async def test_sequential_timers_sum(env: TestWorkflowEnvironment):
+    before = env.now()
+    await env.client.start_workflow("SequentialTimerWorkflow", task_list="tl")
+    assert env.get_workflow_result(str) == "done"
+    assert env.now() - before == timedelta(hours=3)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_timers_advance_to_max(env: TestWorkflowEnvironment):
+    # Two sleeps fired concurrently should advance the clock to the later
+    # deadline (2h), not the additive sum (3h).
+    before = env.now()
+    await env.client.start_workflow("ConcurrentTimerWorkflow", task_list="tl")
+    assert env.get_workflow_result(str) == "done"
+    assert env.now() - before == timedelta(hours=2)
 
 
 @pytest.mark.asyncio

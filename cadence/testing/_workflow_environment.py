@@ -13,16 +13,37 @@ Unlike the production path, nothing here touches gRPC or workflow history. When 
 workflow is started, the environment builds a real in-memory
 :class:`cadence.workflow.WorkflowContext` (running on the deterministic event
 loop) and executes the workflow code directly. Activities are executed inline
-(or replaced with mocks), and timers advance a virtual clock instead of waiting
-on the wall clock.
+(or replaced with mocks).
+
+Timers do not wait on the wall clock. Instead, each ``start_timer`` suspends the
+workflow on a future and records ``(now + duration)`` on a per-execution timer
+heap. Whenever the deterministic loop has run out of other work but the workflow
+is still blocked on a timer, the driver pops the earliest-firing timer, advances
+the virtual clock to that timer's deadline, and resumes the workflow. This means:
+
+* A single timer fires once and the clock jumps to its deadline.
+* Concurrent timers (e.g. ``asyncio.gather`` of two sleeps) fire in deadline
+  order and the clock ends at the *latest* deadline rather than the sum of the
+  durations.
+
+Limitation: because the driver auto-fires pending timers as soon as the workflow
+would otherwise block, a workflow that races an interactively delivered signal or
+activity against a timer cannot be exercised here -- the timer always fires
+within the same decision. Such a workflow blocks only when it is waiting on
+something *other* than a timer (e.g. a bare ``wait_condition`` with no timer),
+which is when ``start_workflow`` / ``signal_workflow`` return control so the test
+can deliver the next signal.
 """
 
 from __future__ import annotations
 
+import heapq
 import inspect
 import uuid
 from asyncio import Future, get_running_loop
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import (
     Any,
@@ -78,6 +99,9 @@ class _FnMock:
 
 
 class _InMemoryActivityContext(ActivityContext):
+    default_heartbeat_timeout = timedelta(seconds=60)
+    default_start_to_close_timeout = timedelta(seconds=10)
+
     """Minimal activity context so real activities can call ``activity.info()``."""
 
     def __init__(
@@ -102,10 +126,10 @@ class _InMemoryActivityContext(ActivityContext):
             activity_id=str(uuid.uuid4()),
             activity_type=self._activity_type,
             task_list=self._workflow_info.workflow_task_list,
-            heartbeat_timeout=timedelta(0),
+            heartbeat_timeout=_InMemoryActivityContext.default_heartbeat_timeout,
             scheduled_timestamp=now,
             started_timestamp=now,
-            start_to_close_timeout=timedelta(0),
+            start_to_close_timeout=_InMemoryActivityContext.default_start_to_close_timeout,
             attempt=0,
         )
 
@@ -123,8 +147,9 @@ class _InMemoryWorkflowContext(WorkflowContext):
     """A workflow context that runs entirely in memory.
 
     Activities are executed inline (real implementation or registered mock),
-    timers advance the environment's virtual clock, and ``wait_condition`` uses
-    the deterministic event loop's predicate waiter just like production.
+    timers suspend on a per-execution heap that advances the environment's
+    virtual clock in deadline order, and ``wait_condition`` uses the
+    deterministic event loop's predicate waiter just like production.
     """
 
     def __init__(self, env: "TestWorkflowEnvironment", info: WorkflowInfo) -> None:
@@ -170,8 +195,13 @@ class _InMemoryWorkflowContext(WorkflowContext):
         )
 
     async def start_timer(self, duration: timedelta) -> None:
-        if duration.total_seconds() > 0:
-            self._env._advance_clock(duration)
+        if duration.total_seconds() <= 0:
+            return None
+        # Suspend on a heap-backed future instead of advancing the clock inline.
+        # The driver fires it (advancing the virtual clock to its deadline) once
+        # the workflow has no other progress to make. See the module docstring.
+        future = self._env._schedule_timer(duration)
+        await future
         return None
 
     async def wait_condition(self, predicate: Callable[[], bool]) -> None:
@@ -221,6 +251,7 @@ class _Execution:
         workflow_definition: WorkflowDefinition,
         info: WorkflowInfo,
     ) -> None:
+        self._env = env
         self.info = info
         self._loop = DeterministicEventLoop()
         self._instance = WorkflowInstance(
@@ -230,26 +261,66 @@ class _Execution:
         self.completed: bool = False
         self.result_payload: Optional[Payload] = None
         self.error: Optional[BaseException] = None
-        self.cancel_requested: bool = False
+        self.cancel_requested: bool = False # TODO: Implement cancel request
+        # Min-heap of pending timers keyed by (deadline, sequence). The sequence
+        # is a monotonic tiebreaker so two timers with the same deadline never
+        # compare their futures.
+        self._timers: list[Tuple[datetime, int, "Future[None]"]] = []
+        self._timer_seq: int = 0
+
+    def add_timer(self, deadline: datetime, future: "Future[None]") -> None:
+        self._timer_seq += 1
+        heapq.heappush(self._timers, (deadline, self._timer_seq, future))
 
     def run_start(
         self,
         payload: Payload,
         pending_signal: Optional[Tuple[str, Payload]] = None,
     ) -> None:
-        with self._context._activate():
+        with self._driving():
             self._instance.start(payload)
             if pending_signal is not None:
                 name, signal_payload = pending_signal
                 self._instance.handle_signal(name, signal_payload)
-            self._instance.run_until_yield()
-            self._collect_outcome()
+            self._run_until_settled()
 
     def run_signal(self, name: str, payload: Payload) -> None:
-        with self._context._activate():
+        with self._driving():
             self._instance.handle_signal(name, payload)
+            self._run_until_settled()
+
+    @contextmanager
+    def _driving(self) -> Iterator[None]:
+        # Mark this execution as the one currently being driven so timers
+        # scheduled by it (and by any child workflow running inline on the same
+        # loop) register on this heap, then activate the workflow context.
+        self._env._driving_execution = self
+        try:
+            with self._context._activate():
+                yield
+        finally:
+            self._env._driving_execution = None
+
+    def _run_until_settled(self) -> None:
+        """Run the loop, then fire pending timers in deadline order.
+
+        The workflow yields whenever the deterministic loop runs out of ready
+        work. If it is still not done but has pending timers, we fire the
+        earliest one (advancing the virtual clock to its deadline) and run
+        again. We stop once the workflow completes or is blocked on something
+        other than a timer (e.g. an unsatisfied ``wait_condition``).
+        """
+        self._instance.run_until_yield()
+        while not self._instance.is_done() and self._timers:
+            deadline, _seq, future = heapq.heappop(self._timers)
+            if future.done():
+                # Timer was cancelled (or already resolved); a cancelled timer
+                # does not consume virtual time, so don't advance the clock.
+                continue
+            self._env._advance_clock_to(deadline)
+            future.set_result(None)
             self._instance.run_until_yield()
-            self._collect_outcome()
+        self._collect_outcome()
 
     def run_query(self, query_type: str, args: Payload) -> Payload:
         with self._context._activate():
@@ -391,6 +462,9 @@ class TestWorkflowEnvironment:
         # delivered after the current decision completes.
         self._pending_signals: list[Tuple[str, str, Payload]] = []
         self._now = start_time or datetime.now(timezone.utc)
+        # The execution currently being driven on the worker thread. Timers
+        # scheduled during a decision register on this execution's heap.
+        self._driving_execution: Optional[_Execution] = None
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="cadence-test-env"
         )
@@ -477,8 +551,25 @@ class TestWorkflowEnvironment:
     # Internal helpers used by MockClient / contexts
     # ------------------------------------------------------------------
 
-    def _advance_clock(self, duration: timedelta) -> None:
-        self._now = self._now + duration
+    def _schedule_timer(self, duration: timedelta) -> "Future[None]":
+        """Register a timer on the currently-driven execution's heap.
+
+        Returns a future that the driver resolves once the virtual clock
+        reaches ``now + duration`` (see :meth:`_Execution._run_until_settled`).
+        """
+        execution = self._driving_execution
+        if execution is None:
+            raise RuntimeError("start_timer called outside of a workflow decision")
+        loop = cast(DeterministicEventLoop, get_running_loop())
+        future: "Future[None]" = loop.create_future()
+        execution.add_timer(self._now + duration, future)
+        return future
+
+    def _advance_clock_to(self, when: datetime) -> None:
+        # The clock only moves forward, so a timer whose deadline is at or
+        # before the current time fires without rewinding it.
+        if when > self._now:
+            self._now = when
 
     def _resolve_workflow(
         self, workflow: Union[str, WorkflowDefinition]
@@ -498,7 +589,7 @@ class TestWorkflowEnvironment:
             return self._last_execution
         return self._executions[workflow_id]
 
-    async def _drive(self, fn: Callable[..., Any], *fn_args: Any) -> Any:
+    async def _execute(self, fn: Callable[..., Any], *fn_args: Any) -> Any:
         # The deterministic event loop refuses to run while another loop is
         # running, so drive it on a dedicated worker thread (mirroring the
         # production worker, which runs decisions in a thread pool).
@@ -535,7 +626,7 @@ class TestWorkflowEnvironment:
             signal_name, signal_args = pending_signal
             signal = (signal_name, self._data_converter.to_data(list(signal_args)))
 
-        await self._drive(execution.run_start, payload, signal)
+        await self._execute(execution.run_start, payload, signal)
         await self._flush_pending_signals()
         return WorkflowExecution(workflow_id=workflow_id, run_id=run_id)
 
@@ -544,7 +635,7 @@ class TestWorkflowEnvironment:
     ) -> None:
         execution = self._get_execution(workflow_id)
         payload = self._data_converter.to_data(list(signal_args))
-        await self._drive(execution.run_signal, signal_name, payload)
+        await self._execute(execution.run_signal, signal_name, payload)
         await self._flush_pending_signals()
 
     def _enqueue_signal(
@@ -561,7 +652,7 @@ class TestWorkflowEnvironment:
             execution = self._executions.get(workflow_id)
             if execution is None or execution.completed:
                 continue
-            await self._drive(execution.run_signal, signal_name, payload)
+            await self._execute(execution.run_signal, signal_name, payload)
 
     async def _query_workflow(
         self,
@@ -572,7 +663,7 @@ class TestWorkflowEnvironment:
     ) -> Any:
         execution = self._get_execution(workflow_id)
         payload = self._data_converter.to_data(list(query_args))
-        result_payload = await self._drive(execution.run_query, query_type, payload)
+        result_payload = await self._execute(execution.run_query, query_type, payload)
         return self._data_converter.from_data(result_payload, [result_type])[0]
 
     async def _invoke_activity(

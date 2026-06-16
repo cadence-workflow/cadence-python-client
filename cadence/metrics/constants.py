@@ -20,7 +20,9 @@ WORKFLOW_GET_HISTORY_FAILED_COUNTER = (
 WORKFLOW_GET_HISTORY_SUCCEED_COUNTER = (
     CADENCE_METRICS_PREFIX + "workflow-get-history-succeed"
 )
-WORKFLOW_GET_HISTORY_LATENCY = CADENCE_METRICS_PREFIX + "workflow-get-history-latency_ns"
+WORKFLOW_GET_HISTORY_LATENCY = (
+    CADENCE_METRICS_PREFIX + "workflow-get-history-latency_ns"
+)
 WORKFLOW_SIGNAL_WITH_START_COUNTER = (
     CADENCE_METRICS_PREFIX + "workflow-signal-with-start"
 )

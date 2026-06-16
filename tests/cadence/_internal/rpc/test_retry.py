@@ -1,6 +1,7 @@
 from concurrent import futures
 from typing import Any, Tuple, Type
 
+import grpc
 import pytest
 from google.protobuf import any_pb2
 from google.rpc import status_pb2, code_pb2
@@ -83,7 +84,6 @@ class FakeService(service_workflow_pb2_grpc.WorkflowAPIServicer):
         context.abort_with_status(to_status(status_proto))
         # Unreachable
 
-    # Not retryable
     def DescribeWorkflowExecution(
         self, request: DescribeWorkflowExecutionRequest, context
     ):
@@ -96,8 +96,12 @@ class FakeService(service_workflow_pb2_grpc.WorkflowAPIServicer):
         elif request.domain == "maybe later":
             if self.counter >= 3:
                 return DescribeWorkflowExecutionResponse()
-
             code = code_pb2.RESOURCE_EXHAUSTED
+        elif request.domain == "unavailable then ok":
+            # Simulates scheduler mid-ContinueAsNew: UNAVAILABLE with no proto detail.
+            if self.counter >= 3:
+                return DescribeWorkflowExecutionResponse()
+            context.abort(grpc.StatusCode.UNAVAILABLE, "scheduler mid-ContinueAsNew, retry")
         else:
             code = code_pb2.PERMISSION_DENIED
 
@@ -134,6 +138,12 @@ TEST_POLICY = ExponentialRetryPolicy(
     [
         pytest.param("success", 1, None, id="happy path"),
         pytest.param("maybe later", 3, None, id="retries then success"),
+        pytest.param(
+            "unavailable then ok",
+            3,
+            None,
+            id="UNAVAILABLE without proto detail retries then succeeds (e.g. scheduler mid-ContinueAsNew)",
+        ),
         pytest.param("not retryable", 1, FeatureNotEnabledError, id="not retryable"),
         pytest.param(
             "retryable",

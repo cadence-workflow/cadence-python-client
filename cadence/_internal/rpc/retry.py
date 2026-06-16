@@ -113,4 +113,6 @@ def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
             and err.active_cluster != err.current_cluster
         )
 
+    # UNAVAILABLE covers transient conditions such as the scheduler workflow
+    # being mid-ContinueAsNew during a periodic history reset.
     return err.code in RETRYABLE_CODES

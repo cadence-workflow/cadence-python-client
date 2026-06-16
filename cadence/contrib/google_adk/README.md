@@ -4,6 +4,10 @@
 
 This module integrates with [Google Agent Development Kit (ADK)](https://github.com/google/adk-python) so ADK agents run as Cadence workflows. Every LLM call becomes a Cadence activity. Tools must be Cadence activities too if they perform side effects or need durable retries; ordinary ADK Python tools are not automatically converted into Cadence activities. ADK owns the agent loop, request construction, sessions, and events; Cadence owns durability, retries, and replay.
 
+## Determinism Constraints
+
+This integration routes ADK model calls through Cadence activities, and Cadence-registered tools execute as Cadence activities when invoked from workflow code. The rest of the ADK agent loop still runs in workflow code, so unsupported non-deterministic behavior in ADK internals, custom callbacks, tools that are not Cadence activities, or session services can break replay. Use workflow-scoped session state only for the current workflow run; do not rely on `InMemorySessionService` as durable storage across worker restarts or separate workflow runs.
+
 ## Example: Booking Flight Agent
 
 A single agent with one tool. The tool is registered as a Cadence activity, then passed through to `LlmAgent` as a regular callable.

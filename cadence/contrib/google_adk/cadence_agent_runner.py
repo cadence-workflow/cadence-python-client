@@ -85,7 +85,7 @@ class CadenceAgentRunner(Runner):
     async def run_async(self, **kwargs: Any):
         run_config = kwargs.get("run_config")
         if run_config and run_config.streaming_mode != StreamingMode.NONE:
-            raise ValueError("Streaming is not supported")
+            raise RuntimeError("Streaming is not supported")
         async for event in super().run_async(**kwargs):
             yield event
 

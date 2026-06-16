@@ -144,7 +144,7 @@ def _to_json_compatible(obj: Any) -> Any:
     if isinstance(obj, (list, tuple)):
         return [_to_json_compatible(item) for item in obj]
     if isinstance(obj, set):
-        return sorted(_to_json_compatible(item) for item in obj)
+        return [_to_json_compatible(item) for item in obj]
     return obj
 
 
@@ -156,7 +156,7 @@ def _json_default(obj: Any) -> Any:
     if isinstance(obj, enum.Enum):
         return obj.value
     if isinstance(obj, set):
-        return sorted(obj)
+        return list(obj)
     if isinstance(obj, BaseModel):
         return obj.model_dump(mode="json")
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):

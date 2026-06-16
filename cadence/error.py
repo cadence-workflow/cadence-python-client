@@ -86,6 +86,7 @@ class CadenceRpcError(Exception):
         else:
             super().__init__(message, code, *args)
         self.code = code
+        self.message = message or ""
 
 
 class WorkflowExecutionAlreadyStartedError(CadenceRpcError):

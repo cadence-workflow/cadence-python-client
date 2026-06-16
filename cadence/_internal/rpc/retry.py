@@ -113,13 +113,14 @@ def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
             and err.active_cluster != err.current_cluster
         )
 
-    # The Cadence frontend re-wraps yarpcerrors.CodeUnavailable as StatusCode.UNKNOWN
-    # with a message of the form "cadence internal uncategorized error, msg:
-    # code:unavailable message:...ContinueAsNew...". Retry this transient condition
-    # so callers never see it; the scheduler history reset completes within seconds.
-    if err.code == StatusCode.UNKNOWN:
-        msg = err.args[0] if err.args else ""
-        if isinstance(msg, str) and "ContinueAsNew" in msg:
-            return True
+    # Workaround for a server-side wrapping bug: the frontend's metered handler
+    # drops yarpcerrors.CodeUnavailable on the floor (only CodeDeadlineExceeded
+    # and CodeCancelled are passed through), so FromError re-wraps the plain
+    # fmt.Errorf as CodeUnknown / StatusCode.UNKNOWN.  Detect the scheduler
+    # mid-ContinueAsNew pattern specifically rather than broadening RETRYABLE_CODES
+    # to include all UNKNOWN errors.
+    # TODO: remove once the server passes CodeUnavailable through metered.go.
+    if err.code == StatusCode.UNKNOWN and "ContinueAsNew" in err.message:
+        return True
 
     return err.code in RETRYABLE_CODES

@@ -1,4 +1,7 @@
-"""Metric name constants for Cadence client matching Go client naming convention."""
+"""Metric name constants for Cadence client matching Go/Java client naming convention.
+
+Latency metrics use histogram type (timers are deprecated) with '_ns' suffix per Go SDK convention.
+"""
 
 # Metric name prefix
 CADENCE_METRICS_PREFIX = "cadence-"
@@ -9,7 +12,7 @@ WORKFLOW_COMPLETED_COUNTER = CADENCE_METRICS_PREFIX + "workflow-completed"
 WORKFLOW_CANCELED_COUNTER = CADENCE_METRICS_PREFIX + "workflow-canceled"
 WORKFLOW_FAILED_COUNTER = CADENCE_METRICS_PREFIX + "workflow-failed"
 WORKFLOW_CONTINUE_AS_NEW_COUNTER = CADENCE_METRICS_PREFIX + "workflow-continue-as-new"
-WORKFLOW_END_TO_END_LATENCY = CADENCE_METRICS_PREFIX + "workflow-endtoend-latency"
+WORKFLOW_END_TO_END_LATENCY = CADENCE_METRICS_PREFIX + "workflow-endtoend-latency_ns"
 WORKFLOW_GET_HISTORY_COUNTER = CADENCE_METRICS_PREFIX + "workflow-get-history-total"
 WORKFLOW_GET_HISTORY_FAILED_COUNTER = (
     CADENCE_METRICS_PREFIX + "workflow-get-history-failed"
@@ -17,7 +20,7 @@ WORKFLOW_GET_HISTORY_FAILED_COUNTER = (
 WORKFLOW_GET_HISTORY_SUCCEED_COUNTER = (
     CADENCE_METRICS_PREFIX + "workflow-get-history-succeed"
 )
-WORKFLOW_GET_HISTORY_LATENCY = CADENCE_METRICS_PREFIX + "workflow-get-history-latency"
+WORKFLOW_GET_HISTORY_LATENCY = CADENCE_METRICS_PREFIX + "workflow-get-history-latency_ns"
 WORKFLOW_SIGNAL_WITH_START_COUNTER = (
     CADENCE_METRICS_PREFIX + "workflow-signal-with-start"
 )
@@ -30,14 +33,14 @@ DECISION_POLL_TRANSIENT_FAILED_COUNTER = (
 )
 DECISION_POLL_NO_TASK_COUNTER = CADENCE_METRICS_PREFIX + "decision-poll-no-task"
 DECISION_POLL_SUCCEED_COUNTER = CADENCE_METRICS_PREFIX + "decision-poll-succeed"
-DECISION_POLL_LATENCY = CADENCE_METRICS_PREFIX + "decision-poll-latency"
+DECISION_POLL_LATENCY = CADENCE_METRICS_PREFIX + "decision-poll-latency_ns"
 DECISION_SCHEDULED_TO_START_LATENCY = (
-    CADENCE_METRICS_PREFIX + "decision-scheduled-to-start-latency"
+    CADENCE_METRICS_PREFIX + "decision-scheduled-to-start-latency_ns"
 )
 DECISION_EXECUTION_FAILED_COUNTER = CADENCE_METRICS_PREFIX + "decision-execution-failed"
-DECISION_EXECUTION_LATENCY = CADENCE_METRICS_PREFIX + "decision-execution-latency"
+DECISION_EXECUTION_LATENCY = CADENCE_METRICS_PREFIX + "decision-execution-latency_ns"
 DECISION_RESPONSE_FAILED_COUNTER = CADENCE_METRICS_PREFIX + "decision-response-failed"
-DECISION_RESPONSE_LATENCY = CADENCE_METRICS_PREFIX + "decision-response-latency"
+DECISION_RESPONSE_LATENCY = CADENCE_METRICS_PREFIX + "decision-response-latency_ns"
 DECISION_TASK_PANIC_COUNTER = CADENCE_METRICS_PREFIX + "decision-task-panic"
 DECISION_TASK_COMPLETED_COUNTER = CADENCE_METRICS_PREFIX + "decision-task-completed"
 
@@ -49,15 +52,15 @@ ACTIVITY_POLL_TRANSIENT_FAILED_COUNTER = (
 )
 ACTIVITY_POLL_NO_TASK_COUNTER = CADENCE_METRICS_PREFIX + "activity-poll-no-task"
 ACTIVITY_POLL_SUCCEED_COUNTER = CADENCE_METRICS_PREFIX + "activity-poll-succeed"
-ACTIVITY_POLL_LATENCY = CADENCE_METRICS_PREFIX + "activity-poll-latency"
+ACTIVITY_POLL_LATENCY = CADENCE_METRICS_PREFIX + "activity-poll-latency_ns"
 ACTIVITY_SCHEDULED_TO_START_LATENCY = (
-    CADENCE_METRICS_PREFIX + "activity-scheduled-to-start-latency"
+    CADENCE_METRICS_PREFIX + "activity-scheduled-to-start-latency_ns"
 )
 ACTIVITY_EXECUTION_FAILED_COUNTER = CADENCE_METRICS_PREFIX + "activity-execution-failed"
-ACTIVITY_EXECUTION_LATENCY = CADENCE_METRICS_PREFIX + "activity-execution-latency"
-ACTIVITY_RESPONSE_LATENCY = CADENCE_METRICS_PREFIX + "activity-response-latency"
+ACTIVITY_EXECUTION_LATENCY = CADENCE_METRICS_PREFIX + "activity-execution-latency_ns"
+ACTIVITY_RESPONSE_LATENCY = CADENCE_METRICS_PREFIX + "activity-response-latency_ns"
 ACTIVITY_RESPONSE_FAILED_COUNTER = CADENCE_METRICS_PREFIX + "activity-response-failed"
-ACTIVITY_END_TO_END_LATENCY = CADENCE_METRICS_PREFIX + "activity-endtoend-latency"
+ACTIVITY_END_TO_END_LATENCY = CADENCE_METRICS_PREFIX + "activity-endtoend-latency_ns"
 ACTIVITY_TASK_PANIC_COUNTER = CADENCE_METRICS_PREFIX + "activity-task-panic"
 ACTIVITY_TASK_COMPLETED_COUNTER = CADENCE_METRICS_PREFIX + "activity-task-completed"
 ACTIVITY_TASK_FAILED_COUNTER = CADENCE_METRICS_PREFIX + "activity-task-failed"
@@ -75,7 +78,7 @@ POLLER_START_COUNTER = CADENCE_METRICS_PREFIX + "poller-start"
 # Client (gRPC) metrics
 CADENCE_REQUEST = CADENCE_METRICS_PREFIX + "request"
 CADENCE_ERROR = CADENCE_METRICS_PREFIX + "error"
-CADENCE_LATENCY = CADENCE_METRICS_PREFIX + "latency"
+CADENCE_LATENCY = CADENCE_METRICS_PREFIX + "latency_ns"
 CADENCE_INVALID_REQUEST = CADENCE_METRICS_PREFIX + "invalid-request"
 
 # Replay metrics

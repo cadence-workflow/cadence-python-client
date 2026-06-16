@@ -113,6 +113,13 @@ def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
             and err.active_cluster != err.current_cluster
         )
 
-    # UNAVAILABLE covers transient conditions such as the scheduler workflow
-    # being mid-ContinueAsNew during a periodic history reset.
+    # The Cadence frontend re-wraps yarpcerrors.CodeUnavailable as StatusCode.UNKNOWN
+    # with a message of the form "cadence internal uncategorized error, msg:
+    # code:unavailable message:...ContinueAsNew...". Retry this transient condition
+    # so callers never see it; the scheduler history reset completes within seconds.
+    if err.code == StatusCode.UNKNOWN:
+        msg = err.args[0] if err.args else ""
+        if isinstance(msg, str) and "ContinueAsNew" in msg:
+            return True
+
     return err.code in RETRYABLE_CODES

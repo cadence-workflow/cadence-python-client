@@ -98,10 +98,14 @@ class FakeService(service_workflow_pb2_grpc.WorkflowAPIServicer):
                 return DescribeWorkflowExecutionResponse()
             code = code_pb2.RESOURCE_EXHAUSTED
         elif request.domain == "unavailable then ok":
-            # Simulates scheduler mid-ContinueAsNew: UNAVAILABLE with no proto detail.
+            # The Cadence frontend wraps yarpcerrors.CodeUnavailable as StatusCode.UNKNOWN.
+            # Simulate the real error the server sends for scheduler mid-ContinueAsNew.
             if self.counter >= 3:
                 return DescribeWorkflowExecutionResponse()
-            context.abort(grpc.StatusCode.UNAVAILABLE, "scheduler mid-ContinueAsNew, retry")
+            context.abort(
+                grpc.StatusCode.UNKNOWN,
+                'cadence internal uncategorized error, msg: code:unavailable message:schedule "x" in domain "y": scheduler mid-ContinueAsNew, retry',
+            )
         else:
             code = code_pb2.PERMISSION_DENIED
 
@@ -142,7 +146,7 @@ TEST_POLICY = ExponentialRetryPolicy(
             "unavailable then ok",
             3,
             None,
-            id="UNAVAILABLE without proto detail retries then succeeds (e.g. scheduler mid-ContinueAsNew)",
+            id="UNKNOWN with ContinueAsNew message retries then succeeds (scheduler mid-ContinueAsNew)",
         ),
         pytest.param("not retryable", 1, FeatureNotEnabledError, id="not retryable"),
         pytest.param(

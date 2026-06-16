@@ -113,14 +113,4 @@ def is_retryable(err: CadenceRpcError, call_details: ClientCallDetails) -> bool:
             and err.active_cluster != err.current_cluster
         )
 
-    # Workaround for a server-side wrapping bug: the frontend's metered handler
-    # drops yarpcerrors.CodeUnavailable on the floor (only CodeDeadlineExceeded
-    # and CodeCancelled are passed through), so FromError re-wraps the plain
-    # fmt.Errorf as CodeUnknown / StatusCode.UNKNOWN.  Detect the scheduler
-    # mid-ContinueAsNew pattern specifically rather than broadening RETRYABLE_CODES
-    # to include all UNKNOWN errors.
-    # TODO: remove once the server passes CodeUnavailable through metered.go.
-    if err.code == StatusCode.UNKNOWN and "ContinueAsNew" in err.message:
-        return True
-
     return err.code in RETRYABLE_CODES

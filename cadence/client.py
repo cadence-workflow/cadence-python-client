@@ -9,6 +9,7 @@ from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 from grpc import ChannelCredentials, Compression
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
+from cadence._internal.rpc.metrics import MetricsInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
 from cadence._internal.workflow.active_cluster_selection_policy import (
@@ -767,6 +768,7 @@ def _create_channel(options: ClientOptions) -> Channel:
         YarpcMetadataInterceptor(options["service_name"], options["caller_name"])
     )
     interceptors.append(RetryInterceptor())
+    interceptors.append(MetricsInterceptor(options["metrics_emitter"]))
     interceptors.append(CadenceErrorInterceptor())
 
     channel_arguments = options.get("channel_arguments") or {}

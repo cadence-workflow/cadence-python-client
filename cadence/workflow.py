@@ -270,6 +270,11 @@ class WorkflowDefinition(Generic[C]):
         """Get the workflow run method from an instance of the workflow class."""
         return cast(Callable, getattr(instance, self._run_method_name))
 
+    @property
+    def run_signature(self) -> FnSignature:
+        """The signature of the workflow run method."""
+        return self._run_signature
+
     @staticmethod
     def wrap(cls: Type, opts: WorkflowDefinitionOptions) -> "WorkflowDefinition":
         """

@@ -68,6 +68,9 @@ def _validate_and_copy_defaults(
     if "identity" not in options:
         options["identity"] = f"{client.identity}@{task_list}@{uuid.uuid4()}"
 
+    if "metrics_emitter" not in options:
+        cast(dict, options)["metrics_emitter"] = client.metrics_emitter
+
     # TODO: More validation
 
     # Set default values for missing options

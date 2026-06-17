@@ -28,6 +28,7 @@ class ActivityWorker:
             options["identity"],
             max_concurrent,
             registry.get_activity,
+            options["metrics_emitter"],
         )
         self._poller = Poller[PollForActivityTaskResponse](
             options["activity_task_pollers"], permits, self._poll, self._execute

@@ -2,6 +2,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TypeVar, Generic
 
+from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -16,18 +18,12 @@ class BaseTaskHandler(ABC, Generic[T]):
     """
 
     def __init__(self, client, task_list: str, identity: str, **options):
-        """
-        Initialize the base task handler.
-
-        Args:
-            client: The Cadence client instance
-            task_list: The task list name
-            identity: Worker identity
-            **options: Additional options for the handler
-        """
         self._client = client
         self.task_list = task_list
         self._identity = identity
+        self._metrics_emitter: MetricsEmitter = options.get(
+            "metrics_emitter", NoOpMetricsEmitter()
+        )
         self._options = options
 
     async def handle_task(self, task: T) -> None:

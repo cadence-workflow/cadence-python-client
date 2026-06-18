@@ -97,6 +97,8 @@ class PrometheusMetrics(MetricsEmitter):
 
         if metric_name not in self._histograms:
             label_names = list(self._merge_labels(labels).keys()) if labels else []
+            # Current histogram uses the prometheus_client default buckets; aligning
+            # bucket definitions with the Go SDK is planned for a later PR.
             self._histograms[metric_name] = Histogram(
                 metric_name,
                 f"Histogram metric for {name}",

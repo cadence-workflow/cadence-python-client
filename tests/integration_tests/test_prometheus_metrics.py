@@ -3,7 +3,7 @@ import threading
 from contextlib import contextmanager
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Iterator
+from typing import Any, Iterator, cast
 from urllib.parse import urlencode
 from urllib.request import urlopen
 import json
@@ -11,7 +11,7 @@ import json
 from prometheus_client import CollectorRegistry
 from pytest_docker import Services
 
-from cadence import Registry, activity, workflow
+from cadence import Registry, workflow
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
@@ -72,19 +72,17 @@ def metrics_endpoint(metrics: PrometheusMetrics) -> Iterator[None]:
 
 def _get_json(url: str) -> dict[str, Any]:
     with urlopen(url, timeout=5) as response:
-        return json.loads(response.read().decode())
+        return cast(dict[str, Any], json.loads(response.read().decode()))
 
 
 def _get_text(url: str) -> str:
     with urlopen(url, timeout=5) as response:
-        return response.read().decode()
+        return cast(str, response.read().decode())
 
 
 async def _query_prometheus(prometheus_url: str, query: str) -> dict[str, Any]:
     params = urlencode({"query": query})
-    return await asyncio.to_thread(
-        _get_json, f"{prometheus_url}/api/v1/query?{params}"
-    )
+    return await asyncio.to_thread(_get_json, f"{prometheus_url}/api/v1/query?{params}")
 
 
 async def _wait_for_prometheus_metric(prometheus_url: str, query: str) -> None:
@@ -106,12 +104,15 @@ async def _wait_for_prometheus_metric(prometheus_url: str, query: str) -> None:
 async def test_worker_poll_metrics_are_scraped_by_prometheus(
     helper: CadenceHelper, docker_ip: str, docker_services: Services
 ):
-    prometheus_url = f"http://{docker_ip}:{docker_services.port_for('prometheus', 9090)}"
+    prometheus_url = (
+        f"http://{docker_ip}:{docker_services.port_for('prometheus', 9090)}"
+    )
     docker_services.wait_until_responsive(
         timeout=30,
         pause=1,
-        check=lambda: "Prometheus Server is Ready"
-        in _get_text(f"{prometheus_url}/-/ready"),
+        check=lambda: (
+            "Prometheus Server is Ready" in _get_text(f"{prometheus_url}/-/ready")
+        ),
     )
 
     metrics = PrometheusMetrics(PrometheusConfig(registry=CollectorRegistry()))

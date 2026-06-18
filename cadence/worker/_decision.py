@@ -61,7 +61,9 @@ class DecisionWorker:
 
     async def run(self) -> None:
         self._metrics_emitter.counter(WORKER_START_COUNTER, tags=self._tags)
-        self._metrics_emitter.counter(POLLER_START_COUNTER, self._num_pollers, tags=self._tags)
+        self._metrics_emitter.counter(
+            POLLER_START_COUNTER, self._num_pollers, tags=self._tags
+        )
         try:
             await self._poller.run()
         except Exception:
@@ -77,7 +79,8 @@ class DecisionWorker:
                     PollForDecisionTaskRequest(
                         domain=self._client.domain,
                         task_list=TaskList(
-                            name=self._task_list, kind=TaskListKind.TASK_LIST_KIND_NORMAL
+                            name=self._task_list,
+                            kind=TaskListKind.TASK_LIST_KIND_NORMAL,
                         ),
                         identity=self._identity,
                     ),
@@ -86,30 +89,40 @@ class DecisionWorker:
             )
         except CadenceRpcError as e:
             elapsed = time.monotonic() - start
-            self._metrics_emitter.histogram(DECISION_POLL_LATENCY, elapsed, tags=self._tags)
+            self._metrics_emitter.histogram(
+                DECISION_POLL_LATENCY, elapsed, tags=self._tags
+            )
             if e.code in RETRYABLE_CODES:
                 self._metrics_emitter.counter(
                     DECISION_POLL_TRANSIENT_FAILED_COUNTER, tags=self._tags
                 )
             else:
-                self._metrics_emitter.counter(DECISION_POLL_FAILED_COUNTER, tags=self._tags)
+                self._metrics_emitter.counter(
+                    DECISION_POLL_FAILED_COUNTER, tags=self._tags
+                )
             raise
 
         elapsed = time.monotonic() - start
         self._metrics_emitter.histogram(DECISION_POLL_LATENCY, elapsed, tags=self._tags)
 
         if task and task.task_token:
-            self._metrics_emitter.counter(DECISION_POLL_SUCCEED_COUNTER, tags=self._tags)
+            self._metrics_emitter.counter(
+                DECISION_POLL_SUCCEED_COUNTER, tags=self._tags
+            )
             if task.scheduled_time.seconds and task.started_time.seconds:
                 scheduled_to_start = (
                     task.started_time.seconds + task.started_time.nanos / 1e9
                 ) - (task.scheduled_time.seconds + task.scheduled_time.nanos / 1e9)
                 self._metrics_emitter.histogram(
-                    DECISION_SCHEDULED_TO_START_LATENCY, scheduled_to_start, tags=self._tags
+                    DECISION_SCHEDULED_TO_START_LATENCY,
+                    scheduled_to_start,
+                    tags=self._tags,
                 )
             return task
         else:
-            self._metrics_emitter.counter(DECISION_POLL_NO_TASK_COUNTER, tags=self._tags)
+            self._metrics_emitter.counter(
+                DECISION_POLL_NO_TASK_COUNTER, tags=self._tags
+            )
             return None
 
     async def _execute(self, task: PollForDecisionTaskResponse) -> None:

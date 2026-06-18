@@ -1,7 +1,7 @@
 """Tests for poll and worker-start metrics in DecisionWorker and ActivityWorker."""
 
 import pytest
-from unittest.mock import AsyncMock, Mock, PropertyMock
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence.client import Client
@@ -84,10 +84,11 @@ class TestDecisionWorkerRunMetrics:
     @pytest.mark.asyncio
     async def test_emits_worker_start_counter(self):
         emitter = _mock_emitter()
-        worker = DecisionWorker(_mock_client(), TASK_LIST, Registry(), _decision_options(emitter))
-        worker._poller.run = AsyncMock()
-
-        await worker.run()
+        worker = DecisionWorker(
+            _mock_client(), TASK_LIST, Registry(), _decision_options(emitter)
+        )
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
 
         emitter.counter.assert_any_call(WORKER_START_COUNTER, tags=EXPECTED_TAGS)
 
@@ -97,30 +98,35 @@ class TestDecisionWorkerRunMetrics:
         options = _decision_options(emitter)
         options["decision_task_pollers"] = 3
         worker = DecisionWorker(_mock_client(), TASK_LIST, Registry(), options)
-        worker._poller.run = AsyncMock()
-
-        await worker.run()
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
 
         emitter.counter.assert_any_call(POLLER_START_COUNTER, 3, tags=EXPECTED_TAGS)
 
     @pytest.mark.asyncio
     async def test_emits_worker_panic_counter_on_exception(self):
         emitter = _mock_emitter()
-        worker = DecisionWorker(_mock_client(), TASK_LIST, Registry(), _decision_options(emitter))
-        worker._poller.run = AsyncMock(side_effect=RuntimeError("unexpected"))
-
-        with pytest.raises(RuntimeError):
-            await worker.run()
+        worker = DecisionWorker(
+            _mock_client(), TASK_LIST, Registry(), _decision_options(emitter)
+        )
+        with patch.object(
+            worker._poller,
+            "run",
+            new=AsyncMock(side_effect=RuntimeError("unexpected")),
+        ):
+            with pytest.raises(RuntimeError):
+                await worker.run()
 
         emitter.counter.assert_any_call(WORKER_PANIC_COUNTER, tags=EXPECTED_TAGS)
 
     @pytest.mark.asyncio
     async def test_no_panic_counter_on_normal_exit(self):
         emitter = _mock_emitter()
-        worker = DecisionWorker(_mock_client(), TASK_LIST, Registry(), _decision_options(emitter))
-        worker._poller.run = AsyncMock()
-
-        await worker.run()
+        worker = DecisionWorker(
+            _mock_client(), TASK_LIST, Registry(), _decision_options(emitter)
+        )
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
 
         calls = [str(c) for c in emitter.counter.call_args_list]
         assert not any(WORKER_PANIC_COUNTER in c for c in calls)
@@ -139,13 +145,17 @@ class TestDecisionWorkerPollMetrics:
         client.worker_stub.PollForDecisionTask = AsyncMock(
             return_value=Mock(task_token=b"")
         )
-        worker = DecisionWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = DecisionWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         result = await worker._poll()
 
         assert result is None
         emitter.counter.assert_any_call(DECISION_POLL_COUNTER, tags=EXPECTED_TAGS)
-        emitter.counter.assert_any_call(DECISION_POLL_NO_TASK_COUNTER, tags=EXPECTED_TAGS)
+        emitter.counter.assert_any_call(
+            DECISION_POLL_NO_TASK_COUNTER, tags=EXPECTED_TAGS
+        )
         assert any(
             c.args[0] == DECISION_POLL_LATENCY for c in emitter.histogram.call_args_list
         )
@@ -159,13 +169,17 @@ class TestDecisionWorkerPollMetrics:
         mock_task.scheduled_time = _make_ts(0)
         mock_task.started_time = _make_ts(0)
         client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
-        worker = DecisionWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = DecisionWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         result = await worker._poll()
 
         assert result is mock_task
         emitter.counter.assert_any_call(DECISION_POLL_COUNTER, tags=EXPECTED_TAGS)
-        emitter.counter.assert_any_call(DECISION_POLL_SUCCEED_COUNTER, tags=EXPECTED_TAGS)
+        emitter.counter.assert_any_call(
+            DECISION_POLL_SUCCEED_COUNTER, tags=EXPECTED_TAGS
+        )
 
     @pytest.mark.asyncio
     async def test_emits_scheduled_to_start_latency_when_timestamps_set(self):
@@ -176,7 +190,9 @@ class TestDecisionWorkerPollMetrics:
         mock_task.scheduled_time = _make_ts(1000)
         mock_task.started_time = _make_ts(1002)
         client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
-        worker = DecisionWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = DecisionWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         await worker._poll()
 
@@ -194,7 +210,9 @@ class TestDecisionWorkerPollMetrics:
         mock_task.scheduled_time = _make_ts(0)
         mock_task.started_time = _make_ts(0)
         client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
-        worker = DecisionWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = DecisionWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         await worker._poll()
 
@@ -208,7 +226,9 @@ class TestDecisionWorkerPollMetrics:
         client.worker_stub.PollForDecisionTask = AsyncMock(
             side_effect=CadenceRpcError("unavailable", StatusCode.UNAVAILABLE)
         )
-        worker = DecisionWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = DecisionWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         with pytest.raises(CadenceRpcError):
             await worker._poll()
@@ -228,12 +248,16 @@ class TestDecisionWorkerPollMetrics:
         client.worker_stub.PollForDecisionTask = AsyncMock(
             side_effect=CadenceRpcError("not found", StatusCode.NOT_FOUND)
         )
-        worker = DecisionWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = DecisionWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         with pytest.raises(CadenceRpcError):
             await worker._poll()
 
-        emitter.counter.assert_any_call(DECISION_POLL_FAILED_COUNTER, tags=EXPECTED_TAGS)
+        emitter.counter.assert_any_call(
+            DECISION_POLL_FAILED_COUNTER, tags=EXPECTED_TAGS
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -245,10 +269,11 @@ class TestActivityWorkerRunMetrics:
     @pytest.mark.asyncio
     async def test_emits_worker_start_counter(self):
         emitter = _mock_emitter()
-        worker = ActivityWorker(_mock_client(), TASK_LIST, Registry(), _decision_options(emitter))
-        worker._poller.run = AsyncMock()
-
-        await worker.run()
+        worker = ActivityWorker(
+            _mock_client(), TASK_LIST, Registry(), _decision_options(emitter)
+        )
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
 
         emitter.counter.assert_any_call(WORKER_START_COUNTER, tags=EXPECTED_TAGS)
 
@@ -258,30 +283,35 @@ class TestActivityWorkerRunMetrics:
         options = _decision_options(emitter)
         options["activity_task_pollers"] = 5
         worker = ActivityWorker(_mock_client(), TASK_LIST, Registry(), options)
-        worker._poller.run = AsyncMock()
-
-        await worker.run()
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
 
         emitter.counter.assert_any_call(POLLER_START_COUNTER, 5, tags=EXPECTED_TAGS)
 
     @pytest.mark.asyncio
     async def test_emits_worker_panic_counter_on_exception(self):
         emitter = _mock_emitter()
-        worker = ActivityWorker(_mock_client(), TASK_LIST, Registry(), _decision_options(emitter))
-        worker._poller.run = AsyncMock(side_effect=RuntimeError("unexpected"))
-
-        with pytest.raises(RuntimeError):
-            await worker.run()
+        worker = ActivityWorker(
+            _mock_client(), TASK_LIST, Registry(), _decision_options(emitter)
+        )
+        with patch.object(
+            worker._poller,
+            "run",
+            new=AsyncMock(side_effect=RuntimeError("unexpected")),
+        ):
+            with pytest.raises(RuntimeError):
+                await worker.run()
 
         emitter.counter.assert_any_call(WORKER_PANIC_COUNTER, tags=EXPECTED_TAGS)
 
     @pytest.mark.asyncio
     async def test_no_panic_counter_on_normal_exit(self):
         emitter = _mock_emitter()
-        worker = ActivityWorker(_mock_client(), TASK_LIST, Registry(), _decision_options(emitter))
-        worker._poller.run = AsyncMock()
-
-        await worker.run()
+        worker = ActivityWorker(
+            _mock_client(), TASK_LIST, Registry(), _decision_options(emitter)
+        )
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
 
         calls = [str(c) for c in emitter.counter.call_args_list]
         assert not any(WORKER_PANIC_COUNTER in c for c in calls)
@@ -300,13 +330,17 @@ class TestActivityWorkerPollMetrics:
         client.worker_stub.PollForActivityTask = AsyncMock(
             return_value=Mock(task_token=b"")
         )
-        worker = ActivityWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = ActivityWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         result = await worker._poll()
 
         assert result is None
         emitter.counter.assert_any_call(ACTIVITY_POLL_COUNTER, tags=EXPECTED_TAGS)
-        emitter.counter.assert_any_call(ACTIVITY_POLL_NO_TASK_COUNTER, tags=EXPECTED_TAGS)
+        emitter.counter.assert_any_call(
+            ACTIVITY_POLL_NO_TASK_COUNTER, tags=EXPECTED_TAGS
+        )
         assert any(
             c.args[0] == ACTIVITY_POLL_LATENCY for c in emitter.histogram.call_args_list
         )
@@ -320,13 +354,17 @@ class TestActivityWorkerPollMetrics:
         mock_task.scheduled_time = _make_ts(0)
         mock_task.started_time = _make_ts(0)
         client.worker_stub.PollForActivityTask = AsyncMock(return_value=mock_task)
-        worker = ActivityWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = ActivityWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         result = await worker._poll()
 
         assert result is mock_task
         emitter.counter.assert_any_call(ACTIVITY_POLL_COUNTER, tags=EXPECTED_TAGS)
-        emitter.counter.assert_any_call(ACTIVITY_POLL_SUCCEED_COUNTER, tags=EXPECTED_TAGS)
+        emitter.counter.assert_any_call(
+            ACTIVITY_POLL_SUCCEED_COUNTER, tags=EXPECTED_TAGS
+        )
 
     @pytest.mark.asyncio
     async def test_emits_scheduled_to_start_latency_when_timestamps_set(self):
@@ -337,22 +375,31 @@ class TestActivityWorkerPollMetrics:
         mock_task.scheduled_time = _make_ts(500)
         mock_task.started_time = _make_ts(503)
         client.worker_stub.PollForActivityTask = AsyncMock(return_value=mock_task)
-        worker = ActivityWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = ActivityWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         await worker._poll()
 
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert ACTIVITY_SCHEDULED_TO_START_LATENCY in histogram_calls
-        assert abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 3.0) < 0.01
+        assert (
+            abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 3.0)
+            < 0.01
+        )
 
     @pytest.mark.asyncio
     async def test_emits_transient_failed_counter_on_retryable_error(self):
         emitter = _mock_emitter()
         client = _mock_client()
         client.worker_stub.PollForActivityTask = AsyncMock(
-            side_effect=CadenceRpcError("resource exhausted", StatusCode.RESOURCE_EXHAUSTED)
+            side_effect=CadenceRpcError(
+                "resource exhausted", StatusCode.RESOURCE_EXHAUSTED
+            )
         )
-        worker = ActivityWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = ActivityWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         with pytest.raises(CadenceRpcError):
             await worker._poll()
@@ -367,11 +414,17 @@ class TestActivityWorkerPollMetrics:
         emitter = _mock_emitter()
         client = _mock_client()
         client.worker_stub.PollForActivityTask = AsyncMock(
-            side_effect=CadenceRpcError("permission denied", StatusCode.PERMISSION_DENIED)
+            side_effect=CadenceRpcError(
+                "permission denied", StatusCode.PERMISSION_DENIED
+            )
         )
-        worker = ActivityWorker(client, TASK_LIST, Registry(), _decision_options(emitter))
+        worker = ActivityWorker(
+            client, TASK_LIST, Registry(), _decision_options(emitter)
+        )
 
         with pytest.raises(CadenceRpcError):
             await worker._poll()
 
-        emitter.counter.assert_any_call(ACTIVITY_POLL_FAILED_COUNTER, tags=EXPECTED_TAGS)
+        emitter.counter.assert_any_call(
+            ACTIVITY_POLL_FAILED_COUNTER, tags=EXPECTED_TAGS
+        )

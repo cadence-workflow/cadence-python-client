@@ -261,7 +261,7 @@ class _Execution:
         self.completed: bool = False
         self.result_payload: Optional[Payload] = None
         self.error: Optional[BaseException] = None
-        self.cancel_requested: bool = False # TODO: Implement cancel request
+        self.cancel_requested: bool = False  # TODO: Implement cancel request
         # Min-heap of pending timers keyed by (deadline, sequence). The sequence
         # is a monotonic tiebreaker so two timers with the same deadline never
         # compare their futures.
@@ -773,8 +773,7 @@ class TestWorkflowEnvironment:
     ) -> Payload:
         instance = definition.cls()
         run_method = definition.get_run_method(instance)
-        # noinspection PyProtectedMember
-        run_args = definition._run_signature.params_from_payload(
+        run_args = definition.run_signature.params_from_payload(
             self._data_converter, input_payload
         )
         child_ctx = _InMemoryWorkflowContext(self, info)

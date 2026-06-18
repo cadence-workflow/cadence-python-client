@@ -8,7 +8,6 @@ from cadence.api.v1.service_worker_pb2 import (
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.client import Client
-from cadence.error import CadenceRpcError
 from cadence.metrics import MetricsEmitter
 from cadence.metrics.constants import (
     DECISION_POLL_COUNTER,
@@ -73,8 +72,7 @@ class DecisionWorker:
         )
 
     async def _poll(self) -> Optional[PollForDecisionTaskResponse]:
-        start = self._poll_metrics.start_poll()
-        try:
+        async with self._poll_metrics.track() as start:
             task: PollForDecisionTaskResponse = (
                 await self._client.worker_stub.PollForDecisionTask(
                     PollForDecisionTaskRequest(
@@ -88,11 +86,8 @@ class DecisionWorker:
                     timeout=_LONG_POLL_TIMEOUT,
                 )
             )
-        except CadenceRpcError as e:
-            self._poll_metrics.record_failure(start, e)
-            raise
-        self._poll_metrics.record_result(start, task)
-        return task if (task and task.task_token) else None
+            self._poll_metrics.record_result(start, task)
+            return task if (task and task.task_token) else None
 
     async def _execute(self, task: PollForDecisionTaskResponse) -> None:
         await self._decision_handler.handle_task(task)

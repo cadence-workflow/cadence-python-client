@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -29,14 +31,23 @@ class PollMetrics:
     transient_failed: str
     scheduled_to_start: str
 
-    def start_poll(self) -> float:
+    @contextlib.asynccontextmanager
+    async def track(self) -> AsyncIterator[float]:
+        """Emit poll counter; guarantee exactly one outcome counter on error."""
         self.emitter.counter(self.poll, tags=self.tags)
-        return time.monotonic()
-
-    def record_failure(self, start: float, error: CadenceRpcError) -> None:
-        self.emitter.histogram(self.latency, time.monotonic() - start, tags=self.tags)
-        metric = self.transient_failed if error.code in RETRYABLE_CODES else self.failed
-        self.emitter.counter(metric, tags=self.tags)
+        start = time.monotonic()
+        try:
+            yield start
+        except CadenceRpcError as e:
+            self.emitter.histogram(
+                self.latency, time.monotonic() - start, tags=self.tags
+            )
+            metric = self.transient_failed if e.code in RETRYABLE_CODES else self.failed
+            self.emitter.counter(metric, tags=self.tags)
+            raise
+        except Exception:
+            self.emitter.counter(self.failed, tags=self.tags)
+            raise
 
     def record_result(self, start: float, task: Any) -> None:
         """Record latency, then succeed vs idle, and optional schedule-to-start lag."""

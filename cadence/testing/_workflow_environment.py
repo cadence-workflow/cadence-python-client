@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import heapq
 import inspect
+import logging
 import uuid
 from asyncio import Future, get_running_loop
 from collections.abc import Iterator
@@ -75,6 +76,8 @@ from cadence.workflow import (
     WorkflowInfo,
 )
 from cadence.worker import Registry
+
+logger = logging.getLogger(__name__)
 
 
 class _Unset:
@@ -253,10 +256,13 @@ class _Execution:
     ) -> None:
         self._env = env
         self.info = info
+        self._definition = workflow_definition
+        self._data_converter = info.data_converter
         self._loop = DeterministicEventLoop()
-        self._instance = WorkflowInstance(
-            self._loop, workflow_definition, info.data_converter
-        )
+        # WorkflowInstance operates purely on decoded Python values; this
+        # execution owns the DataConverter and decodes inputs / encodes outputs
+        # at the boundary (mirroring the production WorkflowEngine).
+        self._instance = WorkflowInstance(self._loop, workflow_definition)
         self._context = _InMemoryWorkflowContext(env, info)
         self.completed: bool = False
         self.result_payload: Optional[Payload] = None
@@ -278,16 +284,29 @@ class _Execution:
         pending_signal: Optional[Tuple[str, Payload]] = None,
     ) -> None:
         with self._driving():
-            self._instance.start(payload)
+            args = self._definition.run_signature.params_from_payload(
+                self._data_converter, payload
+            )
+            self._instance.start(args)
             if pending_signal is not None:
                 name, signal_payload = pending_signal
-                self._instance.handle_signal(name, signal_payload)
+                self._dispatch_signal(name, signal_payload)
             self._run_until_settled()
 
     def run_signal(self, name: str, payload: Payload) -> None:
         with self._driving():
-            self._instance.handle_signal(name, payload)
+            self._dispatch_signal(name, payload)
             self._run_until_settled()
+
+    def _dispatch_signal(self, name: str, payload: Payload) -> None:
+        signal_def = self._definition.signals.get(name)
+        if signal_def is None:
+            logger.warning(
+                "Received signal '%s' but no handler registered, dropping", name
+            )
+            return
+        args = signal_def.params_from_payload(self._data_converter, payload)
+        self._instance.handle_signal(signal_def, args)
 
     @contextmanager
     def _driving(self) -> Iterator[None]:
@@ -324,7 +343,15 @@ class _Execution:
 
     def run_query(self, query_type: str, args: Payload) -> Payload:
         with self._context._activate():
-            return self._instance.handle_query(query_type, args)
+            query_def = self._definition.queries.get(query_type)
+            if query_def is None:
+                raise ValueError(
+                    f"Unknown query type '{query_type}'. "
+                    f"Known types: {list(self._definition.queries.keys())}"
+                )
+            query_args = query_def.params_from_payload(self._data_converter, args)
+            result = self._instance.handle_query(query_def, query_args)
+            return self._data_converter.to_data([result])
 
     def _collect_outcome(self) -> None:
         signal_failure = self._instance.get_signal_failure()
@@ -335,7 +362,8 @@ class _Execution:
         if self._instance.is_done():
             self.completed = True
             try:
-                self.result_payload = self._instance.get_result()
+                result = self._instance.get_result()
+                self.result_payload = self._data_converter.to_data([result])
             except BaseException as exc:  # noqa: BLE001 - surfaced via get_workflow_*
                 self.error = exc
 

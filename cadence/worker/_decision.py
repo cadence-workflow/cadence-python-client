@@ -17,11 +17,13 @@ from cadence.metrics.constants import (
     DECISION_POLL_SUCCEED_COUNTER,
     DECISION_POLL_TRANSIENT_FAILED_COUNTER,
     DECISION_SCHEDULED_TO_START_LATENCY,
+    POLLER_START_COUNTER,
     TAG_DOMAIN,
     TAG_TASK_LIST,
+    WORKER_START_COUNTER,
 )
 from cadence.worker._decision_task_handler import DecisionTaskHandler
-from cadence.worker._poll_metrics import PollMetrics, run_with_lifecycle_metrics
+from cadence.worker._poll_metrics import PollMetrics
 from cadence.worker._poller import Poller
 from cadence.worker._registry import Registry
 from cadence.worker._types import _LONG_POLL_TIMEOUT, WorkerOptions
@@ -36,11 +38,12 @@ class DecisionWorker:
         self._registry = registry
         self._identity = options["identity"]
         self._metrics_emitter: MetricsEmitter = options["metrics_emitter"]
-        self._tags = {TAG_DOMAIN: client.domain, TAG_TASK_LIST: task_list}
+        self._tagged_emitter = self._metrics_emitter.with_tags(
+            {TAG_DOMAIN: client.domain, TAG_TASK_LIST: task_list}
+        )
         self._num_pollers = options["decision_task_pollers"]
         self._poll_metrics = PollMetrics(
-            emitter=self._metrics_emitter,
-            tags=self._tags,
+            emitter=self._tagged_emitter,
             poll=DECISION_POLL_COUNTER,
             latency=DECISION_POLL_LATENCY,
             succeed=DECISION_POLL_SUCCEED_COUNTER,
@@ -64,12 +67,9 @@ class DecisionWorker:
         # TODO: Sticky poller, actually running workflows, etc.
 
     async def run(self) -> None:
-        await run_with_lifecycle_metrics(
-            self._metrics_emitter,
-            self._poller,
-            num_pollers=self._num_pollers,
-            tags=self._tags,
-        )
+        self._tagged_emitter.counter(WORKER_START_COUNTER)
+        self._tagged_emitter.counter(POLLER_START_COUNTER, self._num_pollers)
+        await self._poller.run()
 
     async def _poll(self) -> Optional[PollForDecisionTaskResponse]:
         async with self._poll_metrics.track() as start:

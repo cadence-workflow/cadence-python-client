@@ -7,13 +7,23 @@ Requires a running Cadence server. Run with:
 import asyncio
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 
+import grpc
 import pytest
 from google.protobuf import text_format
+from google.protobuf.duration_pb2 import Duration as PbDuration
 
 from cadence.api.v1 import common_pb2, schedule_pb2, tasklist_pb2
 from cadence.api.v1.service_schedule_pb2 import DescribeScheduleResponse
+from cadence.error import CadenceRpcError, QueryFailedError
 from tests.integration_tests.helper import CadenceHelper
+
+
+def _make_duration(td: timedelta) -> PbDuration:
+    d = PbDuration()
+    d.FromTimedelta(td)
+    return d
 
 
 def _make_schedule_action() -> schedule_pb2.ScheduleAction:
@@ -24,6 +34,8 @@ def _make_schedule_action() -> schedule_pb2.ScheduleAction:
                 name="ScheduleIntegrationDummyWorkflow"
             ),
             task_list=tasklist_pb2.TaskList(name="schedule-integration-task-list"),
+            execution_start_to_close_timeout=_make_duration(timedelta(hours=1)),
+            task_start_to_close_timeout=_make_duration(timedelta(seconds=10)),
         )
     )
 
@@ -179,5 +191,60 @@ async def test_list_schedules_contains_created(helper: CadenceHelper):
                     break
                 await asyncio.sleep(1.0)
             assert found, f"schedule {schedule_id!r} not found in list within 30s"
+        finally:
+            await client.delete_schedule(schedule_id)
+
+
+@pytest.mark.usefixtures("helper")
+async def test_backfill(helper: CadenceHelper):
+    """Backfill starts workflow executions for past schedule slots."""
+    schedule_id = f"test-schedule-backfill-{uuid.uuid4()}"
+
+    async with helper.client() as client:
+        try:
+            await client.create_schedule(
+                schedule_id,
+                spec=schedule_pb2.ScheduleSpec(cron_expression="* * * * *"),
+                action=_make_schedule_action(),
+                policies=schedule_pb2.SchedulePolicies(
+                    overlap_policy=schedule_pb2.SCHEDULE_OVERLAP_POLICY_CONCURRENT,
+                ),
+            )
+
+            now = datetime.now(timezone.utc)
+            await client.backfill_schedule(
+                schedule_id,
+                start_time=now - timedelta(minutes=3),
+                end_time=now - timedelta(minutes=1),
+            )
+
+            # The scheduler processes the backfill signal asynchronously.
+            # CONCURRENT overlap lets both slots in the 2-minute window fire
+            # even though the started workflows have no worker to complete them.
+            # Asserting >= 2 rules out a false-positive from a single ordinary
+            # cron tick that could fire during the poll window.
+            # DescribeSchedule can also briefly time out while the server is
+            # processing the backfill, so keep polling through that transient.
+            deadline = time.monotonic() + 60.0
+            resp = None
+            while time.monotonic() < deadline:
+                try:
+                    resp = await client.describe_schedule(schedule_id)
+                    if resp.info.total_runs >= 2:
+                        break
+                except QueryFailedError:
+                    # The schedule can exist before the server has finished
+                    # materializing state for DescribeSchedule immediately after
+                    # a backfill request.
+                    pass
+                except CadenceRpcError as exc:
+                    if exc.code != grpc.StatusCode.DEADLINE_EXCEEDED:
+                        raise
+                await asyncio.sleep(0.5)
+
+            assert resp is not None, "describe_schedule never succeeded within 60s"
+            assert resp.info.total_runs >= 2, (
+                f"expected at least 2 backfilled runs, got total_runs={resp.info.total_runs}"
+            )
         finally:
             await client.delete_schedule(schedule_id)

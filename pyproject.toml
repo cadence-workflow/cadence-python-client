@@ -29,6 +29,7 @@ dependencies = [
     "grpcio>=1.73.1",
     "grpcio-status>=1.73.1",
     "msgspec>=0.19.0",
+    "pydantic>=2.0.0",
     "protobuf>=6.31.0,<7.0.0",
     "typing-extensions>=4.0.0",
     "prometheus-client>=0.21.0",
@@ -60,6 +61,9 @@ examples = [
 openai = [
     "openai>=0.27.10",
     "openai-agents>=0.12.5",
+]
+google-adk = [
+    "google-adk>=2.0.0,<3",
 ]
 
 [project.urls]
@@ -104,6 +108,7 @@ module = [
     "grpcio.*",
     "grpcio_tools.*",
     "grpc.*",
+    "google.adk.*",
     "google.protobuf.*",
     "google.rpc.*",
     "grpc_status.*",

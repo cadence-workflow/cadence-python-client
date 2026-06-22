@@ -49,10 +49,27 @@ async def test_cancellation_not_immediate():
         decision.ScheduleActivityTaskDecisionAttributes()
     )
     decisions.handle_history_event(activity_scheduled(1, "0"))
-    activity_result.cancel()
+    cancelled = activity_result.cancel()
 
+    assert cancelled is False
     assert activity_result.done() is False
     assert activity_result.cancelled() is False
+
+
+async def test_cancellation_with_message_cancels_future_immediately():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    activity_result = decisions.schedule_activity(
+        decision.ScheduleActivityTaskDecisionAttributes()
+    )
+    decisions.handle_history_event(activity_scheduled(1, "0"))
+    cancelled = activity_result.cancel("workflow cancelled")
+
+    assert cancelled is True
+    assert activity_result.done() is True
+    assert activity_result.cancelled() is True
+    with pytest.raises(CancelledError, match="workflow cancelled"):
+        activity_result.result()
 
 
 async def test_cancellation_completed():

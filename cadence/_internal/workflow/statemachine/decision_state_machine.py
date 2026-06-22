@@ -136,9 +136,12 @@ class DecisionFuture(asyncio.Future[T]):
         should interrupt the current await immediately, preserving that message
         on the resulting ``CancelledError``.
 
-        Returns ``True`` if cancellation was accepted by the state machine.
+        Returns ``True`` only if this future was actually cancelled, like
+         ``asyncio.Future.cancel()`` contract. A recorded operation can
+        accept the cancel request and still remain pending until Cadence records
+        its terminal history event.
         """
         requested = self._request_cancel(msg)
         if requested and msg is not None and not self.done():
             super().cancel(msg)
-        return requested
+        return self.cancelled()

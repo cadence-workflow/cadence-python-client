@@ -71,6 +71,7 @@ from cadence.workflow import (
     ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
+    WorkflowCancellationInfo,
     WorkflowContext,
     WorkflowDefinition,
     WorkflowInfo,
@@ -243,6 +244,12 @@ class _InMemoryWorkflowContext(WorkflowContext):
         dropped, matching the behavior of signaling a closed workflow.
         """
         self._env._enqueue_signal(workflow_id, signal_name, args)
+
+    def is_cancel_requested(self) -> bool:
+        return False
+
+    def cancellation_info(self) -> WorkflowCancellationInfo | None:
+        return None
 
 
 class _Execution:

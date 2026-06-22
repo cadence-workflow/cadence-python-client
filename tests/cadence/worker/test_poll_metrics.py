@@ -71,9 +71,10 @@ def _worker_options(emitter) -> WorkerOptions:
     }
 
 
-def _make_ts(seconds: int) -> Timestamp:
+def _make_ts(seconds: int, nanos: int = 0) -> Timestamp:
     ts = Timestamp()
     ts.seconds = seconds
+    ts.nanos = nanos
     return ts
 
 
@@ -212,6 +213,22 @@ class TestDecisionWorkerPollMetrics:
 
         histogram_names = [c.args[0] for c in emitter.histogram.call_args_list]
         assert DECISION_SCHEDULED_TO_START_LATENCY not in histogram_names
+
+    @pytest.mark.asyncio
+    async def test_clamps_negative_scheduled_to_start_latency(self):
+        emitter = _mock_emitter()
+        client = _mock_client()
+        mock_task = Mock()
+        mock_task.task_token = b"token"
+        mock_task.scheduled_time = _make_ts(1002)
+        mock_task.started_time = _make_ts(1000)
+        client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
+        worker = DecisionWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
+
+        await worker._poll()
+
+        histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
+        assert histogram_calls[DECISION_SCHEDULED_TO_START_LATENCY].args[1] == 0.0
 
     @pytest.mark.asyncio
     async def test_emits_transient_failed_counter_on_retryable_error(self):
@@ -369,6 +386,25 @@ class TestActivityWorkerPollMetrics:
         assert ACTIVITY_SCHEDULED_TO_START_LATENCY in histogram_calls
         assert (
             abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 3.0)
+            < 0.01
+        )
+
+    @pytest.mark.asyncio
+    async def test_emits_scheduled_to_start_latency_when_only_nanos_set(self):
+        emitter = _mock_emitter()
+        client = _mock_client()
+        mock_task = Mock()
+        mock_task.task_token = b"token"
+        mock_task.scheduled_time = _make_ts(0, 100_000_000)
+        mock_task.started_time = _make_ts(0, 300_000_000)
+        client.worker_stub.PollForActivityTask = AsyncMock(return_value=mock_task)
+        worker = ActivityWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
+
+        await worker._poll()
+
+        histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
+        assert (
+            abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 0.2)
             < 0.01
         )
 

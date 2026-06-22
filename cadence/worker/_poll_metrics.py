@@ -57,6 +57,6 @@ class PollMetrics:
             return
         self.emitter.counter(self.succeed)
         s, e = task.scheduled_time, task.started_time
-        if s.seconds and e.seconds:
+        if (s.seconds or s.nanos) and (e.seconds or e.nanos):
             lag = (e.seconds + e.nanos / 1e9) - (s.seconds + s.nanos / 1e9)
-            self.emitter.histogram(self.scheduled_to_start, lag)
+            self.emitter.histogram(self.scheduled_to_start, max(0.0, lag))

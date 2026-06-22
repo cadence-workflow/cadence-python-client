@@ -26,6 +26,7 @@ from cadence.metrics.constants import (
     POLLER_START_COUNTER,
     TAG_DOMAIN,
     TAG_TASK_LIST,
+    WORKER_PANIC_COUNTER,
     WORKER_START_COUNTER,
 )
 from cadence.worker._activity import ActivityWorker
@@ -103,6 +104,34 @@ class TestDecisionWorkerRunMetrics:
             await worker.run()
 
         emitter.counter.assert_any_call(POLLER_START_COUNTER, 3, tags=EXPECTED_TAGS)
+
+    @pytest.mark.asyncio
+    async def test_emits_worker_panic_counter_on_exception(self):
+        emitter = _mock_emitter()
+        worker = DecisionWorker(
+            _mock_client(), TASK_LIST, Registry(), _worker_options(emitter)
+        )
+        with patch.object(
+            worker._poller,
+            "run",
+            new=AsyncMock(side_effect=RuntimeError("unexpected")),
+        ):
+            with pytest.raises(RuntimeError):
+                await worker.run()
+
+        emitter.counter.assert_any_call(WORKER_PANIC_COUNTER, 1, tags=EXPECTED_TAGS)
+
+    @pytest.mark.asyncio
+    async def test_no_panic_counter_on_normal_exit(self):
+        emitter = _mock_emitter()
+        worker = DecisionWorker(
+            _mock_client(), TASK_LIST, Registry(), _worker_options(emitter)
+        )
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
+
+        calls = [str(c) for c in emitter.counter.call_args_list]
+        assert not any(WORKER_PANIC_COUNTER in c for c in calls)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +277,34 @@ class TestActivityWorkerRunMetrics:
             await worker.run()
 
         emitter.counter.assert_any_call(POLLER_START_COUNTER, 5, tags=EXPECTED_TAGS)
+
+    @pytest.mark.asyncio
+    async def test_emits_worker_panic_counter_on_exception(self):
+        emitter = _mock_emitter()
+        worker = ActivityWorker(
+            _mock_client(), TASK_LIST, Registry(), _worker_options(emitter)
+        )
+        with patch.object(
+            worker._poller,
+            "run",
+            new=AsyncMock(side_effect=RuntimeError("unexpected")),
+        ):
+            with pytest.raises(RuntimeError):
+                await worker.run()
+
+        emitter.counter.assert_any_call(WORKER_PANIC_COUNTER, 1, tags=EXPECTED_TAGS)
+
+    @pytest.mark.asyncio
+    async def test_no_panic_counter_on_normal_exit(self):
+        emitter = _mock_emitter()
+        worker = ActivityWorker(
+            _mock_client(), TASK_LIST, Registry(), _worker_options(emitter)
+        )
+        with patch.object(worker._poller, "run", new=AsyncMock()):
+            await worker.run()
+
+        calls = [str(c) for c in emitter.counter.call_args_list]
+        assert not any(WORKER_PANIC_COUNTER in c for c in calls)
 
 
 # ---------------------------------------------------------------------------

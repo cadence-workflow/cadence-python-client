@@ -20,6 +20,7 @@ from cadence.metrics.constants import (
     POLLER_START_COUNTER,
     TAG_DOMAIN,
     TAG_TASK_LIST,
+    WORKER_PANIC_COUNTER,
     WORKER_START_COUNTER,
 )
 from cadence.worker._decision_task_handler import DecisionTaskHandler
@@ -69,7 +70,11 @@ class DecisionWorker:
     async def run(self) -> None:
         self._tagged_emitter.counter(WORKER_START_COUNTER)
         self._tagged_emitter.counter(POLLER_START_COUNTER, self._num_pollers)
-        await self._poller.run()
+        try:
+            await self._poller.run()
+        except Exception:
+            self._tagged_emitter.counter(WORKER_PANIC_COUNTER)
+            raise
 
     async def _poll(self) -> Optional[PollForDecisionTaskResponse]:
         async with self._poll_metrics.track() as start:

@@ -42,7 +42,7 @@ class SignalExternalWorkflowStateMachine(BaseDecisionStateMachine):
             )
         return None
 
-    def request_cancel(self) -> bool:
+    def request_cancel(self, message: str | None = None) -> bool:
         return False
 
     def force_cancel(self, message: str | None = None) -> None:
@@ -62,7 +62,7 @@ class SignalExternalWorkflowStateMachine(BaseDecisionStateMachine):
         _: history.ExternalWorkflowExecutionSignaledEventAttributes,
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self.completed.set_result(None)
+        self._resolve(self.completed, result=None)
 
     @signal_external_events.event()
     def handle_failed(
@@ -70,9 +70,10 @@ class SignalExternalWorkflowStateMachine(BaseDecisionStateMachine):
         event: history.SignalExternalWorkflowExecutionFailedEventAttributes,
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self.completed.set_exception(
-            SignalExternalWorkflowFailed(
+        self._resolve(
+            self.completed,
+            exc=SignalExternalWorkflowFailed(
                 f"signal external workflow failed: {event.cause}",
                 cause=event.cause,
-            )
+            ),
         )

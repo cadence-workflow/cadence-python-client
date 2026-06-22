@@ -330,7 +330,6 @@ class WorkflowEngine:
         event: HistoryEvent,
     ) -> None:
         info = self._context.request_cancel(attrs)
-        self._decision_manager.request_cancel_pending_decisions(info.cause)
         self._workflow_instance.request_cancel(info)
 
 

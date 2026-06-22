@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Protocol, TypeVar, Optional
+from typing import Any, Callable, Protocol, TypeVar
 
 from cadence.api.v1 import (
     decision_pb2 as decision,
@@ -63,9 +63,9 @@ class DecisionStateMachine(Protocol):
 
     def get_decision(self) -> decision.Decision | None: ...
 
-    def request_cancel(self) -> bool: ...
+    def request_cancel(self, message: str | None = None) -> bool: ...
 
-    def force_cancel(self, message: Optional[str] = None) -> None: ...
+    def force_cancel(self, message: str | None = None) -> None: ...
 
 
 class BaseDecisionStateMachine(DecisionStateMachine):
@@ -84,12 +84,33 @@ class BaseDecisionStateMachine(DecisionStateMachine):
     def state(self) -> DecisionState:
         return self._state
 
-    def force_cancel(self, message: Optional[str] = None) -> None:
+    def force_cancel(self, message: str | None = None) -> None:
         pass
+
+    @staticmethod
+    def _resolve(
+        future: DecisionFuture[Any],
+        *,
+        result: Any = None,
+        exc: BaseException | None = None,
+    ) -> None:
+        """Resolve a decision future if workflow code is still waiting on it.
+
+        Local cancellation can complete the future before Cadence records the
+        operation's terminal history event. The state machine must still consume
+        that event, but there is no waiting coroutine left to notify. Treat that
+        as already resolved instead of raising ``InvalidStateError``.
+        """
+        if future.done():
+            return
+        if exc is not None:
+            future.set_exception(exc)
+        else:
+            future.set_result(result)
 
 
 T = TypeVar("T")
-CancelFn = Callable[[], bool]
+CancelFn = Callable[[str | None], bool]
 
 
 class DecisionFuture(asyncio.Future[T]):
@@ -103,8 +124,21 @@ class DecisionFuture(asyncio.Future[T]):
             request_cancel = self.force_cancel
         self._request_cancel = request_cancel
 
-    def force_cancel(self, message: Optional[str] = None) -> bool:
+    def force_cancel(self, message: str | None = None) -> bool:
         return super().cancel(message)
 
-    def cancel(self, msg=None) -> bool:
-        return self._request_cancel()
+    def cancel(self, msg: str | None = None) -> bool:
+        """Request cancellation without always completing this future.
+
+        Explicit operation cancellation only emits the cancel decision; the
+        future stays pending until history records the terminal event. Root
+        workflow cancellation passes a message through ``Task.cancel(msg)`` and
+        should interrupt the current await immediately, preserving that message
+        on the resulting ``CancelledError``.
+
+        Returns ``True`` if cancellation was accepted by the state machine.
+        """
+        requested = self._request_cancel(msg)
+        if requested and msg is not None and not self.done():
+            super().cancel(msg)
+        return requested

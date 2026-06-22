@@ -151,34 +151,6 @@ async def test_collect_pending_decisions_timer_cancel_before_complete():
     )
 
 
-async def test_collect_pending_decisions_root_forced_omits_cancel_at_complete():
-    """Root workflow cancel + same-task complete: omit redundant cancel decisions."""
-    decisions = DecisionManager(asyncio.get_event_loop())
-    _timer_fut = decisions.start_timer(decision.StartTimerDecisionAttributes())
-    decisions.handle_history_event(
-        history.HistoryEvent(
-            event_id=1,
-            timer_started_event_attributes=history.TimerStartedEventAttributes(
-                timer_id="0"
-            ),
-        )
-    )
-    decisions.request_cancel_pending_decisions("root cause")
-    decisions.complete_workflow(
-        decision.Decision(
-            complete_workflow_execution_decision_attributes=decision.CompleteWorkflowExecutionDecisionAttributes(
-                result=Payload(data=b'"done"')
-            )
-        )
-    )
-    pending = decisions.collect_pending_decisions()
-    assert len(pending) == 1
-    assert (
-        pending[0].WhichOneof("attributes")
-        == "complete_workflow_execution_decision_attributes"
-    )
-
-
 async def test_collection_decisions_reordering():
     # Decisions should be emitted in the order that they happened within the workflow
     decisions = DecisionManager(asyncio.get_event_loop())

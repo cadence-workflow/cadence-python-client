@@ -76,6 +76,23 @@ class CleanupCancellationWorkflow:
         return "unreachable"
 
 
+class ShieldedCleanupCancellationWorkflow:
+    @workflow.run
+    async def run(self):
+        try:
+            await asyncio.shield(
+                workflow.execute_activity(
+                    "act", str, schedule_to_close_timeout=timedelta(minutes=5)
+                )
+            )
+        except asyncio.CancelledError:
+            await workflow.execute_activity(
+                "cleanup", str, schedule_to_close_timeout=timedelta(minutes=5)
+            )
+            return "cleanup-done"
+        return "unreachable"
+
+
 class PendingActivityCancellationWorkflow:
     @workflow.run
     async def run(self):
@@ -320,7 +337,7 @@ class TestWorkflowEngine:
             == DefaultDataConverter().to_data(["cleanup:cleanup requested:True"])
         )
 
-    def test_root_cancel_interrupts_pending_activity_and_suppresses_cancel_decision(
+    def test_root_cancel_interrupts_awaited_activity_and_requests_cancel(
         self,
     ):
         workflow_engine = create_workflow_engine(
@@ -344,15 +361,25 @@ class TestWorkflowEngine:
             )
         )
 
-        assert len(decision_result.decisions) == 1
+        assert len(decision_result.decisions) == 2
+        assert (
+            decision_result.decisions[0].WhichOneof("attributes")
+            == "request_cancel_activity_task_decision_attributes"
+        )
         assert (
             decision_result.decisions[
                 0
+            ].request_cancel_activity_task_decision_attributes.activity_id
+            == "0"
+        )
+        assert (
+            decision_result.decisions[
+                1
             ].complete_workflow_execution_decision_attributes.result
             == DefaultDataConverter().to_data(["activity-cancelled:activity cancel"])
         )
 
-    def test_root_cancel_interrupts_pending_timer_and_suppresses_cancel_decision(self):
+    def test_root_cancel_interrupts_awaited_timer_and_requests_cancel(self):
         workflow_engine = create_workflow_engine(
             WorkflowDefinition.wrap(
                 PendingTimerCancellationWorkflow,
@@ -373,15 +400,23 @@ class TestWorkflowEngine:
             )
         )
 
-        assert len(decision_result.decisions) == 1
+        assert len(decision_result.decisions) == 2
+        assert (
+            decision_result.decisions[0].WhichOneof("attributes")
+            == "cancel_timer_decision_attributes"
+        )
+        assert (
+            decision_result.decisions[0].cancel_timer_decision_attributes.timer_id
+            == "0"
+        )
         assert (
             decision_result.decisions[
-                0
+                1
             ].complete_workflow_execution_decision_attributes.result
             == DefaultDataConverter().to_data(["timer-cancelled:timer cancel"])
         )
 
-    def test_root_cancel_interrupts_pending_child_and_suppresses_cancel_decision(self):
+    def test_root_cancel_interrupts_awaited_child_and_requests_cancel(self):
         workflow_engine = create_workflow_engine(
             WorkflowDefinition.wrap(
                 PendingChildWorkflowCancellationWorkflow,
@@ -403,13 +438,54 @@ class TestWorkflowEngine:
             )
         )
 
-        assert len(decision_result.decisions) == 1
+        assert len(decision_result.decisions) == 2
+        assert (
+            decision_result.decisions[0].WhichOneof("attributes")
+            == "request_cancel_external_workflow_execution_decision_attributes"
+        )
+        cancel_attrs = decision_result.decisions[
+            0
+        ].request_cancel_external_workflow_execution_decision_attributes
+        assert cancel_attrs.workflow_execution.workflow_id == "child"
         assert (
             decision_result.decisions[
-                0
+                1
             ].complete_workflow_execution_decision_attributes.result
             == DefaultDataConverter().to_data(["child-cancelled"])
         )
+
+    def test_shielded_activity_survives_root_cancel_and_cleanup_can_schedule_activity(
+        self,
+    ):
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                ShieldedCleanupCancellationWorkflow,
+                WorkflowDefinitionOptions(name="shielded_cleanup_cancel_workflow"),
+            )
+        )
+        decision_result = workflow_engine.process_decision(
+            _history_with_cancel_request(
+                "cleanup requested",
+                output_events=[
+                    _event(
+                        5,
+                        activity_task_scheduled_event_attributes=ActivityTaskScheduledEventAttributes(
+                            activity_id="0",
+                            activity_type=ActivityType(name="act"),
+                        ),
+                    )
+                ],
+            )
+        )
+
+        assert len(decision_result.decisions) == 1
+        assert (
+            decision_result.decisions[0].WhichOneof("attributes")
+            == "schedule_activity_task_decision_attributes"
+        )
+        attrs = decision_result.decisions[0].schedule_activity_task_decision_attributes
+        assert attrs.activity_id == "1"
+        assert attrs.activity_type == ActivityType(name="cleanup")
 
 
 def create_workflow_engine(workflow_definition: WorkflowDefinition) -> WorkflowEngine:

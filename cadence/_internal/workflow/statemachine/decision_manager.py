@@ -17,6 +17,7 @@ from cadence._internal.workflow.statemachine.completion_state_machine import (
     CompletionStateMachine,
 )
 from cadence._internal.workflow.statemachine.decision_state_machine import (
+    CancelFn,
     DecisionId,
     DecisionStateMachine,
     DecisionType,
@@ -96,9 +97,6 @@ class DecisionManager:
             OrderedDict()
         )
         self.aliases: Dict[DecisionAlias, DecisionStateMachine] = dict()
-        # Tracks IDs force-cancelled by workflow-level cancel. When the workflow also
-        # completes in the same task, we omit these redundant cancel commands.
-        self._forced_cancellations: set[DecisionId] = set()
 
     # ----- Activity API -----
 
@@ -146,7 +144,8 @@ class DecisionManager:
         execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
         execution.add_done_callback(_consume_future_exception)
         result: DecisionFuture[Payload] = DecisionFuture(
-            self._event_loop, lambda: self._request_cancel(decision_id)
+            self._event_loop,
+            self._create_cancel_callback(decision_id),
         )
         machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
         self._add_state_machine(machine)
@@ -269,9 +268,6 @@ class DecisionManager:
         for decision_id, machine in self.state_machines.items():
             if decision_id == COMPLETION_ID:
                 continue
-            # When completing, Cadence closes force-cancelled commands automatically.
-            if is_completing and decision_id in self._forced_cancellations:
-                continue
             d = machine.get_decision()
             if d is not None:
                 decisions.append(d)
@@ -280,17 +276,25 @@ class DecisionManager:
             assert completion_decision is not None  # same predicate as is_completing
             decisions.append(completion_decision)
 
-        self._forced_cancellations.clear()
         return decisions
 
     def _create_future(self, decision_id: DecisionId) -> DecisionFuture[T]:
         return DecisionFuture[T](
-            self._event_loop, lambda: self._request_cancel(decision_id)
+            self._event_loop,
+            self._create_cancel_callback(decision_id),
         )
 
-    def _request_cancel(self, decision_id: DecisionId) -> bool:
+    def _create_cancel_callback(self, decision_id: DecisionId) -> CancelFn:
+        def request_cancel(message: str | None = None) -> bool:
+            return self._request_cancel(decision_id, message)
+
+        return request_cancel
+
+    def _request_cancel(
+        self, decision_id: DecisionId, message: str | None = None
+    ) -> bool:
         machine = self._get_machine(decision_id)
-        if machine.request_cancel():
+        if machine.request_cancel(message):
             if self._replaying:
                 self._determinism_tracker.validate_cancel(decision_id)
             # Interactions with the state machines should move them to the end so that the decisions are ordered as they
@@ -298,14 +302,3 @@ class DecisionManager:
             self.state_machines.move_to_end(decision_id)
             return True
         return False
-
-    def request_cancel_pending_decisions(self, message: str | None = None) -> None:
-        for decision_id in list(self.state_machines):
-            if decision_id == COMPLETION_ID:
-                continue
-            machine = self._get_machine(decision_id)
-            # force_cancel must come before request_cancel: the latter resolves
-            # futures immediately, making a subsequent force_cancel(message) a no-op.
-            machine.force_cancel(message)
-            self._request_cancel(decision_id)
-            self._forced_cancellations.add(decision_id)

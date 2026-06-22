@@ -1,14 +1,12 @@
 import asyncio
-import threading
 from contextlib import contextmanager
 from datetime import timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Iterator, cast
 from urllib.parse import urlencode
 from urllib.request import urlopen
 import json
 
-from prometheus_client import CollectorRegistry
+from prometheus_client import CollectorRegistry, start_http_server
 from pytest_docker import Services
 
 from cadence import Registry, workflow
@@ -42,26 +40,10 @@ class WorkflowWithMetrics:
 
 @contextmanager
 def metrics_endpoint(metrics: PrometheusMetrics) -> Iterator[None]:
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            if self.path != "/metrics":
-                self.send_response(404)
-                self.end_headers()
-                return
-
-            body = metrics.get_metrics_text().encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; version=0.0.4")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, format: str, *args: Any) -> None:
-            pass
-
-    server = ThreadingHTTPServer(("0.0.0.0", PROMETHEUS_SCRAPE_PORT), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    server, thread = start_http_server(
+        PROMETHEUS_SCRAPE_PORT,
+        registry=metrics.registry,
+    )
     try:
         yield
     finally:

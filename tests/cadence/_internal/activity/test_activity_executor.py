@@ -427,9 +427,9 @@ async def test_activity_sync_cancellation(client):
     @reg.activity(name="activity_type")
     def activity_fn():
         for _ in range(100):
-            activity.heartbeat("progress")
             if activity.is_cancelled():
                 raise ActivityCancelledError("cleanup")
+            activity.heartbeat("progress")
             time.sleep(0.01)
         raise AssertionError("expected activity cancellation")
 
@@ -514,6 +514,39 @@ async def test_activity_sync_raise_if_cancelled(client):
     worker_stub.RespondActivityTaskFailed.assert_not_called()
 
 
+async def test_activity_sync_api_raises_cancelled_after_cancel_request(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCanceled = AsyncMock(
+        return_value=RespondActivityTaskCanceledResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    def activity_fn():
+        activity.heartbeat("progress")
+        assert activity.wait_for_cancelled(timeout=5)
+        activity.info()
+        raise AssertionError("expected activity API to raise cancellation")
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCanceled.assert_called_once_with(
+        RespondActivityTaskCanceledRequest(
+            task_token=b"task_token",
+            details=Payload(),
+            identity="identity",
+        )
+    )
+    worker_stub.RespondActivityTaskCompleted.assert_not_called()
+    worker_stub.RespondActivityTaskFailed.assert_not_called()
+
+
 async def test_activity_async_wait_for_cancelled_raises(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskFailed = AsyncMock(
@@ -536,8 +569,11 @@ async def test_activity_async_wait_for_cancelled_raises(client):
     assert call.failure.reason == "RuntimeError"
 
 
-async def test_activity_cancelled_error_without_request_is_not_reported(client):
+async def test_activity_cancelled_error_without_request_reports_runtime_failure(client):
     worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskFailed = AsyncMock(
+        return_value=RespondActivityTaskFailedResponse()
+    )
     worker_stub.RespondActivityTaskCanceled = AsyncMock(
         return_value=RespondActivityTaskCanceledResponse()
     )
@@ -550,15 +586,20 @@ async def test_activity_cancelled_error_without_request_is_not_reported(client):
 
     executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
 
-    with pytest.raises(asyncio.CancelledError):
-        await executor.execute(fake_task("activity_type", ""))
+    await executor.execute(fake_task("activity_type", ""))
 
+    worker_stub.RespondActivityTaskFailed.assert_called_once()
+    call = worker_stub.RespondActivityTaskFailed.call_args[0][0]
+    assert (
+        "Activity raised asyncio.CancelledError without cancellation being requested"
+        in call.failure.details.decode()
+    )
+    assert call.failure.reason == "RuntimeError"
     worker_stub.RespondActivityTaskCanceled.assert_not_called()
     worker_stub.RespondActivityTaskCompleted.assert_not_called()
-    worker_stub.RespondActivityTaskFailed.assert_not_called()
 
 
-async def test_activity_cancelled_error_without_request_reports_failure(client):
+async def test_activity_cancelled_exception_without_request_reports_failure(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskFailed = AsyncMock(
         return_value=RespondActivityTaskFailedResponse()

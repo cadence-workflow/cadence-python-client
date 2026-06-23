@@ -53,6 +53,7 @@ class ActivityInfo:
 
 
 def client() -> Client:
+    raise_if_cancelled()
     return ActivityContext.get().client()
 
 
@@ -61,11 +62,13 @@ def in_activity() -> bool:
 
 
 def info() -> ActivityInfo:
+    raise_if_cancelled()
     return ActivityContext.get().info()
 
 
 def heartbeat(*details: Any) -> None:
     """Send a heartbeat for the current activity."""
+    raise_if_cancelled()
     ActivityContext.get().heartbeat(*details)
 
 
@@ -77,6 +80,7 @@ def heartbeat_details(*types: Type) -> list[Any]:
 
     Without type hints, returns raw JSON-decoded values.
     """
+    raise_if_cancelled()
     return ActivityContext.get().heartbeat_details(*types)
 
 
@@ -88,11 +92,11 @@ def is_cancelled() -> bool:
 
         def my_activity():
             for item in work:
+                if activity.is_cancelled():
+                    # do cleanup
+                    raise ActivityCancelledError()
                 process(item)
                 activity.heartbeat(item)
-                if activity.is_cancelled():
-                    // do something
-                    raise ActivityCancelledError()
 
     For async activities, cancellation is delivered as ``asyncio.CancelledError``
     injected after a heartbeat observes the cancellation request.  Re-raise it (or
@@ -111,9 +115,9 @@ def raise_if_cancelled() -> None:
 
         def my_activity():
             for item in work:
+                activity.raise_if_cancelled()
                 process(item)
                 activity.heartbeat(item)
-                activity.raise_if_cancelled()
 
     Equivalent to Go's ``select { case <-ctx.Done(): return ..., ctx.Err() }``
     non-blocking check. Has no effect on async activities (they receive

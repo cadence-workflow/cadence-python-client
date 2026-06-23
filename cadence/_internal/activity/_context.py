@@ -34,10 +34,13 @@ class _Context(ActivityContext):
         self._activity_task = asyncio.create_task(self._run_activity(params))
         try:
             return await self._activity_task
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as e:
             if self.is_cancelled():
                 raise ActivityCancelledError()
-            raise
+            raise RuntimeError(
+                "Activity raised asyncio.CancelledError without cancellation being "
+                "requested"
+            ) from e
         finally:
             await self._wait_pending_heartbeats()
 

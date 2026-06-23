@@ -24,6 +24,7 @@ from typing import (
 )
 
 from cadence import Client
+from cadence.error import ActivityCancelledError
 from cadence._internal.activity._definition import (
     AsyncImpl,
     SyncImpl,
@@ -99,6 +100,30 @@ def is_cancelled() -> bool:
     ignore the request and complete normally.
     """
     return ActivityContext.get().is_cancelled()
+
+
+def raise_if_cancelled() -> None:
+    """Raise ActivityCancelledError if the server has requested cancellation.
+
+    A convenience for sync activities that want to bail out at natural
+    checkpoints — especially around logging, metrics, or any Activity API
+    call — without a manual ``is_cancelled()`` check::
+
+        def my_activity():
+            for item in work:
+                process(item)
+                activity.heartbeat(item)
+                activity.raise_if_cancelled()
+
+    Equivalent to Go's ``select { case <-ctx.Done(): return ..., ctx.Err() }``
+    non-blocking check. Has no effect on async activities (they receive
+    ``asyncio.CancelledError`` directly).
+
+    Raises:
+        ActivityCancelledError: If the server has requested cancellation.
+    """
+    if ActivityContext.get().is_cancelled():
+        raise ActivityCancelledError()
 
 
 def wait_for_cancelled(timeout: timedelta | float | None = None) -> bool:

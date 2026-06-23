@@ -481,6 +481,39 @@ async def test_activity_sync_wait_for_cancelled(client):
     worker_stub.RespondActivityTaskFailed.assert_not_called()
 
 
+async def test_activity_sync_raise_if_cancelled(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCanceled = AsyncMock(
+        return_value=RespondActivityTaskCanceledResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    def activity_fn():
+        activity.heartbeat("progress")
+        activity.wait_for_cancelled(timeout=5)  # block until cancel event is set
+        activity.raise_if_cancelled()
+        raise AssertionError("expected cancellation")
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCanceled.assert_called_once_with(
+        RespondActivityTaskCanceledRequest(
+            task_token=b"task_token",
+            details=Payload(),
+            identity="identity",
+        )
+    )
+    worker_stub.RespondActivityTaskCompleted.assert_not_called()
+    worker_stub.RespondActivityTaskFailed.assert_not_called()
+
+
 async def test_activity_async_wait_for_cancelled_raises(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskFailed = AsyncMock(

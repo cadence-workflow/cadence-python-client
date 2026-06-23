@@ -55,7 +55,10 @@ class ActivityExecutor:
             if context is not None and context.is_cancelled():
                 await self._report_cancelled(task, e.details)
                 return
-            _logger.exception("Activity failed")
+            _logger.exception(
+                "Activity failed: ActivityCancelledError raised but cancellation was "
+                "not requested; this is likely a bug in cadence-python-client"
+            )
             await self._report_failure(task, e)
         except Exception as e:
             _logger.exception("Activity failed")

@@ -80,7 +80,24 @@ def heartbeat_details(*types: Type) -> list[Any]:
 
 
 def is_cancelled() -> bool:
-    """Return whether cancellation has been requested for the current activity."""
+    """Return whether the server has requested cancellation for this activity.
+
+    For sync activities, poll this after each heartbeat and raise
+    ``ActivityCancelledError`` to report cancellation to the server::
+
+        def my_activity():
+            for item in work:
+                process(item)
+                activity.heartbeat(item)
+                if activity.is_cancelled():
+                    // do something
+                    raise ActivityCancelledError()
+
+    For async activities, cancellation is delivered as ``asyncio.CancelledError``
+    injected after a heartbeat observes the cancellation request.  Re-raise it (or
+    raise ``ActivityCancelledError``) to report cancellation; catch and swallow it to
+    ignore the request and complete normally.
+    """
     return ActivityContext.get().is_cancelled()
 
 
@@ -88,15 +105,15 @@ def wait_for_cancelled(timeout: timedelta | float | None = None) -> bool:
     """Block until cancellation is requested for this sync activity.
 
     Args:
-        timeout: Maximum time to wait. ``None`` waits indefinitely. May be a
-            ``timedelta`` or a number of seconds.
+        timeout: Maximum time to wait. ``None`` waits indefinitely (the server's
+            schedule-to-close or heartbeat timeout provides the eventual bound).
+            May be a ``timedelta`` or a number of seconds.
 
     Returns:
-        ``True`` if cancellation was requested, ``False`` if the timeout
-        elapsed first.
+        ``True`` if cancellation was requested, ``False`` if the timeout elapsed.
 
-    Async activities are cancelled with ``asyncio.CancelledError`` when a
-    heartbeat observes cancellation, so this helper is only for sync activities.
+    Raises:
+        RuntimeError: When called from an async activity.
     """
     return ActivityContext.get().wait_for_cancelled(timeout)
 

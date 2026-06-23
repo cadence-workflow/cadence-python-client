@@ -1,4 +1,3 @@
-import threading
 from logging import getLogger
 from typing import Any, Type
 
@@ -24,18 +23,11 @@ class _HeartbeatSender:
         self._task_token = task_token
         self._identity = identity
         self._previous_details = previous_details
-        self._cancel_requested = threading.Event()
-
-    def is_cancel_requested(self) -> bool:
-        return self._cancel_requested.is_set()
-
-    def wait_for_cancellation(self, timeout: float | None = None) -> bool:
-        return self._cancel_requested.wait(timeout)
 
     def get_details(self, *types: Type) -> list[Any]:
         return self._data_converter.from_data(self._previous_details, list(types))
 
-    async def send_heartbeat(self, *details: Any) -> None:
+    async def send_heartbeat(self, *details: Any) -> bool:
         try:
             payload = self._data_converter.to_data(list(details))
             response = await self._worker_stub.RecordActivityTaskHeartbeat(
@@ -46,7 +38,7 @@ class _HeartbeatSender:
                 )
             )
             self._previous_details = payload
-            if response.cancel_requested:
-                self._cancel_requested.set()
+            return response.cancel_requested
         except Exception:
             _logger.warning("Heartbeat failed", exc_info=True)
+            return False

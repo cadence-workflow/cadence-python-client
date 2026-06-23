@@ -97,31 +97,27 @@ async def test_heartbeat_details_not_updated_on_failure(
     assert details == ["old"]
 
 
-async def test_heartbeat_requests_cancellation(sender, worker_stub):
+async def test_heartbeat_returns_true_when_cancel_requested(sender, worker_stub):
     worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
         return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
     )
 
-    await sender.send_heartbeat()
-
-    assert sender.is_cancel_requested()
+    assert await sender.send_heartbeat() is True
 
 
-async def test_heartbeat_does_not_request_cancellation_by_default(sender):
-    await sender.send_heartbeat()
-
-    assert not sender.is_cancel_requested()
+async def test_heartbeat_returns_false_by_default(sender):
+    assert await sender.send_heartbeat() is False
 
 
-async def test_wait_for_cancellation_returns_true_after_request(sender, worker_stub):
+async def test_heartbeat_returns_false_on_rpc_failure(worker_stub, data_converter):
     worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
-        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+        side_effect=Exception("rpc error")
     )
-
-    await sender.send_heartbeat()
-
-    assert sender.wait_for_cancellation() is True
-
-
-def test_wait_for_cancellation_times_out_when_not_requested(sender):
-    assert sender.wait_for_cancellation(timeout=0.01) is False
+    sender = _HeartbeatSender(
+        worker_stub=worker_stub,
+        data_converter=data_converter,
+        task_token=b"task_token",
+        identity="test-identity",
+        previous_details=Payload(),
+    )
+    assert await sender.send_heartbeat() is False

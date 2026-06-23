@@ -559,7 +559,45 @@ async def test_activity_cancelled_error_without_request_reports_failure(client):
     worker_stub.RespondActivityTaskCompleted.assert_not_called()
 
 
-async def test_heartbeat_details_recovery_async(client):
+async def test_activity_async_returns_despite_cancellation_reports_success(client):
+    """Activity that ignores CancelledError and returns a value should be reported
+    as completed, not cancelled — the activity's own decision takes precedence."""
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+    worker_stub.RespondActivityTaskCanceled = AsyncMock(
+        return_value=RespondActivityTaskCanceledResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def ignore_cancel_fn():
+        activity.heartbeat("progress")
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            # Intentionally swallow — activity decides to complete anyway
+            pass
+        return "finished despite cancel"
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCompleted.assert_called_once_with(
+        RespondActivityTaskCompletedRequest(
+            task_token=b"task_token",
+            result=Payload(data=b'"finished despite cancel"'),
+            identity="identity",
+        )
+    )
+    worker_stub.RespondActivityTaskCanceled.assert_not_called()
+
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCompleted = AsyncMock(
         return_value=RespondActivityTaskCompletedResponse()

@@ -65,8 +65,6 @@ class DecisionStateMachine(Protocol):
 
     def request_cancel(self, message: str | None = None) -> bool: ...
 
-    def force_cancel(self, message: str | None = None) -> None: ...
-
 
 class BaseDecisionStateMachine(DecisionStateMachine):
     def __init__(self):
@@ -83,9 +81,6 @@ class BaseDecisionStateMachine(DecisionStateMachine):
     @property
     def state(self) -> DecisionState:
         return self._state
-
-    def force_cancel(self, message: str | None = None) -> None:
-        pass
 
     @staticmethod
     def _resolve(

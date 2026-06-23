@@ -45,10 +45,6 @@ class SignalExternalWorkflowStateMachine(BaseDecisionStateMachine):
     def request_cancel(self, message: str | None = None) -> bool:
         return False
 
-    def force_cancel(self, message: str | None = None) -> None:
-        if not self.completed.done():
-            self.completed.force_cancel(message)
-
     @signal_external_events.event(id_attr="control", event_id_is_alias=True)
     def handle_initiated(
         self,

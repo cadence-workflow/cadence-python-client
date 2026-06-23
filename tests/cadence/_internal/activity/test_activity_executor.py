@@ -598,6 +598,8 @@ async def test_activity_async_returns_despite_cancellation_reports_success(clien
     )
     worker_stub.RespondActivityTaskCanceled.assert_not_called()
 
+
+async def test_heartbeat_details_recovery_async(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCompleted = AsyncMock(
         return_value=RespondActivityTaskCompletedResponse()

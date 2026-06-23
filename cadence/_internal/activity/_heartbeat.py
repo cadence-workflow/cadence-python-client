@@ -38,7 +38,7 @@ class _HeartbeatSender:
                 )
             )
             self._previous_details = payload
-            return response.cancel_requested
+            return bool(response.cancel_requested)
         except Exception:
             _logger.warning("Heartbeat failed", exc_info=True)
             return False

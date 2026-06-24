@@ -15,6 +15,9 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionId,
     DecisionType,
 )
+from cadence._internal.workflow.statemachine.marker_state_machine import (
+    marker_id_from_attrs,
+)
 from cadence.api.v1 import decision, history
 
 
@@ -113,12 +116,12 @@ class DeterminismTracker:
 
         self._expectations[decision_id] = to_expect
 
-    def validate_action(self, attributes: Any) -> None:
+    def validate_action(self, attributes: Any) -> Expectation | None:
         props = to_expectation(attributes)
         if props is None:
-            return
+            return None
 
-        self._validate_expectation(props)
+        return self._validate_expectation(props)
 
     def validate_cancel(self, decision_id: DecisionId) -> None:
         # Cancellation may happen automatically, ignore it
@@ -128,7 +131,7 @@ class DeterminismTracker:
             Expectation(decision_id=decision_id, properties=CANCEL)
         )
 
-    def _validate_expectation(self, actual: Expectation) -> None:
+    def _validate_expectation(self, actual: Expectation) -> Expectation:
         if not self._expectations:
             self._fail(None, actual)
 
@@ -157,7 +160,7 @@ class DeterminismTracker:
         # A: [Schedule, Cancel]
         if len(upcoming) == 1:
             # Using the above example, If they rewrote it to be:
-            # Schedula A
+            # Schedule A
             # Cancel A
             # Schedule B
             # All expectations would be met, but we still need to report that it's out of order.
@@ -166,13 +169,15 @@ class DeterminismTracker:
                 self._fail(next_expectation, actual)
 
             if actual == upcoming[0]:
+                matched = upcoming[0]
                 del self._expectations[actual.decision_id]
+                return matched
             else:
                 self._fail(next_expectation, actual)
         else:
             next_for_decision = upcoming[0]
             if next_for_decision == actual:
-                upcoming.pop(0)
+                return upcoming.pop(0)
             else:
                 self._fail(next_expectation, actual)
 
@@ -352,6 +357,38 @@ def _(
     return Expectation(
         DecisionId(DecisionType.SIGNAL, attrs.control.decode("utf-8")),
         {},
+    )
+
+
+# Markers - Enforce SDK marker id and marker name. Details are recorded data, so
+# replay returns the history value instead of requiring workflow code to recreate it.
+#
+# 'details' is intentionally absent from the decision-side handler: Expectation.__eq__
+# only compares keys present in both sides, so omitting it here lets the match succeed
+# on name+id alone. The history-side handler (below) carries 'details' so DecisionManager
+# can retrieve the recorded value and return it to the caller on replay.
+@to_expectation.register
+def _(attrs: decision.RecordMarkerDecisionAttributes) -> Expectation | None:
+    marker_id = marker_id_from_attrs(attrs)
+    if marker_id is None:
+        return None
+    return Expectation(
+        DecisionId(DecisionType.MARKER, marker_id),
+        {"marker_name": attrs.marker_name},
+    )
+
+
+@to_expectation.register
+def _(attrs: history.MarkerRecordedEventAttributes) -> Expectation | None:
+    marker_id = marker_id_from_attrs(attrs)
+    if marker_id is None:
+        return None
+    return Expectation(
+        DecisionId(DecisionType.MARKER, marker_id),
+        {
+            "marker_name": attrs.marker_name,
+            "details": attrs.details,
+        },
     )
 
 

@@ -10,6 +10,10 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionId,
     DecisionType,
 )
+from cadence._internal.workflow.statemachine.marker_state_machine import (
+    MARKER_ID_HEADER_KEY,
+    attach_marker_id,
+)
 from cadence._internal.workflow.statemachine.nondeterminism import (
     to_expectation,
     Expectation,
@@ -338,6 +342,38 @@ class TestDeterminismTracker:
         assert excinfo.value.actual == Expectation(
             DecisionId(DecisionType.ACTIVITY, "1"), {"activity_type": "act"}
         )
+
+    def test_marker_expectation_returns_recorded_details(self):
+        tracker = DeterminismTracker()
+        recorded = history.MarkerRecordedEventAttributes(
+            marker_name="SideEffect",
+            details=common.Payload(data=b"history-value"),
+        )
+        recorded.header.fields[MARKER_ID_HEADER_KEY].CopyFrom(common.Payload(data=b"0"))
+        requested = attach_marker_id(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="SideEffect",
+                details=common.Payload(data=b"current-value"),
+            ),
+            "0",
+        )
+        tracker.add_expectation(
+            history.HistoryEvent(
+                event_id=1,
+                marker_recorded_event_attributes=recorded,
+            )
+        )
+
+        expectation = tracker.validate_action(requested)
+
+        assert expectation == Expectation(
+            DecisionId(DecisionType.MARKER, "0"),
+            {
+                "marker_name": "SideEffect",
+                "details": common.Payload(data=b"history-value"),
+            },
+        )
+        tracker.complete_replay()
 
 
 @pytest.mark.parametrize(

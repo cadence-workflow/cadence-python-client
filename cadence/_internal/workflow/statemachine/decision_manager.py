@@ -27,6 +27,12 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
     Action,
     resolve_id_attr,
 )
+from cadence._internal.workflow.statemachine.marker_state_machine import (
+    attach_marker_id,
+    marker_id_from_attrs,
+    marker_events,
+    MarkerStateMachine,
+)
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
     signal_external_events,
@@ -83,6 +89,7 @@ class DecisionManager:
             DecisionType.TIMER: timer_events,
             DecisionType.CHILD_WORKFLOW: child_workflow_events,
             DecisionType.SIGNAL: signal_external_events,
+            DecisionType.MARKER: marker_events,
         }
     )
 
@@ -164,6 +171,31 @@ class DecisionManager:
         self._add_state_machine(machine)
         return future
 
+    # ----- Marker API -----
+
+    def record_marker(
+        self,
+        attrs: decision.RecordMarkerDecisionAttributes,
+    ) -> Payload:
+        if not attrs.marker_name:
+            raise ValueError("marker_name is required")
+        marker_id = self._next_id()
+
+        attach_marker_id(attrs, marker_id)
+        recorded_details = Payload()
+        recorded_details.CopyFrom(attrs.details)
+        if self._replaying:
+            expectation = self._determinism_tracker.validate_action(attrs)
+            if expectation is not None:
+                history_details: Payload | None = expectation.properties.get("details")
+                if history_details is not None:
+                    recorded_details = Payload()
+                    recorded_details.CopyFrom(history_details)
+
+        machine = MarkerStateMachine(attrs, marker_id)
+        self._add_state_machine(machine)
+        return recorded_details
+
     # ----- Workflow API -----
     def complete_workflow(self, decision: decision.Decision) -> None:
         if self._replaying:
@@ -206,9 +238,14 @@ class DecisionManager:
         if event_action is not None:
             decision_type = event_action.decision_type
             action = event_action.action
-            machine = self._state_machine_for_event(
-                event.event_id, decision_type, action, event_attributes
-            )
+            if decision_type is DecisionType.MARKER:
+                machine = self._state_machine_for_marker_event(event_attributes)
+                if machine is None:
+                    return
+            else:
+                machine = self._state_machine_for_event(
+                    event.event_id, decision_type, action, event_attributes
+                )
 
             action.fn(machine, event_attributes)
 
@@ -232,6 +269,17 @@ class DecisionManager:
         if machine is None:
             raise KeyError(f"Event {event_id} references unknown state machine {alias}")
         return machine
+
+    def _state_machine_for_marker_event(
+        self,
+        event_attributes: history.MarkerRecordedEventAttributes,
+    ) -> DecisionStateMachine | None:
+        # Marker events are preloaded before workflow code runs. If no marker
+        # decision has been requested yet, keep the preloaded event as a no-op.
+        marker_id = marker_id_from_attrs(event_attributes)
+        if marker_id is None:
+            return None
+        return self.aliases.get((DecisionType.MARKER, marker_id), None)
 
     # ---- Non-determinism ----
     @contextmanager

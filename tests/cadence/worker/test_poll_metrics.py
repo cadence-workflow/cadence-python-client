@@ -94,6 +94,10 @@ class TestDecisionWorkerRunMetrics:
             await worker.run()
 
         emitter.counter.assert_any_call(WORKER_START_COUNTER, 1, tags=EXPECTED_TAGS)
+        assert not any(
+            call.args[0] == POLLER_START_COUNTER
+            for call in emitter.counter.call_args_list
+        )
 
     @pytest.mark.asyncio
     async def test_emits_poller_start_counter_with_configured_count(self):
@@ -101,7 +105,7 @@ class TestDecisionWorkerRunMetrics:
         options = _worker_options(emitter)
         options["decision_task_pollers"] = 3
         worker = DecisionWorker(_mock_client(), TASK_LIST, Registry(), options)
-        with patch.object(worker._poller, "run", new=AsyncMock()):
+        with patch.object(worker._poller, "_poll_loop", new_callable=AsyncMock):
             await worker.run()
 
         emitter.counter.assert_any_call(POLLER_START_COUNTER, 3, tags=EXPECTED_TAGS)
@@ -283,6 +287,10 @@ class TestActivityWorkerRunMetrics:
             await worker.run()
 
         emitter.counter.assert_any_call(WORKER_START_COUNTER, 1, tags=EXPECTED_TAGS)
+        assert not any(
+            call.args[0] == POLLER_START_COUNTER
+            for call in emitter.counter.call_args_list
+        )
 
     @pytest.mark.asyncio
     async def test_emits_poller_start_counter_with_configured_count(self):
@@ -290,7 +298,7 @@ class TestActivityWorkerRunMetrics:
         options = _worker_options(emitter)
         options["activity_task_pollers"] = 5
         worker = ActivityWorker(_mock_client(), TASK_LIST, Registry(), options)
-        with patch.object(worker._poller, "run", new=AsyncMock()):
+        with patch.object(worker._poller, "_poll_loop", new_callable=AsyncMock):
             await worker.run()
 
         emitter.counter.assert_any_call(POLLER_START_COUNTER, 5, tags=EXPECTED_TAGS)

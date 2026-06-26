@@ -62,13 +62,18 @@ class ActivityWorker:
             options["metrics_emitter"],
         )
         self._poller = Poller[PollForActivityTaskResponse](
-            self._num_pollers, permits, self._poll, self._execute
+            self._num_pollers,
+            permits,
+            self._poll,
+            self._execute,
+            on_start=lambda num_pollers: self._tagged_emitter.counter(
+                POLLER_START_COUNTER, num_pollers
+            ),
         )
         # TODO: Local dispatch, local activities, actually running activities, etc
 
     async def run(self) -> None:
         self._tagged_emitter.counter(WORKER_START_COUNTER)
-        self._tagged_emitter.counter(POLLER_START_COUNTER, self._num_pollers)
         try:
             await self._poller.run()
         except Exception:

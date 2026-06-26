@@ -52,7 +52,7 @@ class ActivityStateMachine(BaseDecisionStateMachine):
     def request_cancel(self, message: str | None = None) -> bool:
         if self.state is DecisionState.REQUESTED:
             self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
-            self.force_cancel(message)
+            self._force_cancel(message)
             return True
 
         if self.state is DecisionState.RECORDED:
@@ -61,7 +61,7 @@ class ActivityStateMachine(BaseDecisionStateMachine):
 
         return False
 
-    def force_cancel(self, message: str | None = None) -> None:
+    def _force_cancel(self, message: str | None = None) -> None:
         if not self.completed.done():
             self.completed.force_cancel(message)
 
@@ -100,7 +100,7 @@ class ActivityStateMachine(BaseDecisionStateMachine):
         self, event: history.ActivityTaskCanceledEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self.force_cancel(event.details.data.decode())
+        self._force_cancel(event.details.data.decode())
 
     @activity_events.event("activity_id")
     def handle_cancel_requested(

@@ -227,8 +227,6 @@ class WorkflowEngine:
                 )
             )
         except CancelledError as e:
-            if not self._context.is_cancel_requested():
-                raise
             details = (
                 self._context.data_converter().to_data(list(e.args))
                 if e.args

@@ -284,9 +284,6 @@ class Context(WorkflowContext):
     def is_cancel_requested(self) -> bool:
         return self._cancellation_info is not None
 
-    def cancellation_info(self) -> WorkflowCancellationInfo | None:
-        return self._cancellation_info
-
     @contextmanager
     def _activate(self) -> Iterator["Context"]:
         token = WorkflowContext._var.set(self)

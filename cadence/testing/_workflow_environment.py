@@ -71,7 +71,6 @@ from cadence.workflow import (
     ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
-    WorkflowCancellationInfo,
     WorkflowContext,
     WorkflowDefinition,
     WorkflowInfo,
@@ -247,9 +246,6 @@ class _InMemoryWorkflowContext(WorkflowContext):
 
     def is_cancel_requested(self) -> bool:
         return False
-
-    def cancellation_info(self) -> WorkflowCancellationInfo | None:
-        return None
 
 
 class _Execution:

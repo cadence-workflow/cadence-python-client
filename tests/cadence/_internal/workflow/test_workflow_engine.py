@@ -30,23 +30,6 @@ class TestWorkflow:
         return f"echo: {input_data}"
 
 
-class CancellationInfoWorkflow:
-    @workflow.run
-    async def run(self):
-        try:
-            await workflow.wait_condition(lambda: False)
-        except asyncio.CancelledError:
-            pass
-        info = workflow.cancellation_info()
-        assert info is not None
-        return {
-            "requested": workflow.is_cancel_requested(),
-            "cause": info.cause,
-            "identity": info.identity,
-            "request_id": info.request_id,
-        }
-
-
 class UncaughtCancellationWorkflow:
     @workflow.run
     async def run(self):
@@ -69,11 +52,16 @@ class CleanupCancellationWorkflow:
     async def run(self):
         try:
             await workflow.wait_condition(lambda: False)
-        except asyncio.CancelledError:
-            info = workflow.cancellation_info()
-            assert info is not None
-            return f"cleanup:{info.cause}:{workflow.is_cancel_requested()}"
+        except asyncio.CancelledError as e:
+            cause = e.args[0] if e.args else ""
+            return f"cleanup:{cause}:{workflow.is_cancel_requested()}"
         return "unreachable"
+
+
+class SelfCancelWorkflow:
+    @workflow.run
+    async def run(self):
+        raise asyncio.CancelledError("self-cancelled")
 
 
 class ShieldedCleanupCancellationWorkflow:
@@ -186,91 +174,6 @@ class TestWorkflowEngine:
             0
         ].complete_workflow_execution_decision_attributes.result == Payload(
             data=b'"echo: test-input"'
-        )
-
-    def test_workflow_observes_cancel_requested(self):
-        workflow_definition = WorkflowDefinition.wrap(
-            CancellationInfoWorkflow,
-            WorkflowDefinitionOptions(name="cancel_info_workflow"),
-        )
-        workflow_engine = create_workflow_engine(workflow_definition)
-
-        workflow_engine.process_decision(
-            [
-                _event(
-                    1,
-                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(),
-                ),
-                _event(
-                    2,
-                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
-                ),
-                _event(
-                    3,
-                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
-                        scheduled_event_id=2
-                    ),
-                ),
-            ]
-        )
-
-        decision_result = workflow_engine.process_decision(
-            [
-                _event(
-                    1,
-                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(),
-                ),
-                _event(
-                    2,
-                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
-                ),
-                _event(
-                    3,
-                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
-                        scheduled_event_id=2
-                    ),
-                ),
-                _event(
-                    4,
-                    decision_task_completed_event_attributes=DecisionTaskCompletedEventAttributes(
-                        scheduled_event_id=2,
-                        started_event_id=3,
-                    ),
-                ),
-                _event(
-                    5,
-                    workflow_execution_cancel_requested_event_attributes=WorkflowExecutionCancelRequestedEventAttributes(
-                        cause="user requested",
-                        identity="test-worker",
-                        request_id="request-1",
-                    ),
-                ),
-                _event(
-                    6,
-                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
-                ),
-                _event(
-                    7,
-                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
-                        scheduled_event_id=6
-                    ),
-                ),
-            ]
-        )
-
-        assert len(decision_result.decisions) == 1
-        result = decision_result.decisions[
-            0
-        ].complete_workflow_execution_decision_attributes.result
-        assert result == DefaultDataConverter().to_data(
-            [
-                {
-                    "requested": True,
-                    "cause": "user requested",
-                    "identity": "test-worker",
-                    "request_id": "request-1",
-                }
-            ]
         )
 
     def test_uncaught_workflow_cancellation_closes_as_canceled(self):
@@ -486,6 +389,42 @@ class TestWorkflowEngine:
         attrs = decision_result.decisions[0].schedule_activity_task_decision_attributes
         assert attrs.activity_id == "1"
         assert attrs.activity_type == ActivityType(name="cleanup")
+
+    def test_self_cancel_via_cancelled_error_closes_as_canceled(self):
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                SelfCancelWorkflow,
+                WorkflowDefinitionOptions(name="self_cancel_workflow"),
+            )
+        )
+
+        decision_result = workflow_engine.process_decision(
+            [
+                _event(
+                    1,
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(),
+                ),
+                _event(
+                    2,
+                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+                ),
+                _event(
+                    3,
+                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                        scheduled_event_id=2
+                    ),
+                ),
+            ]
+        )
+
+        assert len(decision_result.decisions) == 1
+        assert decision_result.decisions[
+            0
+        ].cancel_workflow_execution_decision_attributes == (
+            CancelWorkflowExecutionDecisionAttributes(
+                details=DefaultDataConverter().to_data(["self-cancelled"])
+            )
+        )
 
 
 def create_workflow_engine(workflow_definition: WorkflowDefinition) -> WorkflowEngine:

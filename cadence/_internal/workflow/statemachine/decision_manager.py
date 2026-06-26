@@ -143,10 +143,7 @@ class DecisionManager:
         decision_id = DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id)
         execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
         execution.add_done_callback(_consume_future_exception)
-        result: DecisionFuture[Payload] = DecisionFuture(
-            self._event_loop,
-            self._create_cancel_callback(decision_id),
-        )
+        result: DecisionFuture[Payload] = self._create_future(decision_id)
         machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
         self._add_state_machine(machine)
         return execution, result

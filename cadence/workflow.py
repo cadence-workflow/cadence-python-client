@@ -192,10 +192,6 @@ def is_cancel_requested() -> bool:
     return WorkflowContext.get().is_cancel_requested()
 
 
-def cancellation_info() -> WorkflowCancellationInfo | None:
-    return WorkflowContext.get().cancellation_info()
-
-
 def continue_as_new(
     *args: Any,
     workflow_type: str | None = None,
@@ -613,9 +609,6 @@ class WorkflowContext(ABC):
 
     @abstractmethod
     def is_cancel_requested(self) -> bool: ...
-
-    @abstractmethod
-    def cancellation_info(self) -> WorkflowCancellationInfo | None: ...
 
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:

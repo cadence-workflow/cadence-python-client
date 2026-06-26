@@ -46,17 +46,17 @@ class TimerStateMachine(BaseDecisionStateMachine):
     def request_cancel(self, message: str | None = None) -> bool:
         if self.state is DecisionState.REQUESTED:
             self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
-            self.force_cancel(message)
+            self._force_cancel(message)
             return True
 
         if self.state is DecisionState.RECORDED:
             self._transition(DecisionState.CANCELED_AFTER_RECORDED)
-            self.force_cancel(message)
+            self._force_cancel(message)
             return True
 
         return False
 
-    def force_cancel(self, message: str | None = None) -> None:
+    def _force_cancel(self, message: str | None = None) -> None:
         if not self.completed.done():
             self.completed.force_cancel(message)
 

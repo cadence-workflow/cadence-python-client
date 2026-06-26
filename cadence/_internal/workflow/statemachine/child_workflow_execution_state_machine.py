@@ -76,7 +76,7 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         match self.state:
             case DecisionState.REQUESTED:
                 self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
-                self.force_cancel(message)
+                self._force_cancel(message)
                 return True
             case DecisionState.RECORDED:
                 self._transition(DecisionState.CANCELED_AFTER_RECORDED)
@@ -89,7 +89,7 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
             case _:
                 return False
 
-    def force_cancel(self, message: str | None = None) -> None:
+    def _force_cancel(self, message: str | None = None) -> None:
         if not self.execution.done():
             self.execution.force_cancel(message)
         if not self.result.done():

@@ -9,7 +9,7 @@ from cadence._internal.workflow.deterministic_event_loop import (
 from cadence.error import SignalFailure
 from cadence.query import QueryDefinition
 from cadence.signal import SignalDefinition
-from cadence.workflow import WorkflowDefinition
+from cadence.workflow import WorkflowCancellationInfo, WorkflowDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,10 @@ class WorkflowInstance:
         if self._task is None:
             run_method = self._definition.get_run_method(self._instance)
             self._task = self._loop.create_task(self._run(run_method, args))
+
+    def request_cancel(self, info: WorkflowCancellationInfo) -> None:
+        if self._task is not None and not self._task.done():
+            self._task.cancel(info.cause)
 
     async def _run(
         self, workflow_fn: Callable[..., Awaitable[Any]], args: list[Any]

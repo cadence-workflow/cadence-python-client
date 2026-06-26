@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
@@ -51,6 +52,12 @@ class ActivityExecutor:
             context = self._create_context(task)
             result = await context.execute(task.input)
             await self._report_success(task, result)
+        except asyncio.CancelledError as e:
+            if context is not None and context.is_cancelled():
+                details = list(e.args) if e.args else None
+                await self._report_cancelled(task, details)
+                return
+            raise
         except ActivityCancelledError as e:
             if context is not None and context.is_cancelled():
                 await self._report_cancelled(task, e.details)

@@ -413,6 +413,40 @@ async def test_activity_async_cancellation(client):
     worker_stub.RespondActivityTaskFailed.assert_not_called()
 
 
+async def test_activity_async_cancellation_reports_cancelled_error_args(client):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCanceled = AsyncMock(
+        return_value=RespondActivityTaskCanceledResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        try:
+            activity.heartbeat("progress")
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            raise asyncio.CancelledError("cleanup")
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCanceled.assert_called_once_with(
+        RespondActivityTaskCanceledRequest(
+            task_token=b"task_token",
+            details=Payload(data=b'"cleanup"'),
+            identity="identity",
+        )
+    )
+    worker_stub.RespondActivityTaskCompleted.assert_not_called()
+    worker_stub.RespondActivityTaskFailed.assert_not_called()
+
+
 async def test_activity_sync_cancellation(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskCanceled = AsyncMock(

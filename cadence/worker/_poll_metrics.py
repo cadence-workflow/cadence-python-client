@@ -6,20 +6,17 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 
+from google.protobuf import timestamp_pb2
+
 from cadence._internal.rpc.retry import RETRYABLE_CODES
 from cadence.error import CadenceRpcError
 from cadence.metrics import MetricsEmitter
 
 
-class _Timestamp(Protocol):
-    seconds: int
-    nanos: int
-
-
 class PollTask(Protocol):
     task_token: bytes
-    scheduled_time: _Timestamp
-    started_time: _Timestamp
+    scheduled_time: timestamp_pb2.Timestamp
+    started_time: timestamp_pb2.Timestamp
 
 
 @dataclass
@@ -58,5 +55,5 @@ class PollMetrics:
         self.emitter.counter(self.succeed)
         s, e = task.scheduled_time, task.started_time
         if (s.seconds or s.nanos) and (e.seconds or e.nanos):
-            lag = (e.seconds + e.nanos / 1e9) - (s.seconds + s.nanos / 1e9)
+            lag = (e.ToDatetime() - s.ToDatetime()).total_seconds()
             self.emitter.histogram(self.scheduled_to_start, max(0.0, lag))

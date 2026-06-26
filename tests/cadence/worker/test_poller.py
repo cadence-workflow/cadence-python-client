@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -66,6 +67,25 @@ async def test_poller_num_tasks():
     assert outgoing.empty() is True
 
     task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_poller_emits_start_callback_with_num_tasks():
+    permits = asyncio.Semaphore(1)
+
+    async def poll_func() -> str | None:
+        return None
+
+    async def callback(_: str) -> None:
+        return None
+
+    on_start = Mock()
+    poller = Poller(3, permits, poll_func, callback, on_start=on_start)
+
+    with patch.object(poller, "_poll_loop", new_callable=AsyncMock):
+        await poller.run()
+
+    on_start.assert_called_once_with(3)
 
 
 @pytest.mark.asyncio

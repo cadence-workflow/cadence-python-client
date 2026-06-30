@@ -1,7 +1,9 @@
 import os
 import socket
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
+from collections.abc import Callable
 from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
@@ -14,8 +16,30 @@ from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
 from cadence._internal.workflow.active_cluster_selection_policy import (
     active_cluster_selection_policy_to_proto,
 )
+from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
+from cadence.api.v1 import schedule_pb2
+from cadence.api.v1.common_pb2 import (
+    Memo,
+    SearchAttributes,
+    WorkflowType,
+    WorkflowExecution,
+)
 from cadence.api.v1.service_domain_pb2_grpc import DomainAPIStub
+from cadence.api.v1.service_schedule_pb2 import (
+    BackfillScheduleRequest,
+    CreateScheduleRequest,
+    CreateScheduleResponse,
+    DeleteScheduleRequest,
+    DescribeScheduleRequest,
+    DescribeScheduleResponse,
+    ListSchedulesRequest,
+    ListSchedulesResponse,
+    PauseScheduleRequest,
+    UnpauseScheduleRequest,
+    UpdateScheduleRequest,
+)
+from cadence.api.v1.service_schedule_pb2_grpc import ScheduleAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 import grpc.aio
 from grpc.aio import Channel, ClientInterceptor
@@ -36,7 +60,6 @@ from cadence.api.v1.service_workflow_pb2 import (
     SignalWithStartWorkflowExecutionResponse,
 )
 from cadence.error import QueryFailedError
-from cadence.api.v1.common_pb2 import WorkflowType, WorkflowExecution
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
@@ -63,6 +86,7 @@ class StartWorkflowOptions(TypedDict, total=False):
     workflow_id_reuse_policy: workflow_pb2.WorkflowIdReusePolicy
     retry_policy: RetryPolicy
     active_cluster_selection_policy: ActiveClusterSelectionPolicy
+    memo: dict[str, Any]
 
 
 def _validate_and_apply_defaults(
@@ -163,6 +187,7 @@ class Client:
         self._worker_stub = WorkerAPIStub(self._channel)
         self._domain_stub = DomainAPIStub(self._channel)
         self._workflow_stub = WorkflowAPIStub(self._channel)
+        self._schedule_stub = ScheduleAPIStub(self._channel)
 
     @property
     def data_converter(self) -> DataConverter:
@@ -189,6 +214,10 @@ class Client:
         return self._workflow_stub
 
     @property
+    def schedule_stub(self) -> ScheduleAPIStub:
+        return self._schedule_stub
+
+    @property
     def metrics_emitter(self) -> MetricsEmitter:
         return self._options["metrics_emitter"]
 
@@ -196,7 +225,7 @@ class Client:
         await self._channel.channel_ready()
 
     async def close(self) -> None:
-        await self._channel.close()
+        await self._channel.close(None)
 
     async def __aenter__(self) -> "Client":
         await self.ready()
@@ -292,6 +321,10 @@ class Client:
         )
         if acsp_proto is not None:
             request.active_cluster_selection_policy.CopyFrom(acsp_proto)
+
+        memo_proto = memo_to_proto(self.data_converter, options.get("memo"))
+        if memo_proto is not None:
+            request.memo.CopyFrom(memo_proto)
 
         return request
 
@@ -421,7 +454,6 @@ class Client:
         *query_args: Any,
         result_type: type = object,
         query_reject_condition: QueryRejectCondition | None = None,
-        query_consistency_level: QueryConsistencyLevel | None = None,
     ) -> Any:
         """
         Query a running workflow execution's state.
@@ -436,7 +468,6 @@ class Client:
             *query_args: Arguments to pass to the query handler.
             result_type: The expected return type for deserialization.
             query_reject_condition: Optional condition to reject the query.
-            query_consistency_level: Optional consistency level for the query.
 
         Returns:
             The deserialized query result.
@@ -466,12 +497,11 @@ class Client:
             domain=self.domain,
             workflow_execution=workflow_execution,
             query=wf_query,
+            query_consistency_level=QueryConsistencyLevel.QUERY_CONSISTENCY_LEVEL_EVENTUAL,
         )
 
         if query_reject_condition is not None:
             request.query_reject_condition = query_reject_condition
-        if query_consistency_level is not None:
-            request.query_consistency_level = query_consistency_level
 
         response: QueryWorkflowResponse = await self.workflow_stub.QueryWorkflow(
             request
@@ -552,6 +582,180 @@ class Client:
         except Exception:
             raise
 
+    # ------------------------------------------------------------------
+    # Schedule API
+    # ------------------------------------------------------------------
+
+    async def create_schedule(
+        self,
+        schedule_id: str,
+        *,
+        spec: schedule_pb2.ScheduleSpec | None = None,
+        action: schedule_pb2.ScheduleAction | None = None,
+        policies: schedule_pb2.SchedulePolicies | None = None,
+        memo: Memo | None = None,
+        search_attributes: SearchAttributes | None = None,
+    ) -> CreateScheduleResponse:
+        """Create a new schedule and return the server response."""
+        req = CreateScheduleRequest(
+            domain=self.domain,
+            schedule_id=schedule_id,
+        )
+        if spec is not None:
+            req.spec.CopyFrom(spec)
+        if action is not None:
+            req.action.CopyFrom(action)
+        if policies is not None:
+            req.policies.CopyFrom(policies)
+        if memo is not None:
+            req.memo.CopyFrom(memo)
+        if search_attributes is not None:
+            req.search_attributes.CopyFrom(search_attributes)
+        return cast(
+            CreateScheduleResponse,
+            await self._schedule_stub.CreateSchedule(req),
+        )
+
+    async def describe_schedule(self, schedule_id: str) -> DescribeScheduleResponse:
+        """Return the current configuration and state of the schedule."""
+        return cast(
+            DescribeScheduleResponse,
+            await self._schedule_stub.DescribeSchedule(
+                DescribeScheduleRequest(
+                    domain=self.domain,
+                    schedule_id=schedule_id,
+                )
+            ),
+        )
+
+    async def pause_schedule(
+        self,
+        schedule_id: str,
+        *,
+        reason: str = "",
+        identity: str | None = None,
+    ) -> None:
+        """Pause the schedule, stopping new workflow starts."""
+        await self._schedule_stub.PauseSchedule(
+            PauseScheduleRequest(
+                domain=self.domain,
+                schedule_id=schedule_id,
+                reason=reason,
+                identity=identity or self.identity,
+            )
+        )
+
+    async def unpause_schedule(
+        self,
+        schedule_id: str,
+        *,
+        reason: str = "",
+        catch_up_policy: schedule_pb2.ScheduleCatchUpPolicy = schedule_pb2.SCHEDULE_CATCH_UP_POLICY_INVALID,
+    ) -> None:
+        """Resume a paused schedule."""
+        await self._schedule_stub.UnpauseSchedule(
+            UnpauseScheduleRequest(
+                domain=self.domain,
+                schedule_id=schedule_id,
+                reason=reason,
+                catch_up_policy=catch_up_policy,
+            )
+        )
+
+    async def delete_schedule(self, schedule_id: str) -> None:
+        """Delete the schedule. Running workflows are not affected."""
+        await self._schedule_stub.DeleteSchedule(
+            DeleteScheduleRequest(
+                domain=self.domain,
+                schedule_id=schedule_id,
+            )
+        )
+
+    async def update_schedule(
+        self,
+        schedule_id: str,
+        updater: Callable[[DescribeScheduleResponse], None],
+    ) -> None:
+        """Update a schedule using a read-modify-write pattern.
+
+        Fetches the current schedule state, passes it to ``updater`` for
+        modification, then sends the full updated state to the server.
+        """
+        current = await self.describe_schedule(schedule_id)
+        updater(current)
+        req = UpdateScheduleRequest(
+            domain=self.domain,
+            schedule_id=schedule_id,
+        )
+        req.spec.CopyFrom(current.spec)
+        req.action.CopyFrom(current.action)
+        req.policies.CopyFrom(current.policies)
+        if current.HasField("search_attributes"):
+            req.search_attributes.CopyFrom(current.search_attributes)
+        await self._schedule_stub.UpdateSchedule(req)
+
+    async def backfill_schedule(
+        self,
+        schedule_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        *,
+        overlap_policy: schedule_pb2.ScheduleOverlapPolicy = schedule_pb2.SCHEDULE_OVERLAP_POLICY_INVALID,
+        backfill_id: str | None = None,
+    ) -> None:
+        """Trigger runs for a historical time range.
+
+        ``backfill_id`` defaults to a UUID; the server deduplicates on this
+        value so retrying with the same ID is safe.
+
+        Raises:
+            ValueError: If datetimes are naive or ``end_time <= start_time``.
+        """
+        if start_time.tzinfo is None:
+            raise ValueError(
+                "backfill start_time must be timezone-aware. "
+                "Use datetime.now(timezone.utc) or datetime(..., tzinfo=timezone.utc)"
+            )
+        if end_time.tzinfo is None:
+            raise ValueError(
+                "backfill end_time must be timezone-aware. "
+                "Use datetime.now(timezone.utc) or datetime(..., tzinfo=timezone.utc)"
+            )
+        if end_time <= start_time:
+            raise ValueError("backfill end_time must be strictly after start_time")
+
+        req = BackfillScheduleRequest(
+            domain=self.domain,
+            schedule_id=schedule_id,
+            overlap_policy=overlap_policy,
+            backfill_id=backfill_id or str(uuid.uuid4()),
+        )
+        req.start_time.FromDatetime(start_time)
+        req.end_time.FromDatetime(end_time)
+        await self._schedule_stub.BackfillSchedule(req)
+
+    async def list_schedules(
+        self, *, page_size: int = 100
+    ) -> AsyncGenerator[schedule_pb2.ScheduleListEntry, None]:
+        """Async-iterate over all schedules in the domain, handling pagination."""
+        next_page_token = b""
+        while True:
+            resp = cast(
+                ListSchedulesResponse,
+                await self._schedule_stub.ListSchedules(
+                    ListSchedulesRequest(
+                        domain=self.domain,
+                        page_size=page_size,
+                        next_page_token=next_page_token,
+                    )
+                ),
+            )
+            for entry in resp.schedules:
+                yield entry
+            if not resp.next_page_token:
+                break
+            next_page_token = resp.next_page_token
+
 
 def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     if "target" not in options:
@@ -569,7 +773,7 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
 
 
 def _create_channel(options: ClientOptions) -> Channel:
-    interceptors = list(options["interceptors"])
+    interceptors: list[Any] = list(options["interceptors"])
     interceptors.append(
         YarpcMetadataInterceptor(options["service_name"], options["caller_name"])
     )

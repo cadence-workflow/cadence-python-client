@@ -217,6 +217,32 @@ class TestClientBuildStartWorkflowRequest:
         assert len(request.input.data) > 0
 
     @pytest.mark.asyncio
+    async def test_build_request_without_memo_has_no_memo_fields(self, mock_client):
+        client = Client(domain="test-domain", target="localhost:7933")
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+        )
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+        assert len(request.memo.fields) == 0
+
+    @pytest.mark.asyncio
+    async def test_build_request_with_memo(self, mock_client):
+        client = Client(domain="test-domain", target="localhost:7933")
+        dc = client.data_converter
+        options = StartWorkflowOptions(
+            task_list="test-task-list",
+            execution_start_to_close_timeout=timedelta(minutes=10),
+            task_start_to_close_timeout=timedelta(seconds=30),
+            memo={"tenant": "acme", "count": 42},
+        )
+        request = client._build_start_workflow_request("TestWorkflow", (), options)
+        assert len(request.memo.fields) == 2
+        assert request.memo.fields["tenant"] == dc.to_data(["acme"])
+        assert request.memo.fields["count"] == dc.to_data([42])
+
+    @pytest.mark.asyncio
     async def test_build_request_with_timeouts(self, mock_client):
         """Test building request with timeout settings."""
         client = Client(domain="test-domain", target="localhost:7933")

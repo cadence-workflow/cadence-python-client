@@ -33,7 +33,7 @@ services:
     environment:
       - "CASSANDRA_SEEDS=cassandra"
       - "STATSD_ENDPOINT=statsd:8125"
-      - "DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development.yaml"
+      - "DYNAMIC_CONFIG_FILE_PATH=dynamicconfig/development.yaml"
     depends_on:
       - cassandra
       - statsd
@@ -53,6 +53,21 @@ services:
       services-network:
         aliases:
           - cadence-web
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - "./prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      services-network:
+        aliases:
+          - prometheus
 networks:
   services-network:
     name: services-network

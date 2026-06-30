@@ -1,11 +1,14 @@
+import asyncio
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
+    Awaitable,
     Iterator,
     Callable,
+    Generator,
     TypeVar,
     TypedDict,
     Type,
@@ -20,21 +23,25 @@ from typing import (
 import inspect
 
 from cadence._internal.fn_signature import FnSignature
+from cadence.api.v1 import workflow_pb2
+from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DataConverter
 from cadence.error import ContinueAsNewError
 from cadence.query import QueryDefinition, QueryDefinitionOptions
 from cadence.signal import SignalDefinition, SignalDefinitionOptions
 
+_QUERY_TYPES_QUERY_NAME = "__query_types"
+
 ResultType = TypeVar("ResultType")
 
 
 class RetryPolicy(TypedDict, total=False):
-    initial_interval: timedelta
-    backoff_coefficient: float
-    maximum_interval: timedelta
-    maximum_attempts: int
-    non_retryable_error_reasons: list[str]
-    expiration_interval: timedelta
+    initial_interval: timedelta | None
+    backoff_coefficient: float | None
+    maximum_interval: timedelta | None
+    maximum_attempts: int | None
+    non_retryable_error_reasons: list[str] | None
+    expiration_interval: timedelta | None
 
 
 class ClusterAttribute(TypedDict, total=False):
@@ -55,6 +62,57 @@ class ActivityOptions(TypedDict, total=False):
     retry_policy: RetryPolicy
 
 
+class ChildWorkflowOptions(TypedDict, total=False):
+    workflow_id: str
+    domain: str
+    task_list: str
+    execution_start_to_close_timeout: timedelta
+    task_start_to_close_timeout: timedelta
+    parent_close_policy: Union[workflow_pb2.ParentClosePolicy, str]
+    workflow_id_reuse_policy: Union[workflow_pb2.WorkflowIdReusePolicy, str]
+    retry_policy: RetryPolicy
+    cron_schedule: str
+    memo: dict[str, Any]
+
+
+class ChildWorkflowFuture(Awaitable[ResultType]):
+    def __init__(
+        self,
+        workflow_id: str,
+        run_id: str,
+        result_future: "asyncio.Future[Payload]",
+        result_type: Type[ResultType],
+        data_converter: DataConverter,
+    ) -> None:
+        self._workflow_id = workflow_id
+        self._run_id = run_id
+        self._result_future = result_future
+        self._result_type = result_type
+        self._data_converter = data_converter
+
+    @property
+    def workflow_id(self) -> str:
+        return self._workflow_id
+
+    @property
+    def run_id(self) -> str:
+        return self._run_id
+
+    def cancel(self) -> bool:
+        """Request cancellation of the child workflow."""
+        return self._result_future.cancel()
+
+    async def signal(self, signal_name: str, *args: Any) -> None:
+        """Send a signal to this child workflow."""
+        ctx = WorkflowContext.get()
+        await ctx.signal_child_workflow(self._workflow_id, signal_name, *args)
+
+    def __await__(self) -> Generator[Any, None, ResultType]:
+        payload: Payload = yield from self._result_future.__await__()
+        result = self._data_converter.from_data(payload, [self._result_type])[0]
+        return cast(ResultType, result)
+
+
 async def execute_activity(
     activity: str,
     result_type: Type[ResultType],
@@ -63,6 +121,49 @@ async def execute_activity(
 ) -> ResultType:
     return await WorkflowContext.get().execute_activity(
         activity, result_type, *args, **kwargs
+    )
+
+
+async def execute_child_workflow(
+    workflow_type: str,
+    result_type: Type[ResultType],
+    *args: Any,
+    **kwargs: Unpack[ChildWorkflowOptions],
+) -> ResultType:
+    return await WorkflowContext.get().execute_child_workflow(
+        workflow_type, result_type, *args, **kwargs
+    )
+
+
+async def start_child_workflow(
+    workflow_type: str,
+    result_type: Type[ResultType],
+    *args: Any,
+    **kwargs: Unpack[ChildWorkflowOptions],
+) -> "ChildWorkflowFuture[ResultType]":
+    return await WorkflowContext.get().start_child_workflow(
+        workflow_type, result_type, *args, **kwargs
+    )
+
+
+async def signal_external_workflow(
+    workflow_id: str,
+    signal_name: str,
+    *args: Any,
+    run_id: str = "",
+    domain: str = "",
+) -> None:
+    """Send a signal to an external workflow execution.
+
+    Args:
+        workflow_id: Target workflow ID.
+        signal_name: Name of the signal to deliver.
+        *args: Signal payload arguments, serialized via DataConverter.
+        run_id: Target run ID. Empty string targets the currently running execution.
+        domain: Target domain. Empty string defaults to the current workflow's domain.
+    """
+    await WorkflowContext.get().signal_external_workflow(
+        workflow_id, signal_name, *args, run_id=run_id, domain=domain
     )
 
 
@@ -169,6 +270,11 @@ class WorkflowDefinition(Generic[C]):
         """Get the workflow run method from an instance of the workflow class."""
         return cast(Callable, getattr(instance, self._run_method_name))
 
+    @property
+    def run_signature(self) -> FnSignature:
+        """The signature of the workflow run method."""
+        return self._run_signature
+
     @staticmethod
     def wrap(cls: Type, opts: WorkflowDefinitionOptions) -> "WorkflowDefinition":
         """
@@ -244,6 +350,19 @@ class WorkflowDefinition(Generic[C]):
 
         if run_method_name is None or run_signature is None:
             raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
+
+        # Register the built-in __query_types query, which returns the names
+        # of all registered query handlers (including itself). The handler
+        # declares a `self` parameter so it matches the calling convention
+        # used by `WorkflowInstance.handle_query`; `FnSignature.of` filters
+        # `self` out so it is not decoded from the query payload.
+        def _query_types_handler(self: Any) -> list[str]:
+            return sorted(list(queries.keys()))
+
+        queries[_QUERY_TYPES_QUERY_NAME] = QueryDefinition.wrap(
+            _query_types_handler,
+            QueryDefinitionOptions(name=_QUERY_TYPES_QUERY_NAME),
+        )
 
         return WorkflowDefinition(
             cls, name, run_method_name, signals, queries, run_signature
@@ -414,6 +533,7 @@ class WorkflowInfo:
     workflow_run_id: str
     workflow_task_list: str
     data_converter: DataConverter
+    memo: dict[str, Any] | None = None
 
 
 class WorkflowContext(ABC):
@@ -433,6 +553,42 @@ class WorkflowContext(ABC):
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
     ) -> ResultType: ...
+
+    @abstractmethod
+    async def execute_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> ResultType: ...
+
+    @abstractmethod
+    async def start_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> "ChildWorkflowFuture[ResultType]": ...
+
+    @abstractmethod
+    async def signal_child_workflow(
+        self,
+        child_workflow_id: str,
+        signal_name: str,
+        *args: Any,
+    ) -> None: ...
+
+    @abstractmethod
+    async def signal_external_workflow(
+        self,
+        workflow_id: str,
+        signal_name: str,
+        *args: Any,
+        run_id: str = "",
+        domain: str = "",
+    ) -> None: ...
 
     @abstractmethod
     async def start_timer(self, duration: timedelta) -> None: ...

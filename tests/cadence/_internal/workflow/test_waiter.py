@@ -28,7 +28,8 @@ class TestWaiterPredicateAlreadyTrue:
         loop = make_loop()
         w = Waiter(lambda: True, loop)
         w.poll()
-        assert w.result() is None
+        assert w.exception() is None
+        w.result()
 
 
 class TestWaiterFalseBecomesTrue:
@@ -49,7 +50,8 @@ class TestWaiterFalseBecomesTrue:
         state["v"] = True
         assert w.poll() is True
         assert w.done()
-        assert w.result() is None
+        assert w.exception() is None
+        w.result()
 
     def test_already_done_poll_is_idempotent(self) -> None:
         """Polling an already-settled waiter always returns True without re-running predicate."""

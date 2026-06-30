@@ -16,6 +16,7 @@ from cadence.api.v1.service_worker_pb2 import (
     RespondActivityTaskCompletedRequest,
 )
 from cadence.client import Client
+from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 
 _logger = getLogger(__name__)
 
@@ -28,12 +29,16 @@ class ActivityExecutor:
         identity: str,
         max_workers: int,
         registry: Callable[[str], ActivityDefinition],
+        metrics_emitter: MetricsEmitter | None = None,
     ):
         self._client = client
         self._data_converter = client.data_converter
         self._registry = registry
         self._identity = identity
         self._task_list = task_list
+        self._metrics_emitter: MetricsEmitter = (
+            metrics_emitter if metrics_emitter is not None else NoOpMetricsEmitter()
+        )
         self._thread_pool = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
         )

@@ -3,9 +3,17 @@ from asyncio import CancelledError
 
 import pytest
 
+from cadence.error import ChildWorkflowError, StartChildWorkflowExecutionFailed
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
+from cadence._internal.workflow.statemachine.event_dispatcher import (
+    EventDispatcher,
+    resolve_id_attr,
+)
+from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
+    SignalExternalWorkflowFailed,
+)
 from cadence.api.v1 import history, decision
-from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 
 
 async def test_activity_dispatch():
@@ -161,6 +169,210 @@ async def test_collection_decisions_reordering():
     assert activity2.done() is False
 
 
+async def test_child_workflow_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    execution, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+        parent_workflow_run_id="parent-run",
+    )
+
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
+    decisions.handle_history_event(
+        child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
+    )
+    decisions.handle_history_event(
+        child_wf_completed(3, started_event_id=1, result=Payload(data=b"done"))
+    )
+
+    assert execution.done() is True
+    assert execution.result() == WorkflowExecution(
+        workflow_id="child-wf-1", run_id="run-1"
+    )
+    assert result.done() is True
+    assert result.result() == Payload(data=b"done")
+
+
+async def test_schedule_child_workflow_generates_workflow_id():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    attrs = decision.StartChildWorkflowExecutionDecisionAttributes(
+        workflow_id="",
+        workflow_type=WorkflowType(name="MyWorkflow"),
+    )
+    _execution, result = decisions.schedule_child_workflow(
+        attrs, parent_workflow_run_id="parent-run-xyz"
+    )
+
+    assert attrs.workflow_id == "parent-run-xyz_0"
+
+    decisions.handle_history_event(child_wf_initiated(1, attrs.workflow_id))
+    decisions.handle_history_event(
+        child_wf_started(2, started_event_id=1, wf_id=attrs.workflow_id, run_id="run-1")
+    )
+    decisions.handle_history_event(
+        child_wf_completed(3, started_event_id=1, result=Payload(data=b"done"))
+    )
+
+    assert result.result() == Payload(data=b"done")
+
+
+async def test_child_workflow_initiation_failed_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    execution, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+        parent_workflow_run_id="parent-run",
+    )
+
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=2,
+            start_child_workflow_execution_failed_event_attributes=history.StartChildWorkflowExecutionFailedEventAttributes(
+                initiated_event_id=1,
+                workflow_id="child-wf-1",
+                workflow_type=WorkflowType(name="MyWorkflow"),
+            ),
+        )
+    )
+
+    assert execution.done() is True
+    assert result.done() is True
+    with pytest.raises(StartChildWorkflowExecutionFailed):
+        result.result()
+
+
+async def test_child_workflow_cancel_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    _execution, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+        parent_workflow_run_id="parent-run",
+    )
+
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
+    decisions.handle_history_event(
+        child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
+    )
+
+    # Cancel the child workflow
+    result.cancel()
+
+    # cancel_initiated and cancel_failed are dispatched by workflow_execution.workflow_id
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=3,
+            request_cancel_external_workflow_execution_initiated_event_attributes=history.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes(
+                workflow_execution=WorkflowExecution(
+                    workflow_id="child-wf-1", run_id="run-1"
+                ),
+            ),
+        )
+    )
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=4,
+            request_cancel_external_workflow_execution_failed_event_attributes=history.RequestCancelExternalWorkflowExecutionFailedEventAttributes(
+                initiated_event_id=3,
+            ),
+        )
+    )
+
+    # Cancel failed — back to STARTED
+    assert result.done() is False
+
+
+async def test_child_workflow_errors_are_child_workflow_error():
+    """All child workflow errors share a common base class."""
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    _execution, result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+        parent_workflow_run_id="parent-run",
+    )
+
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=2,
+            start_child_workflow_execution_failed_event_attributes=history.StartChildWorkflowExecutionFailedEventAttributes(
+                initiated_event_id=1,
+                workflow_id="child-wf-1",
+                workflow_type=WorkflowType(name="MyWorkflow"),
+            ),
+        )
+    )
+
+    assert result.done() is True
+    with pytest.raises(ChildWorkflowError):
+        result.result()
+
+
+def test_resolve_id_attr_empty_path_returns_none():
+    attrs = history.TimerStartedEventAttributes(timer_id="timer-1")
+
+    assert resolve_id_attr(attrs, "") is None
+
+
+def test_event_dispatcher_allows_empty_default_id_attr():
+    dispatcher = EventDispatcher()
+
+    class Handler:
+        @dispatcher.event()
+        def handle(self, _: history.TimerStartedEventAttributes) -> None:
+            pass
+
+    action = dispatcher.handlers[history.TimerStartedEventAttributes]
+    assert action.id_attr == ""
+
+
+def child_wf_initiated(event_id: int, workflow_id: str) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        start_child_workflow_execution_initiated_event_attributes=history.StartChildWorkflowExecutionInitiatedEventAttributes(
+            workflow_id=workflow_id,
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+    )
+
+
+def child_wf_started(
+    event_id: int, *, started_event_id: int, wf_id: str, run_id: str
+) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        child_workflow_execution_started_event_attributes=history.ChildWorkflowExecutionStartedEventAttributes(
+            initiated_event_id=started_event_id,
+            workflow_execution=WorkflowExecution(workflow_id=wf_id, run_id=run_id),
+        ),
+    )
+
+
+def child_wf_completed(
+    event_id: int, *, started_event_id: int, result: Payload
+) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        child_workflow_execution_completed_event_attributes=history.ChildWorkflowExecutionCompletedEventAttributes(
+            initiated_event_id=started_event_id,
+            result=result,
+        ),
+    )
+
+
 def activity_scheduled(event_id: int, activity_id: str) -> history.HistoryEvent:
     return history.HistoryEvent(
         event_id=event_id,
@@ -186,5 +398,138 @@ def activity_completed(
         event_id=event_id,
         activity_task_completed_event_attributes=history.ActivityTaskCompletedEventAttributes(
             scheduled_event_id=scheduled_id, result=result
+        ),
+    )
+
+
+async def test_signal_external_workflow_creates_machine():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    future = decisions.signal_external_workflow(
+        decision.SignalExternalWorkflowExecutionDecisionAttributes(
+            domain="test-domain",
+            workflow_execution=WorkflowExecution(workflow_id="child-wf-1", run_id=""),
+            signal_name="my_signal",
+            child_workflow_only=True,
+        )
+    )
+
+    assert future.done() is False
+    pending = decisions.collect_pending_decisions()
+    assert len(pending) == 1
+    assert (
+        pending[0].signal_external_workflow_execution_decision_attributes.signal_name
+        == "my_signal"
+    )
+
+
+async def test_signal_external_workflow_sets_control():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    attrs = decision.SignalExternalWorkflowExecutionDecisionAttributes(
+        domain="test-domain",
+        workflow_execution=WorkflowExecution(workflow_id="child-wf-1", run_id=""),
+        signal_name="my_signal",
+        child_workflow_only=True,
+    )
+    decisions.signal_external_workflow(attrs)
+
+    assert attrs.control == b"0"
+
+
+async def test_signal_external_workflow_multiple_signals():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    future1 = decisions.signal_external_workflow(
+        decision.SignalExternalWorkflowExecutionDecisionAttributes(
+            domain="test-domain",
+            workflow_execution=WorkflowExecution(workflow_id="child-wf-1", run_id=""),
+            signal_name="signal_a",
+            child_workflow_only=True,
+        )
+    )
+    future2 = decisions.signal_external_workflow(
+        decision.SignalExternalWorkflowExecutionDecisionAttributes(
+            domain="test-domain",
+            workflow_execution=WorkflowExecution(workflow_id="child-wf-1", run_id=""),
+            signal_name="signal_b",
+            child_workflow_only=True,
+        )
+    )
+
+    assert len(decisions.collect_pending_decisions()) == 2
+
+    decisions.handle_history_event(signal_initiated(1, signal_id="0"))
+    decisions.handle_history_event(signal_initiated(2, signal_id="1"))
+    decisions.handle_history_event(signal_completed(3, initiated_event_id=1))
+    decisions.handle_history_event(signal_completed(4, initiated_event_id=2))
+
+    assert future1.result() is None
+    assert future2.result() is None
+
+
+async def test_signal_external_workflow_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    future = decisions.signal_external_workflow(
+        decision.SignalExternalWorkflowExecutionDecisionAttributes(
+            domain="test-domain",
+            workflow_execution=WorkflowExecution(workflow_id="child-wf-1", run_id=""),
+            signal_name="my_signal",
+            child_workflow_only=True,
+        )
+    )
+
+    decisions.handle_history_event(signal_initiated(1, signal_id="0"))
+    decisions.handle_history_event(signal_completed(2, initiated_event_id=1))
+
+    assert future.done() is True
+    assert future.result() is None
+
+
+async def test_signal_external_workflow_failed_dispatch():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    future = decisions.signal_external_workflow(
+        decision.SignalExternalWorkflowExecutionDecisionAttributes(
+            domain="test-domain",
+            workflow_execution=WorkflowExecution(workflow_id="child-wf-1", run_id=""),
+            signal_name="my_signal",
+            child_workflow_only=True,
+        )
+    )
+
+    decisions.handle_history_event(signal_initiated(1, signal_id="0"))
+    decisions.handle_history_event(signal_failed(2, initiated_event_id=1))
+
+    assert future.done() is True
+    with pytest.raises(SignalExternalWorkflowFailed):
+        future.result()
+
+
+def signal_initiated(event_id: int, signal_id: str) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        signal_external_workflow_execution_initiated_event_attributes=history.SignalExternalWorkflowExecutionInitiatedEventAttributes(
+            control=signal_id.encode("utf-8"),
+            signal_name="my_signal",
+        ),
+    )
+
+
+def signal_completed(event_id: int, initiated_event_id: int) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        external_workflow_execution_signaled_event_attributes=history.ExternalWorkflowExecutionSignaledEventAttributes(
+            initiated_event_id=initiated_event_id,
+        ),
+    )
+
+
+def signal_failed(event_id: int, initiated_event_id: int) -> history.HistoryEvent:
+    return history.HistoryEvent(
+        event_id=event_id,
+        signal_external_workflow_execution_failed_event_attributes=history.SignalExternalWorkflowExecutionFailedEventAttributes(
+            initiated_event_id=initiated_event_id,
         ),
     )

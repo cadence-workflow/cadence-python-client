@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
 from asyncio import get_running_loop
 from datetime import timedelta
@@ -5,17 +7,23 @@ from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
-from cadence.api.v1.common_pb2 import ActivityType
+from cadence.api.v1 import workflow_pb2
+from cadence.api.v1.common_pb2 import ActivityType, WorkflowType, WorkflowExecution
 from cadence.api.v1.decision_pb2 import (
     ScheduleActivityTaskDecisionAttributes,
+    SignalExternalWorkflowExecutionDecisionAttributes,
+    StartChildWorkflowExecutionDecisionAttributes,
     StartTimerDecisionAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
 from cadence.workflow import (
     ActivityOptions,
+    ChildWorkflowFuture,
+    ChildWorkflowOptions,
     ResultType,
     WorkflowContext,
     WorkflowInfo,
@@ -105,6 +113,131 @@ class Context(WorkflowContext):
 
         return cast(ResultType, result)
 
+    async def execute_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> ResultType:
+        future = await self.start_child_workflow(
+            workflow_type, result_type, *args, **kwargs
+        )
+        return await future
+
+    async def start_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> ChildWorkflowFuture[ResultType]:
+        schedule_attributes = self._build_child_workflow_attrs(
+            workflow_type, *args, **kwargs
+        )
+        execution_future, result_future = (
+            self._decision_manager.schedule_child_workflow(
+                schedule_attributes,
+                parent_workflow_run_id=self._info.workflow_run_id,
+            )
+        )
+        workflow_execution = await execution_future
+        return ChildWorkflowFuture(
+            workflow_id=workflow_execution.workflow_id,
+            run_id=workflow_execution.run_id,
+            result_future=result_future,
+            result_type=result_type,
+            data_converter=self.data_converter(),
+        )
+
+    def _build_child_workflow_attrs(
+        self,
+        workflow_type: str,
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> StartChildWorkflowExecutionDecisionAttributes:
+        execution_timeout = kwargs.get("execution_start_to_close_timeout")
+        if execution_timeout is None:
+            raise ValueError(
+                "execution_start_to_close_timeout is required for child workflow execution"
+            )
+        if execution_timeout <= timedelta(0):
+            raise ValueError("execution_start_to_close_timeout must be greater than 0")
+
+        task_timeout = kwargs.get("task_start_to_close_timeout", timedelta(seconds=10))
+        if task_timeout <= timedelta(0):
+            raise ValueError("task_start_to_close_timeout must be greater than 0")
+
+        domain = kwargs.get("domain") or self._info.workflow_domain
+        task_list = kwargs.get("task_list") or self._info.workflow_task_list
+
+        workflow_id = kwargs.get("workflow_id") or ""
+
+        parent_close_policy = kwargs.get(
+            "parent_close_policy",
+            workflow_pb2.PARENT_CLOSE_POLICY_TERMINATE,
+        )
+        workflow_id_reuse_policy = kwargs.get(
+            "workflow_id_reuse_policy",
+            workflow_pb2.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+        )
+        if workflow_id_reuse_policy == workflow_pb2.WORKFLOW_ID_REUSE_POLICY_INVALID:
+            raise ValueError(
+                "workflow_id_reuse_policy cannot be WORKFLOW_ID_REUSE_POLICY_INVALID"
+            )
+
+        child_input = self.data_converter().to_data(list(args))
+        schedule_attributes = StartChildWorkflowExecutionDecisionAttributes(
+            domain=domain,
+            workflow_id=workflow_id,
+            workflow_type=WorkflowType(name=workflow_type),
+            task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
+            input=child_input,
+            execution_start_to_close_timeout=_round_to_nearest_second(
+                execution_timeout
+            ),
+            task_start_to_close_timeout=_round_to_nearest_second(task_timeout),
+            parent_close_policy=parent_close_policy,
+            workflow_id_reuse_policy=workflow_id_reuse_policy,
+            retry_policy=retry_policy_to_proto(kwargs.get("retry_policy")),
+        )
+
+        cron_schedule = kwargs.get("cron_schedule")
+        if cron_schedule:
+            schedule_attributes.cron_schedule = cron_schedule
+
+        memo_proto = memo_to_proto(self.data_converter(), kwargs.get("memo"))
+        if memo_proto is not None:
+            schedule_attributes.memo.CopyFrom(memo_proto)
+
+        return schedule_attributes
+
+    async def signal_child_workflow(
+        self,
+        child_workflow_id: str,
+        signal_name: str,
+        *args: Any,
+    ) -> None:
+        if not child_workflow_id:
+            raise ValueError("child_workflow_id must not be empty")
+        await self._signal_workflow(
+            child_workflow_id, signal_name, args, child_workflow_only=True
+        )
+
+    async def signal_external_workflow(
+        self,
+        workflow_id: str,
+        signal_name: str,
+        *args: Any,
+        run_id: str = "",
+        domain: str = "",
+    ) -> None:
+        if not workflow_id:
+            raise ValueError("workflow_id must not be empty")
+        await self._signal_workflow(
+            workflow_id, signal_name, args, run_id=run_id, domain=domain
+        )
+
     async def start_timer(self, duration: timedelta):
         if duration.total_seconds() <= 0:  # shortcut
             return
@@ -142,6 +275,30 @@ class Context(WorkflowContext):
             yield self
         finally:
             WorkflowContext._var.reset(token)
+
+    async def _signal_workflow(
+        self,
+        workflow_id: str,
+        signal_name: str,
+        args: tuple,
+        *,
+        run_id: str = "",
+        domain: str = "",
+        child_workflow_only: bool = False,
+    ) -> None:
+        if not signal_name:
+            raise ValueError("signal_name must not be empty")
+        attrs = SignalExternalWorkflowExecutionDecisionAttributes(
+            domain=domain or self._info.workflow_domain,
+            workflow_execution=WorkflowExecution(
+                workflow_id=workflow_id,
+                run_id=run_id,
+            ),
+            signal_name=signal_name,
+            input=self.data_converter().to_data(list(args)),
+            child_workflow_only=child_workflow_only,
+        )
+        await self._decision_manager.signal_external_workflow(attrs)
 
 
 def _round_to_nearest_second(delta: timedelta) -> timedelta:

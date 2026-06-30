@@ -2,11 +2,15 @@ import asyncio
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Type, Tuple, ClassVar, List, Iterator
+from typing import Any, Dict, Type, ClassVar, List, Iterator
 
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,
+)
+from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
+    child_workflow_events,
+    ChildWorkflowExecutionStateMachine,
 )
 from cadence._internal.workflow.statemachine.completion_state_machine import (
     CompletionStateMachine,
@@ -21,16 +25,26 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
 from cadence._internal.workflow.statemachine.event_dispatcher import (
     EventDispatcher,
     Action,
+    resolve_id_attr,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
+from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
+    signal_external_events,
+    SignalExternalWorkflowStateMachine,
+)
 from cadence._internal.workflow.statemachine.timer_state_machine import (
     TimerStateMachine,
     timer_events,
 )
 from cadence.api.v1 import decision, history
-from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
 
-DecisionAlias = Tuple[DecisionType, str | int]
+DecisionAlias = tuple[DecisionType, str | int]
+
+
+def _consume_future_exception(future: asyncio.Future[Any]) -> None:
+    if not future.cancelled():
+        future.exception()
 
 
 @dataclass(frozen=True)
@@ -67,6 +81,8 @@ class DecisionManager:
         {
             DecisionType.ACTIVITY: activity_events,
             DecisionType.TIMER: timer_events,
+            DecisionType.CHILD_WORKFLOW: child_workflow_events,
+            DecisionType.SIGNAL: signal_external_events,
         }
     )
 
@@ -110,6 +126,44 @@ class DecisionManager:
 
         return future
 
+    # ----- Child Workflow API -----
+    def schedule_child_workflow(
+        self,
+        attrs: decision.StartChildWorkflowExecutionDecisionAttributes,
+        *,
+        parent_workflow_run_id: str,
+    ) -> tuple[DecisionFuture[WorkflowExecution], DecisionFuture[Payload]]:
+
+        if not attrs.workflow_id:
+            attrs.workflow_id = f"{parent_workflow_run_id}_{self._next_id()}"
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
+        decision_id = DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id)
+        execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
+        execution.add_done_callback(_consume_future_exception)
+        result: DecisionFuture[Payload] = DecisionFuture(
+            self._event_loop, lambda: self._request_cancel(decision_id)
+        )
+        machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
+        self._add_state_machine(machine)
+        return execution, result
+
+    # ----- Signal External Workflow API -----
+
+    def signal_external_workflow(
+        self,
+        attrs: decision.SignalExternalWorkflowExecutionDecisionAttributes,
+    ) -> asyncio.Future[None]:
+        signal_id = self._next_id()
+        attrs.control = signal_id.encode("utf-8")
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
+        decision_id = DecisionId(DecisionType.SIGNAL, signal_id)
+        future: DecisionFuture[None] = self._create_future(decision_id)
+        machine = SignalExternalWorkflowStateMachine(attrs, future, signal_id)
+        self._add_state_machine(machine)
+        return future
+
     # ----- Workflow API -----
     def complete_workflow(self, decision: decision.Decision) -> None:
         if self._replaying:
@@ -142,24 +196,19 @@ class DecisionManager:
     def handle_history_event(self, event: history.HistoryEvent) -> None:
         """Dispatch history event to typed handlers using the global transition map."""
         attr = event.WhichOneof("attributes")
+        event_attributes = getattr(event, attr)
+
         # Based on the type of the event, determine what DecisionType it's referencing and
         # the correct action to take
-        event_attributes = getattr(event, attr)
         event_action = DecisionManager.type_to_action.get(
             event_attributes.__class__, None
         )
         if event_action is not None:
             decision_type = event_action.decision_type
             action = event_action.action
-            # Find what state machine the event references.
-            # This may be a reference via the user id or a reference to a previous event
-            id_for_event = getattr(event_attributes, action.id_attr)
-            alias = (decision_type, id_for_event)
-            machine = self.aliases.get(alias, None)
-            if machine is None:
-                raise KeyError(
-                    f"Event {event.event_id} references unknown state machine {alias}"
-                )
+            machine = self._state_machine_for_event(
+                event.event_id, decision_type, action, event_attributes
+            )
 
             action.fn(machine, event_attributes)
 
@@ -167,6 +216,22 @@ class DecisionManager:
             # rather than using the client provided id
             if action.event_id_is_alias:
                 self.aliases[(decision_type, event.event_id)] = machine
+
+    def _state_machine_for_event(
+        self,
+        event_id: int,
+        decision_type: DecisionType,
+        action: Action,
+        event_attributes: object,
+    ) -> DecisionStateMachine:
+        # This may resolve via a user id, an event-id alias, or a nested proto field
+        # such as workflow_execution.workflow_id.
+        id_for_event = resolve_id_attr(event_attributes, action.id_attr)
+        alias = (decision_type, id_for_event)
+        machine = self.aliases.get(alias, None)
+        if machine is None:
+            raise KeyError(f"Event {event_id} references unknown state machine {alias}")
+        return machine
 
     # ---- Non-determinism ----
     @contextmanager

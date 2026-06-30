@@ -13,6 +13,7 @@ from cadence.contrib.google_adk.cadence_model import CadenceModel
 
 _original_unraisablehook = sys.unraisablehook
 
+
 def _suppress_adk_cleanup_error_hook(args) -> None:
     message = str(args.exc_value)
     if isinstance(args.exc_value, ValueError) and (
@@ -25,8 +26,10 @@ def _suppress_adk_cleanup_error_hook(args) -> None:
         return
     _original_unraisablehook(args)
 
+
 sys.unraisablehook = _suppress_adk_cleanup_error_hook
 
+_otel_context: Any
 try:
     from opentelemetry import context as _otel_context
 except ImportError:
@@ -43,6 +46,7 @@ if _otel_context is not None:
             raise
 
     _otel_context.detach = _suppress_otel_context_detach
+
 
 class CadenceAgentRunner(Runner):
     def __init__(self, **kwargs: Any) -> None:

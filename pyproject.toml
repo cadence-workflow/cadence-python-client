@@ -107,6 +107,7 @@ module = [
     "grpcio.*",
     "grpcio_tools.*",
     "grpc.*",
+    "google.adk.*",
     "google.protobuf.*",
     "google.rpc.*",
     "grpc_status.*",

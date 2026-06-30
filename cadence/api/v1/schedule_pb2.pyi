@@ -126,7 +126,7 @@ class BackfillInfo(_message.Message):
     def __init__(self, backfill_id: _Optional[str] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., runs_completed: _Optional[int] = ..., runs_total: _Optional[int] = ...) -> None: ...
 
 class ScheduleInfo(_message.Message):
-    __slots__ = ("last_run_time", "next_run_time", "total_runs", "create_time", "last_update_time", "ongoing_backfills", "missed_runs", "skipped_runs")
+    __slots__ = ("last_run_time", "next_run_time", "total_runs", "create_time", "last_update_time", "ongoing_backfills", "missed_runs", "skipped_runs", "buffered_fire_count", "running_workflow_count")
     LAST_RUN_TIME_FIELD_NUMBER: _ClassVar[int]
     NEXT_RUN_TIME_FIELD_NUMBER: _ClassVar[int]
     TOTAL_RUNS_FIELD_NUMBER: _ClassVar[int]
@@ -135,6 +135,8 @@ class ScheduleInfo(_message.Message):
     ONGOING_BACKFILLS_FIELD_NUMBER: _ClassVar[int]
     MISSED_RUNS_FIELD_NUMBER: _ClassVar[int]
     SKIPPED_RUNS_FIELD_NUMBER: _ClassVar[int]
+    BUFFERED_FIRE_COUNT_FIELD_NUMBER: _ClassVar[int]
+    RUNNING_WORKFLOW_COUNT_FIELD_NUMBER: _ClassVar[int]
     last_run_time: _timestamp_pb2.Timestamp
     next_run_time: _timestamp_pb2.Timestamp
     total_runs: int
@@ -143,7 +145,9 @@ class ScheduleInfo(_message.Message):
     ongoing_backfills: _containers.RepeatedCompositeFieldContainer[BackfillInfo]
     missed_runs: int
     skipped_runs: int
-    def __init__(self, last_run_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., next_run_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., total_runs: _Optional[int] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., ongoing_backfills: _Optional[_Iterable[_Union[BackfillInfo, _Mapping]]] = ..., missed_runs: _Optional[int] = ..., skipped_runs: _Optional[int] = ...) -> None: ...
+    buffered_fire_count: int
+    running_workflow_count: int
+    def __init__(self, last_run_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., next_run_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., total_runs: _Optional[int] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., ongoing_backfills: _Optional[_Iterable[_Union[BackfillInfo, _Mapping]]] = ..., missed_runs: _Optional[int] = ..., skipped_runs: _Optional[int] = ..., buffered_fire_count: _Optional[int] = ..., running_workflow_count: _Optional[int] = ...) -> None: ...
 
 class ScheduleListEntry(_message.Message):
     __slots__ = ("schedule_id", "workflow_type", "state", "cron_expression")

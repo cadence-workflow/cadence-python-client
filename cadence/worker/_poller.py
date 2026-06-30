@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Callable, TypeVar, Generic, Awaitable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -12,20 +13,24 @@ class Poller(Generic[T]):
         self,
         num_tasks: int,
         permits: asyncio.Semaphore,
-        poll: Callable[[], Awaitable[Optional[T]]],
+        poll: Callable[[], Awaitable[T | None]],
         callback: Callable[[T], Awaitable[None]],
+        on_start: Callable[[int], None] | None = None,
     ) -> None:
         self._num_tasks = num_tasks
         self._permits = permits
         self._poll = poll
         self._callback = callback
+        self._on_start = on_start
         self._background_tasks: set[asyncio.Task[None]] = set()
 
     async def run(self) -> None:
         try:
             async with asyncio.TaskGroup() as tg:
-                for i in range(self._num_tasks):
+                for _ in range(self._num_tasks):
                     tg.create_task(self._poll_loop())
+                if self._on_start is not None:
+                    self._on_start(self._num_tasks)
         except asyncio.CancelledError:
             pass
 

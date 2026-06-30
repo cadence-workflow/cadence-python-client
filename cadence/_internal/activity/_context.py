@@ -1,5 +1,8 @@
 import asyncio
+import threading
+from concurrent.futures import Future as ConcurrentFuture
 from concurrent.futures.thread import ThreadPoolExecutor
+from datetime import timedelta
 from typing import Any, Type
 
 from cadence import Client
@@ -21,21 +24,48 @@ class _Context(ActivityContext):
         self._info = info
         self._activity_def = activity_def
         self._heartbeat_sender = heartbeat_sender
-        self._heartbeat_tasks: set[asyncio.Future[None]] = set()
+        self._activity_task: asyncio.Task[Any] | None = None
+        self._heartbeat_tasks: set[asyncio.Future[Any]] = set()
+        self._heartbeat_tasks_lock = threading.Lock()
+        self._cancel_event = asyncio.Event()
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
+        self._activity_task = asyncio.create_task(self._run_activity(params))
         try:
-            with self._activate():
-                return await self._activity_def.impl_fn(*params)
+            return await self._activity_task
+        except asyncio.CancelledError as e:
+            if self.is_cancelled():
+                raise
+            raise RuntimeError(
+                "Activity raised asyncio.CancelledError without cancellation being "
+                "requested"
+            ) from e
         finally:
             await self._wait_pending_heartbeats()
 
+    async def _run_activity(self, params: list[Any]) -> Any:
+        with self._activate():
+            return await self._activity_def.impl_fn(*params)
+
     async def _wait_pending_heartbeats(self) -> None:
-        if not self._heartbeat_tasks:
+        tasks = self._pending_heartbeat_tasks()
+        if not tasks:
             return
-        tasks = list(self._heartbeat_tasks)
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _track_heartbeat_task(self, task: asyncio.Future[Any]) -> None:
+        with self._heartbeat_tasks_lock:
+            self._heartbeat_tasks.add(task)
+        task.add_done_callback(self._discard_heartbeat_task)
+
+    def _discard_heartbeat_task(self, task: asyncio.Future[Any]) -> None:
+        with self._heartbeat_tasks_lock:
+            self._heartbeat_tasks.discard(task)
+
+    def _pending_heartbeat_tasks(self) -> list[asyncio.Future[Any]]:
+        with self._heartbeat_tasks_lock:
+            return list(self._heartbeat_tasks)
 
     def _to_params(self, payload: Payload) -> list[Any]:
         return self._activity_def.signature.params_from_payload(
@@ -52,11 +82,29 @@ class _Context(ActivityContext):
         heartbeat_task = asyncio.create_task(
             self._heartbeat_sender.send_heartbeat(*details)
         )
-        self._heartbeat_tasks.add(heartbeat_task)
-        heartbeat_task.add_done_callback(self._heartbeat_tasks.discard)
+        heartbeat_task.add_done_callback(self._cancel_if_requested)
+        self._track_heartbeat_task(heartbeat_task)
+
+    def _cancel_if_requested(self, future: asyncio.Future[bool]) -> None:
+        try:
+            if future.result() and self._activity_task is not None:
+                self._cancel_event.set()
+                self._activity_task.cancel()
+        except Exception:
+            # Heartbeat failure is already logged in _HeartbeatSender.send_heartbeat.
+            pass
 
     def heartbeat_details(self, *types: Type) -> list[Any]:
         return self._heartbeat_sender.get_details(*types)
+
+    def is_cancelled(self) -> bool:
+        return self._cancel_event.is_set()
+
+    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool:
+        raise RuntimeError(
+            "wait_for_cancelled is only supported in sync activities; "
+            "handle asyncio.CancelledError in async activities instead"
+        )
 
 
 class _SyncContext(_Context):
@@ -70,6 +118,11 @@ class _SyncContext(_Context):
     ):
         super().__init__(client, info, activity_def, heartbeat_sender)
         self._executor = executor
+        self._sync_cancel_event = threading.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def is_cancelled(self) -> bool:
+        return self._sync_cancel_event.is_set()
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
@@ -87,9 +140,27 @@ class _SyncContext(_Context):
         raise RuntimeError("client is only supported in async activities")
 
     def heartbeat(self, *details: Any) -> None:
-        future = asyncio.run_coroutine_threadsafe(
+        if self._loop is None:
+            raise RuntimeError("heartbeat() called before activity execution started")
+        future: ConcurrentFuture[bool] = asyncio.run_coroutine_threadsafe(
             self._heartbeat_sender.send_heartbeat(*details), self._loop
         )
+        future.add_done_callback(self._sync_cancel_if_requested)
         wrapped = asyncio.wrap_future(future, loop=self._loop)
-        self._heartbeat_tasks.add(wrapped)
-        wrapped.add_done_callback(self._heartbeat_tasks.discard)
+        self._track_heartbeat_task(wrapped)
+
+    def _sync_cancel_if_requested(self, future: ConcurrentFuture[bool]) -> None:
+        try:
+            if future.result():
+                self._sync_cancel_event.set()
+        except Exception:
+            pass
+
+    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool:
+        if timeout is None:
+            sec: float | None = None
+        elif isinstance(timeout, timedelta):
+            sec = timeout.total_seconds()
+        else:
+            sec = float(timeout)
+        return self._sync_cancel_event.wait(sec)

@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from traceback import format_exception
@@ -9,13 +10,15 @@ from cadence._internal.activity._context import _Context, _SyncContext
 from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityDefinition
-from cadence.api.v1.common_pb2 import Failure
+from cadence.api.v1.common_pb2 import Failure, Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForActivityTaskResponse,
+    RespondActivityTaskCanceledRequest,
     RespondActivityTaskFailedRequest,
     RespondActivityTaskCompletedRequest,
 )
 from cadence.client import Client
+from cadence.error import ActivityCancelledError
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 
 _logger = getLogger(__name__)
@@ -43,11 +46,27 @@ class ActivityExecutor:
             max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
         )
 
-    async def execute(self, task: PollForActivityTaskResponse):
+    async def execute(self, task: PollForActivityTaskResponse) -> None:
+        context: Union[_Context, _SyncContext] | None = None
         try:
             context = self._create_context(task)
             result = await context.execute(task.input)
             await self._report_success(task, result)
+        except asyncio.CancelledError as e:
+            if context is not None and context.is_cancelled():
+                details = list(e.args) if e.args else None
+                await self._report_cancelled(task, details)
+                return
+            raise
+        except ActivityCancelledError as e:
+            if context is not None and context.is_cancelled():
+                await self._report_cancelled(task, e.details)
+                return
+            _logger.exception(
+                "Activity failed: ActivityCancelledError raised but cancellation was "
+                "not requested; this is likely a bug in cadence-python-client"
+            )
+            await self._report_failure(task, e)
         except Exception as e:
             _logger.exception("Activity failed")
             await self._report_failure(task, e)
@@ -72,14 +91,13 @@ class ActivityExecutor:
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:
             return _Context(self._client, info, activity_def, heartbeat_sender)
-        else:
-            return _SyncContext(
-                self._client,
-                info,
-                activity_def,
-                self._thread_pool,
-                heartbeat_sender,
-            )
+        return _SyncContext(
+            self._client,
+            info,
+            activity_def,
+            self._thread_pool,
+            heartbeat_sender,
+        )
 
     async def _report_failure(
         self, task: PollForActivityTaskResponse, error: Exception
@@ -94,6 +112,22 @@ class ActivityExecutor:
             )
         except Exception:
             _logger.exception("Exception reporting activity failure")
+
+    async def _report_cancelled(
+        self, task: PollForActivityTaskResponse, details: list[Any] | None = None
+    ) -> None:
+        as_payload = self._data_converter.to_data(details) if details else Payload()
+
+        try:
+            await self._client.worker_stub.RespondActivityTaskCanceled(
+                RespondActivityTaskCanceledRequest(
+                    task_token=task.task_token,
+                    details=as_payload,
+                    identity=self._identity,
+                )
+            )
+        except Exception:
+            _logger.exception("Exception reporting activity cancelled")
 
     async def _report_success(self, task: PollForActivityTaskResponse, result: Any):
         as_payload = self._data_converter.to_data([result])

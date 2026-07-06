@@ -1,3 +1,5 @@
+from msgspec import DecodeError, json
+
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     BaseDecisionStateMachine,
     DecisionId,
@@ -29,10 +31,10 @@ marker_events = EventDispatcher()
 def encode_marker_details(context_id: str, user_data: bytes) -> bytes:
     """Encode [context_id, user_data] into a single bytes value stored in Details.
 
-    Format: 4-byte big-endian length of context_id, then context_id UTF-8, then user_data.
+    JSON array, mirroring how the Go SDK's encodeArgs(dataConverter, [id, result])
+    stores the pair for SideEffect/Version/MutableSideEffect markers.
     """
-    ctx = context_id.encode("utf-8")
-    return len(ctx).to_bytes(4, "big") + ctx + user_data
+    return json.encode((context_id, user_data))
 
 
 def decode_marker_details(data: bytes) -> tuple[str | None, bytes]:
@@ -41,16 +43,11 @@ def decode_marker_details(data: bytes) -> tuple[str | None, bytes]:
     Returns (None, data) if the encoding is absent or malformed (e.g. markers from
     other SDKs or pre-encoding history).
     """
-    if len(data) < 4:
-        return None, data
-    ctx_len = int.from_bytes(data[:4], "big")
-    if 4 + ctx_len > len(data):
-        return None, data
     try:
-        context_id = data[4 : 4 + ctx_len].decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
+        context_id, user_data = json.decode(data, type=tuple[str, bytes])
+    except DecodeError:
         return None, data
-    return context_id, data[4 + ctx_len :]
+    return context_id, user_data
 
 
 class MarkerStateMachine(BaseDecisionStateMachine):

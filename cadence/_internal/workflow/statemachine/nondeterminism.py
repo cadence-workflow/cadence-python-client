@@ -362,7 +362,9 @@ def _(
     )
 
 
-# Markers - Enforce marker type (marker_name) and instance id (context_id encoded in Details).
+# Markers - Enforce marker type (marker_name) and instance id (context_id encoded in Details)
+# via the DecisionId alone; the Expectation body is empty since the DecisionId already
+# captures both the type and the identity.
 #
 # Version markers are exempt: adding/removing a version check is always safe, so both
 # handlers return None (no expectation on either side). This matches Go SDK behaviour.
@@ -377,8 +379,7 @@ def _(attrs: decision.RecordMarkerDecisionAttributes) -> Expectation | None:
     if attrs.marker_name == VERSION_MARKER_NAME:
         return None
     return Expectation(
-        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"),
-        {"marker_name": attrs.marker_name},
+        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"), {}
     )
 
 
@@ -390,8 +391,7 @@ def _(attrs: history.MarkerRecordedEventAttributes) -> Expectation | None:
     if attrs.marker_name == VERSION_MARKER_NAME:
         return None
     return Expectation(
-        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"),
-        {"marker_name": attrs.marker_name},
+        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"), {}
     )
 
 

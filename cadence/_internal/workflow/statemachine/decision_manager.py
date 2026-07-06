@@ -286,6 +286,16 @@ class DecisionManager:
         self,
         event_attributes: history.MarkerRecordedEventAttributes,
     ) -> DecisionStateMachine | None:
+        # Cancel_ markers are matched by DeterminismTracker, not routed through a
+        # MarkerStateMachine — handle them explicitly rather than via decode-failure below.
+        if is_immediate_cancel(event_attributes):
+            logger.debug(
+                "Marker '%s' is the immediate-cancellation marker — handled by "
+                "DeterminismTracker, not routed through a MarkerStateMachine",
+                event_attributes.marker_name,
+            )
+            return None
+
         # Marker events are preloaded before workflow code runs. If no marker
         # decision has been requested yet, keep the preloaded event as a no-op.
         context_id, _ = decode_marker_details(event_attributes.details.data)

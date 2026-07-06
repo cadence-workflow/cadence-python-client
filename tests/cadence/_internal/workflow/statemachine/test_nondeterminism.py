@@ -365,7 +365,7 @@ class TestDeterminismTracker:
 
         assert expectation == Expectation(
             DecisionId(DecisionType.MARKER, "SideEffect_0"),
-            {"marker_name": "SideEffect"},
+            {},
         )
         assert "details" not in expectation.properties
         tracker.complete_replay()
@@ -520,7 +520,7 @@ class TestDeterminismTracker:
             ),
             Expectation(
                 DecisionId(DecisionType.MARKER, "SideEffect_0"),
-                {"marker_name": "SideEffect"},
+                {},
             ),
         ),
         # Marker: SideEffect history-side (no details in properties)
@@ -531,7 +531,7 @@ class TestDeterminismTracker:
             ),
             Expectation(
                 DecisionId(DecisionType.MARKER, "SideEffect_0"),
-                {"marker_name": "SideEffect"},
+                {},
             ),
         ),
         # Marker: Version decision-side → None (exempt)

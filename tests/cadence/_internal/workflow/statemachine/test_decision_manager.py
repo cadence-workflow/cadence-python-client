@@ -4,6 +4,7 @@ from asyncio import CancelledError
 import pytest
 
 from cadence.error import ChildWorkflowError, StartChildWorkflowExecutionFailed
+from cadence._internal.workflow.statemachine.cancellation import MARKER_PREFIX
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.event_dispatcher import (
     EventDispatcher,
@@ -306,6 +307,25 @@ async def test_record_marker_requires_marker_name():
     assert decisions.collect_pending_decisions() == []
 
 
+async def test_cancel_marker_is_not_logged_as_unknown_marker_name(caplog):
+    # The Cancel_ immediate-cancellation marker (cancellation.py) is Python-specific
+    # and encodes a JSON object in Details, not a [context_id, user_data] pair. It
+    # must not be mistaken for an unrecognized marker_name and warned about.
+    decisions = DecisionManager(asyncio.get_event_loop())
+    cancel_marker = history.HistoryEvent(
+        event_id=1,
+        marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
+            marker_name=f"{MARKER_PREFIX}0",
+            details=Payload(data=b'{"canceled": true, "type": "ACTIVITY"}'),
+        ),
+    )
+
+    with caplog.at_level("WARNING"):
+        decisions.handle_history_event(cancel_marker)
+
+    assert "unknown marker_name" not in caplog.text
+
+
 async def test_version_marker_is_not_flagged_as_nondeterministic():
     # Version markers are exempt from non-determinism tracking.
     # History that includes a Version marker must replay without error, and the
@@ -516,6 +536,8 @@ def test_event_dispatcher_allows_empty_default_id_attr():
         @dispatcher.event()
         def handle(self, _: history.TimerStartedEventAttributes) -> None:
             pass
+
+    _ = Handler  # the decorator's side effect (registering the handler) is what's under test
 
     action = dispatcher.handlers[history.TimerStartedEventAttributes]
     assert action.id_attr == ""

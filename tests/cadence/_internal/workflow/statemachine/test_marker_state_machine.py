@@ -78,7 +78,8 @@ async def test_encode_decode_marker_details_roundtrip():
 
 
 async def test_decode_marker_details_no_encoding_returns_none():
-    # Raw payload with no length-prefix encoding — treated as from another SDK.
+    # Raw payload that isn't a JSON [context_id, user_data] pair — treated as from
+    # another SDK or pre-encoding history.
     decoded_id, decoded_data = decode_marker_details(b"raw-history-value")
 
     assert decoded_id is None
@@ -91,3 +92,21 @@ async def test_encode_decode_marker_details_empty_user_data():
 
     assert context_id == "0"
     assert user_data == b""
+
+
+async def test_encode_marker_details_is_json_array():
+    # Encoding is a JSON [context_id, user_data] array, mirroring the Go SDK's
+    # encodeArgs(dataConverter, [id, result]) rather than a custom binary format.
+    encoded = encode_marker_details("0", b"hello")
+
+    assert encoded == b'["0","aGVsbG8="]'
+
+
+async def test_decode_marker_details_rejects_non_tuple_json():
+    # A JSON object (e.g. the Cancel_ immediate-cancellation marker's Details, which
+    # is a {"canceled": ..., "type": ...} object) is not a [context_id, user_data]
+    # pair and must be treated as foreign/unencoded rather than misparsed.
+    decoded_id, decoded_data = decode_marker_details(b'{"canceled": true}')
+
+    assert decoded_id is None
+    assert decoded_data == b'{"canceled": true}'

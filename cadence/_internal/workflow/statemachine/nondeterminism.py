@@ -16,7 +16,8 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionType,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    marker_id_from_attrs,
+    decode_marker_details,
+    VERSION_MARKER_NAME,
 )
 from cadence.api.v1 import decision, history
 
@@ -132,6 +133,7 @@ class DeterminismTracker:
         )
 
     def _validate_expectation(self, actual: Expectation) -> Expectation:
+        """Returns the matched Expectation on success, or raises NonDeterminismError."""
         if not self._expectations:
             self._fail(None, actual)
 
@@ -360,35 +362,36 @@ def _(
     )
 
 
-# Markers - Enforce SDK marker id and marker name. Details are recorded data, so
-# replay returns the history value instead of requiring workflow code to recreate it.
+# Markers - Enforce marker type (marker_name) and instance id (context_id encoded in Details).
 #
-# 'details' is intentionally absent from the decision-side handler: Expectation.__eq__
-# only compares keys present in both sides, so omitting it here lets the match succeed
-# on name+id alone. The history-side handler (below) carries 'details' so DecisionManager
-# can retrieve the recorded value and return it to the caller on replay.
+# Version markers are exempt: adding/removing a version check is always safe, so both
+# handlers return None (no expectation on either side). This matches Go SDK behaviour.
+#
+# Details are intentionally excluded from Expectation; DecisionManager stores recorded
+# values in _recorded_marker_details and returns the historical value on replay directly.
 @to_expectation.register
 def _(attrs: decision.RecordMarkerDecisionAttributes) -> Expectation | None:
-    marker_id = marker_id_from_attrs(attrs)
-    if marker_id is None:
+    context_id, _ = decode_marker_details(attrs.details.data)
+    if context_id is None:
+        return None
+    if attrs.marker_name == VERSION_MARKER_NAME:
         return None
     return Expectation(
-        DecisionId(DecisionType.MARKER, marker_id),
+        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"),
         {"marker_name": attrs.marker_name},
     )
 
 
 @to_expectation.register
 def _(attrs: history.MarkerRecordedEventAttributes) -> Expectation | None:
-    marker_id = marker_id_from_attrs(attrs)
-    if marker_id is None:
+    context_id, _ = decode_marker_details(attrs.details.data)
+    if context_id is None:
+        return None
+    if attrs.marker_name == VERSION_MARKER_NAME:
         return None
     return Expectation(
-        DecisionId(DecisionType.MARKER, marker_id),
-        {
-            "marker_name": attrs.marker_name,
-            "details": attrs.details,
-        },
+        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"),
+        {"marker_name": attrs.marker_name},
     )
 
 

@@ -3,7 +3,7 @@ import asyncio
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    MARKER_ID_HEADER_KEY,
+    encode_marker_details,
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload
@@ -86,6 +86,47 @@ async def test_multiple_replayed_marker_outputs_complete_in_decision_order():
     assert decisions.collect_pending_decisions() == []
 
 
+async def test_version_marker_added_on_replay_is_not_nondeterministic():
+    # Version markers are exempt from non-determinism tracking (same as Go SDK).
+    # A history containing a Version marker followed by a SideEffect must replay without error.
+    decisions = DecisionManager(asyncio.get_event_loop())
+    decision_events = next(
+        iter(DecisionEventsIterator(_history_with_version_and_side_effect()))
+    )
+
+    assert decision_events.replay is True
+
+    for marker_event in decision_events.markers:
+        decisions.handle_history_event(marker_event)
+
+    with decisions.track_nondeterminism(decision_events.replay, decision_events.output):
+        # counter="0" → "Version_0": no expectation created or consumed.
+        decisions.record_marker(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="Version", details=Payload(data=b"v1")
+            )
+        )
+        # counter="1" → "SideEffect_1": expectation from history is consumed.
+        decisions.record_marker(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="SideEffect", details=Payload(data=b"new")
+            )
+        )
+
+
+def _history_with_version_and_side_effect() -> list[history.HistoryEvent]:
+    return [
+        _workflow_started(1),
+        _decision_task_scheduled(2),
+        _decision_task_started(3, scheduled_event_id=2),
+        _decision_task_completed(4, scheduled_event_id=2, started_event_id=3),
+        _marker_recorded(5, "Version", Payload(data=b"v1"), "0"),
+        _marker_recorded(6, "SideEffect", Payload(data=b"recorded"), "1"),
+        _decision_task_scheduled(7),
+        _decision_task_started(8, scheduled_event_id=7),
+    ]
+
+
 def _current_decision_history() -> list[history.HistoryEvent]:
     return [
         _workflow_started(1),
@@ -165,14 +206,12 @@ def _marker_recorded(
     event_id: int,
     marker_name: str,
     details: Payload,
-    marker_id: str,
+    context_id: str,
 ) -> history.HistoryEvent:
+    encoded = encode_marker_details(context_id, details.data)
     attrs = history.MarkerRecordedEventAttributes(
         marker_name=marker_name,
-        details=details,
-    )
-    attrs.header.fields[MARKER_ID_HEADER_KEY].CopyFrom(
-        Payload(data=marker_id.encode("utf-8"))
+        details=Payload(data=encoded),
     )
     return history.HistoryEvent(
         event_id=event_id,

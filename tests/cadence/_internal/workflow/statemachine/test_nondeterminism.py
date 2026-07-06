@@ -11,8 +11,7 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionType,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    MARKER_ID_HEADER_KEY,
-    attach_marker_id,
+    encode_marker_details,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import (
     to_expectation,
@@ -343,19 +342,17 @@ class TestDeterminismTracker:
             DecisionId(DecisionType.ACTIVITY, "1"), {"activity_type": "act"}
         )
 
-    def test_marker_expectation_returns_recorded_details(self):
+    def test_marker_expectation_does_not_carry_details(self):
+        # Details are handled by DecisionManager._recorded_marker_details, not Expectation.
         tracker = DeterminismTracker()
+        encoded = encode_marker_details("0", b"history-value")
         recorded = history.MarkerRecordedEventAttributes(
             marker_name="SideEffect",
-            details=common.Payload(data=b"history-value"),
+            details=common.Payload(data=encoded),
         )
-        recorded.header.fields[MARKER_ID_HEADER_KEY].CopyFrom(common.Payload(data=b"0"))
-        requested = attach_marker_id(
-            decision.RecordMarkerDecisionAttributes(
-                marker_name="SideEffect",
-                details=common.Payload(data=b"current-value"),
-            ),
-            "0",
+        requested = decision.RecordMarkerDecisionAttributes(
+            marker_name="SideEffect",
+            details=common.Payload(data=encoded),
         )
         tracker.add_expectation(
             history.HistoryEvent(
@@ -367,12 +364,10 @@ class TestDeterminismTracker:
         expectation = tracker.validate_action(requested)
 
         assert expectation == Expectation(
-            DecisionId(DecisionType.MARKER, "0"),
-            {
-                "marker_name": "SideEffect",
-                "details": common.Payload(data=b"history-value"),
-            },
+            DecisionId(DecisionType.MARKER, "SideEffect_0"),
+            {"marker_name": "SideEffect"},
         )
+        assert "details" not in expectation.properties
         tracker.complete_replay()
 
 
@@ -517,6 +512,52 @@ class TestDeterminismTracker:
         ),
         # Unknown type returns None
         ("not_a_supported_type", None),
+        # Marker: SideEffect decision-side
+        (
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="SideEffect",
+                details=common.Payload(data=encode_marker_details("0", b"")),
+            ),
+            Expectation(
+                DecisionId(DecisionType.MARKER, "SideEffect_0"),
+                {"marker_name": "SideEffect"},
+            ),
+        ),
+        # Marker: SideEffect history-side (no details in properties)
+        (
+            history.MarkerRecordedEventAttributes(
+                marker_name="SideEffect",
+                details=common.Payload(data=encode_marker_details("0", b"value")),
+            ),
+            Expectation(
+                DecisionId(DecisionType.MARKER, "SideEffect_0"),
+                {"marker_name": "SideEffect"},
+            ),
+        ),
+        # Marker: Version decision-side → None (exempt)
+        (
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="Version",
+                details=common.Payload(data=encode_marker_details("0", b"")),
+            ),
+            None,
+        ),
+        # Marker: Version history-side → None (exempt)
+        (
+            history.MarkerRecordedEventAttributes(
+                marker_name="Version",
+                details=common.Payload(data=encode_marker_details("0", b"")),
+            ),
+            None,
+        ),
+        # Marker: no encoded context_id → None
+        (
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="SideEffect",
+                details=common.Payload(data=b"raw-no-encoding"),
+            ),
+            None,
+        ),
     ],
 )
 def test_to_expectation(attrs: Any, expected: Expectation):

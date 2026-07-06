@@ -10,7 +10,7 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
     resolve_id_attr,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    MARKER_ID_HEADER_KEY,
+    encode_marker_details,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import NonDeterminismError
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
@@ -208,7 +208,7 @@ async def test_record_marker_history_clears_pending_decision():
     decisions.record_marker(marker_attrs)
 
     decisions.handle_history_event(
-        marker_recorded(1, "SideEffect", Payload(data=b"marker"), marker_id="0")
+        marker_recorded(1, "SideEffect", Payload(data=b"marker"), context_id="0")
     )
 
     assert decisions.collect_pending_decisions() == []
@@ -217,7 +217,7 @@ async def test_record_marker_history_clears_pending_decision():
 async def test_replayed_marker_returns_recorded_details():
     decisions = DecisionManager(asyncio.get_event_loop())
     recorded = marker_recorded(
-        1, "SideEffect", Payload(data=b"history-value"), marker_id="0"
+        1, "SideEffect", Payload(data=b"history-value"), context_id="0"
     )
 
     with decisions.track_nondeterminism(True, [recorded]):
@@ -233,7 +233,7 @@ async def test_replayed_marker_returns_recorded_details():
 async def test_replayed_marker_name_mismatch_is_nondeterministic():
     decisions = DecisionManager(asyncio.get_event_loop())
     recorded = marker_recorded(
-        1, "SideEffect", Payload(data=b"history-value"), marker_id="0"
+        1, "SideEffect", Payload(data=b"history-value"), context_id="0"
     )
 
     with pytest.raises(NonDeterminismError):
@@ -245,8 +245,10 @@ async def test_replayed_marker_name_mismatch_is_nondeterministic():
 
 async def test_replayed_marker_order_mismatch_is_nondeterministic():
     decisions = DecisionManager(asyncio.get_event_loop())
-    first = marker_recorded(1, "SideEffect", Payload(data=b"first"), marker_id="0")
-    second = marker_recorded(2, "LocalActivity", Payload(data=b"second"), marker_id="1")
+    first = marker_recorded(1, "SideEffect", Payload(data=b"first"), context_id="0")
+    second = marker_recorded(
+        2, "LocalActivity", Payload(data=b"second"), context_id="1"
+    )
 
     with pytest.raises(NonDeterminismError):
         with decisions.track_nondeterminism(True, [first, second]):
@@ -260,7 +262,7 @@ async def test_replayed_marker_order_mismatch_is_nondeterministic():
 async def test_replayed_marker_missing_from_workflow_is_nondeterministic():
     decisions = DecisionManager(asyncio.get_event_loop())
     recorded = marker_recorded(
-        1, "SideEffect", Payload(data=b"history-value"), marker_id="0"
+        1, "SideEffect", Payload(data=b"history-value"), context_id="0"
     )
 
     with pytest.raises(NonDeterminismError):
@@ -268,8 +270,9 @@ async def test_replayed_marker_missing_from_workflow_is_nondeterministic():
             pass
 
 
-async def test_replayed_marker_without_sdk_marker_id_is_nondeterministic():
+async def test_replayed_marker_without_context_id_is_nondeterministic():
     decisions = DecisionManager(asyncio.get_event_loop())
+    # Raw details with no length-prefix encoding — treated as produced by another SDK.
     recorded = marker_recorded(1, "SideEffect", Payload(data=b"history-value"))
 
     with pytest.raises(NonDeterminismError):
@@ -290,8 +293,8 @@ async def test_record_marker_ids_are_sequential():
     )
 
     keys = list(decisions.state_machines.keys())
-    assert keys[0].id == "0"
-    assert keys[1].id == "1"
+    assert keys[0].id == "SideEffect_0"
+    assert keys[1].id == "LocalActivity_1"
 
 
 async def test_record_marker_requires_marker_name():
@@ -301,6 +304,51 @@ async def test_record_marker_requires_marker_name():
         decisions.record_marker(decision.RecordMarkerDecisionAttributes())
 
     assert decisions.collect_pending_decisions() == []
+
+
+async def test_version_marker_is_not_flagged_as_nondeterministic():
+    # Version markers are exempt from non-determinism tracking.
+    # History that includes a Version marker must replay without error, and the
+    # Version expectation is never added so complete_replay doesn't fail either.
+    decisions = DecisionManager(asyncio.get_event_loop())
+    # History: Version_0 (exempt) then SideEffect_1 (tracked).
+    version_recorded = marker_recorded(
+        1, "Version", Payload(data=b"v1"), context_id="0"
+    )
+    side_effect_recorded = marker_recorded(
+        2, "SideEffect", Payload(data=b"side"), context_id="1"
+    )
+
+    with decisions.track_nondeterminism(True, [version_recorded, side_effect_recorded]):
+        # counter="0" → key "Version_0"; no expectation created or consumed.
+        decisions.record_marker(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="Version", details=Payload(data=b"v1")
+            )
+        )
+        # counter="1" → key "SideEffect_1"; expectation from history is consumed.
+        decisions.record_marker(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="SideEffect", details=Payload(data=b"new")
+            )
+        )
+
+
+async def test_replayed_marker_details_come_from_history_not_current_value():
+    # Ensure the historical value is returned even when the current call passes different data.
+    decisions = DecisionManager(asyncio.get_event_loop())
+    recorded = marker_recorded(
+        1, "SideEffect", Payload(data=b"history-value"), context_id="0"
+    )
+
+    with decisions.track_nondeterminism(True, [recorded]):
+        result = decisions.record_marker(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name="SideEffect", details=Payload(data=b"current-value")
+            )
+        )
+
+    assert result == Payload(data=b"history-value")
 
 
 async def test_child_workflow_dispatch():
@@ -537,15 +585,18 @@ def activity_completed(
 
 
 def marker_recorded(
-    event_id: int, marker_name: str, details: Payload, marker_id: str | None = None
+    event_id: int, marker_name: str, details: Payload, context_id: str | None = None
 ) -> history.HistoryEvent:
-    attrs = history.MarkerRecordedEventAttributes(
-        marker_name=marker_name,
-        details=details,
-    )
-    if marker_id is not None:
-        attrs.header.fields[MARKER_ID_HEADER_KEY].CopyFrom(
-            Payload(data=marker_id.encode("utf-8"))
+    if context_id is not None:
+        encoded = encode_marker_details(context_id, details.data)
+        attrs = history.MarkerRecordedEventAttributes(
+            marker_name=marker_name,
+            details=Payload(data=encoded),
+        )
+    else:
+        attrs = history.MarkerRecordedEventAttributes(
+            marker_name=marker_name,
+            details=details,
         )
     return history.HistoryEvent(
         event_id=event_id,

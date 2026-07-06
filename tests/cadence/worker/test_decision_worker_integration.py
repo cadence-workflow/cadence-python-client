@@ -8,6 +8,7 @@ from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     WorkflowExecutionStartedEventAttributes,
 )
+from cadence.metrics import NoOpMetricsEmitter
 from cadence.worker import WorkerOptions
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._registry import Registry
@@ -52,6 +53,7 @@ class TestDecisionWorkerIntegration:
             identity="test-worker",
             max_concurrent_decision_task_execution_size=1,
             decision_task_pollers=1,
+            metrics_emitter=NoOpMetricsEmitter(),
         )
         return DecisionWorker(
             client=mock_client,
@@ -297,6 +299,7 @@ class TestDecisionWorkerIntegration:
             identity="custom-worker",
             max_concurrent_decision_task_execution_size=5,
             decision_task_pollers=3,
+            metrics_emitter=NoOpMetricsEmitter(),
         )
 
         worker = DecisionWorker(

@@ -4,14 +4,15 @@ from asyncio import CancelledError
 import pytest
 
 from cadence.error import ChildWorkflowError, StartChildWorkflowExecutionFailed
-from cadence._internal.workflow.statemachine.cancellation import MARKER_PREFIX
+from cadence._internal.workflow.statemachine.cancellation import CANCEL_MARKER_NAME
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.event_dispatcher import (
     EventDispatcher,
     resolve_id_attr,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    encode_marker_details,
+    encode_marker_header,
+    MARKER_HEADER_KEY,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import NonDeterminismError
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
@@ -354,15 +355,15 @@ async def test_record_marker_requires_marker_name():
 
 
 async def test_cancel_marker_is_not_logged_as_unknown_marker_name(caplog):
-    # The Cancel_ immediate-cancellation marker (cancellation.py) is Python-specific
-    # and encodes a JSON object in Details, not a [context_id, user_data] pair. It
-    # must not be mistaken for an unrecognized marker_name and warned about.
+    # The immediate-cancellation marker (cancellation.py) is Python-specific and encodes
+    # a JSON object in Details, not a [context_id, user_data] pair. It must not be mistaken
+    # for an unrecognized marker_name and warned about.
     decisions = DecisionManager(asyncio.get_event_loop())
     cancel_marker = history.HistoryEvent(
         event_id=1,
         marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
-            marker_name=f"{MARKER_PREFIX}0",
-            details=Payload(data=b'{"canceled": true, "type": "ACTIVITY"}'),
+            marker_name=CANCEL_MARKER_NAME,
+            details=Payload(data=b'{"canceled": true, "id": "0", "type": "ACTIVITY"}'),
         ),
     )
 
@@ -655,16 +656,13 @@ def activity_completed(
 def marker_recorded(
     event_id: int, marker_name: str, details: Payload, context_id: str | None = None
 ) -> history.HistoryEvent:
+    attrs = history.MarkerRecordedEventAttributes(
+        marker_name=marker_name,
+        details=details,
+    )
     if context_id is not None:
-        encoded = encode_marker_details(context_id, details.data)
-        attrs = history.MarkerRecordedEventAttributes(
-            marker_name=marker_name,
-            details=Payload(data=encoded),
-        )
-    else:
-        attrs = history.MarkerRecordedEventAttributes(
-            marker_name=marker_name,
-            details=details,
+        attrs.header.fields[MARKER_HEADER_KEY].CopyFrom(
+            encode_marker_header(context_id)
         )
     return history.HistoryEvent(
         event_id=event_id,

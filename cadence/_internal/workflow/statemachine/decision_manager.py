@@ -31,9 +31,11 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
     resolve_id_attr,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    decode_marker_details,
-    encode_marker_details,
+    encode_marker_header,
+    marker_context_id,
+    marker_decision_id,
     KNOWN_MARKER_NAMES,
+    MARKER_HEADER_KEY,
     marker_events,
     MarkerStateMachine,
 )
@@ -105,7 +107,7 @@ class DecisionManager:
         self._id_counter = 0
         self._determinism_tracker = DeterminismTracker()
         self._replaying = False
-        self._recorded_marker_details: Dict[str, Payload] = {}
+        self._recorded_marker_details: Dict[DecisionId, Payload] = {}
         self.state_machines: OrderedDict[DecisionId, DecisionStateMachine] = (
             OrderedDict()
         )
@@ -187,19 +189,18 @@ class DecisionManager:
             raise ValueError("marker_name is required")
         context_id = self._next_id()
 
-        # Encode context_id into details (mirrors Go SDK's encoded Details).
-        # attrs.details is modified in-place so the state machine carries encoded details on wire.
-        user_data = attrs.details.data
-        attrs.details.CopyFrom(
-            Payload(data=encode_marker_details(context_id, user_data))
+        # Metadata (the context_id) goes in the Header; Details stays the raw user payload.
+        # The header is set in-place so the state machine carries it on the wire.
+        attrs.header.fields[MARKER_HEADER_KEY].CopyFrom(
+            encode_marker_header(context_id)
         )
 
-        marker_key = f"{attrs.marker_name}_{context_id}"
-        result = Payload(data=user_data)
+        marker_id = marker_decision_id(attrs.marker_name, context_id)
+        result = Payload(data=attrs.details.data)
 
         if self._replaying:
             self._determinism_tracker.validate_action(attrs)
-            history_value = self._recorded_marker_details.get(marker_key)
+            history_value = self._recorded_marker_details.get(marker_id)
             if history_value is not None:
                 result = Payload(data=history_value.data)
 
@@ -286,8 +287,8 @@ class DecisionManager:
         self,
         event_attributes: history.MarkerRecordedEventAttributes,
     ) -> DecisionStateMachine | None:
-        # Cancel_ markers are matched by DeterminismTracker, not routed through a
-        # MarkerStateMachine — handle them explicitly rather than via decode-failure below.
+        # Immediate-cancellation markers are matched by DeterminismTracker, not routed
+        # through a MarkerStateMachine — handle them explicitly rather than via decode-failure below.
         if is_immediate_cancel(event_attributes):
             logger.debug(
                 "Marker '%s' is the immediate-cancellation marker — handled by "
@@ -298,37 +299,37 @@ class DecisionManager:
 
         # Marker events are preloaded before workflow code runs. If no marker
         # decision has been requested yet, keep the preloaded event as a no-op.
-        context_id, _ = decode_marker_details(event_attributes.details.data)
+        context_id = marker_context_id(event_attributes)
         if context_id is None:
             logger.debug(
-                "Marker '%s' has no encoded context_id — skipping routing "
-                "(produced by another SDK or pre-encoding history)",
+                "Marker '%s' has no marker header — skipping routing "
+                "(produced by another SDK or pre-header history)",
                 event_attributes.marker_name,
             )
             return None
-        marker_key = f"{event_attributes.marker_name}_{context_id}"
-        machine = self.aliases.get((DecisionType.MARKER, marker_key), None)
+        marker_id = marker_decision_id(event_attributes.marker_name, context_id)
+        machine = self.aliases.get((marker_id.decision_type, marker_id.id), None)
         if machine is None:
             if event_attributes.marker_name not in KNOWN_MARKER_NAMES:
                 logger.warning(
                     "Marker event with unknown marker_name '%s' (key='%s') has no "
                     "matching state machine and will be dropped",
                     event_attributes.marker_name,
-                    marker_key,
+                    marker_id.id,
                 )
             else:
                 logger.debug(
                     "No state machine for marker '%s' yet (key='%s') — "
                     "marker is preloaded before workflow code runs",
                     event_attributes.marker_name,
-                    marker_key,
+                    marker_id.id,
                 )
         return machine
 
     def _index_marker_details(
         self, attrs: history.MarkerRecordedEventAttributes
     ) -> None:
-        """Store user payload from a recorded marker event, keyed by marker_name_contextID.
+        """Store the user payload from a recorded marker event, keyed by its marker DecisionId.
 
         Called for every MarkerRecordedEvent (both during preload and output replay) so
         that record_marker can return the historical value on replay without routing
@@ -336,11 +337,11 @@ class DecisionManager:
         """
         if is_immediate_cancel(attrs):
             return
-        context_id, user_data = decode_marker_details(attrs.details.data)
+        context_id = marker_context_id(attrs)
         if context_id is None:
             return
-        marker_key = f"{attrs.marker_name}_{context_id}"
-        self._recorded_marker_details[marker_key] = Payload(data=user_data)
+        marker_id = marker_decision_id(attrs.marker_name, context_id)
+        self._recorded_marker_details[marker_id] = Payload(data=attrs.details.data)
 
     # ---- Non-determinism ----
     @contextmanager

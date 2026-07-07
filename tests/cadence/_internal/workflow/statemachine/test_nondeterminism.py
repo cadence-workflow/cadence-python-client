@@ -2,7 +2,10 @@ import pytest
 
 from typing import Any
 
-from cadence._internal.workflow.statemachine.cancellation import to_marker
+from cadence._internal.workflow.statemachine.cancellation import (
+    CANCEL_MARKER_NAME,
+    to_marker,
+)
 from cadence._internal.workflow.statemachine.completion_state_machine import (
     COMPLETION_ID,
 )
@@ -11,7 +14,8 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionType,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    encode_marker_details,
+    encode_marker_header,
+    MARKER_HEADER_KEY,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import (
     to_expectation,
@@ -21,6 +25,10 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
     NonDeterminismError,
 )
 from cadence.api.v1 import common, decision, history
+
+
+def _marker_header(context_id: str) -> common.Header:
+    return common.Header(fields={MARKER_HEADER_KEY: encode_marker_header(context_id)})
 
 
 class TestDeterminismTracker:
@@ -76,7 +84,7 @@ class TestDeterminismTracker:
         tracker.add_expectation(
             history.HistoryEvent(
                 marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
-                    marker_name="Cancel_0",
+                    marker_name=CANCEL_MARKER_NAME,
                     details=to_marker(
                         DecisionId(DecisionType.ACTIVITY, "0"), {"activity_type": "act"}
                     ).details,
@@ -105,7 +113,7 @@ class TestDeterminismTracker:
             history.HistoryEvent(
                 event_id=2,
                 marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
-                    marker_name="Cancel_0",
+                    marker_name=CANCEL_MARKER_NAME,
                     details=to_marker(
                         DecisionId(DecisionType.ACTIVITY, "0"), {"activity_type": "act"}
                     ).details,
@@ -132,7 +140,7 @@ class TestDeterminismTracker:
         tracker.add_expectation(
             history.HistoryEvent(
                 marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
-                    marker_name="Cancel_0",
+                    marker_name=CANCEL_MARKER_NAME,
                     details=to_marker(
                         DecisionId(DecisionType.ACTIVITY, "0"), {"activity_type": "act"}
                     ).details,
@@ -166,7 +174,7 @@ class TestDeterminismTracker:
             history.HistoryEvent(
                 event_id=2,
                 marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
-                    marker_name="Cancel_0",
+                    marker_name=CANCEL_MARKER_NAME,
                     details=to_marker(
                         DecisionId(DecisionType.ACTIVITY, "0"), {"activity_type": "act"}
                     ).details,
@@ -194,7 +202,7 @@ class TestDeterminismTracker:
         tracker.add_expectation(
             history.HistoryEvent(
                 marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
-                    marker_name="Cancel_0",
+                    marker_name=CANCEL_MARKER_NAME,
                     details=to_marker(
                         DecisionId(DecisionType.ACTIVITY, "0"), {"activity_type": "act"}
                     ).details,
@@ -345,14 +353,15 @@ class TestDeterminismTracker:
     def test_marker_expectation_does_not_carry_details(self):
         # Details are handled by DecisionManager._recorded_marker_details, not Expectation.
         tracker = DeterminismTracker()
-        encoded = encode_marker_details("0", b"history-value")
         recorded = history.MarkerRecordedEventAttributes(
             marker_name="SideEffect",
-            details=common.Payload(data=encoded),
+            details=common.Payload(data=b"history-value"),
+            header=_marker_header("0"),
         )
         requested = decision.RecordMarkerDecisionAttributes(
             marker_name="SideEffect",
-            details=common.Payload(data=encoded),
+            details=common.Payload(data=b"history-value"),
+            header=_marker_header("0"),
         )
         tracker.add_expectation(
             history.HistoryEvent(
@@ -516,7 +525,7 @@ class TestDeterminismTracker:
         (
             decision.RecordMarkerDecisionAttributes(
                 marker_name="SideEffect",
-                details=common.Payload(data=encode_marker_details("0", b"")),
+                header=_marker_header("0"),
             ),
             Expectation(
                 DecisionId(DecisionType.MARKER, "SideEffect_0"),
@@ -527,7 +536,8 @@ class TestDeterminismTracker:
         (
             history.MarkerRecordedEventAttributes(
                 marker_name="SideEffect",
-                details=common.Payload(data=encode_marker_details("0", b"value")),
+                details=common.Payload(data=b"value"),
+                header=_marker_header("0"),
             ),
             Expectation(
                 DecisionId(DecisionType.MARKER, "SideEffect_0"),
@@ -538,7 +548,7 @@ class TestDeterminismTracker:
         (
             decision.RecordMarkerDecisionAttributes(
                 marker_name="Version",
-                details=common.Payload(data=encode_marker_details("0", b"")),
+                header=_marker_header("0"),
             ),
             None,
         ),
@@ -546,11 +556,11 @@ class TestDeterminismTracker:
         (
             history.MarkerRecordedEventAttributes(
                 marker_name="Version",
-                details=common.Payload(data=encode_marker_details("0", b"")),
+                header=_marker_header("0"),
             ),
             None,
         ),
-        # Marker: no encoded context_id → None
+        # Marker: no marker header → None
         (
             decision.RecordMarkerDecisionAttributes(
                 marker_name="SideEffect",

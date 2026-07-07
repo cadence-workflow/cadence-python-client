@@ -3,10 +3,11 @@ import asyncio
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    encode_marker_details,
+    encode_marker_header,
+    MARKER_HEADER_KEY,
 )
 from cadence.api.v1 import decision, history
-from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.common_pb2 import Header, Payload
 
 
 async def test_replay_marker_event_is_preloaded_before_marker_decision_exists():
@@ -208,10 +209,10 @@ def _marker_recorded(
     details: Payload,
     context_id: str,
 ) -> history.HistoryEvent:
-    encoded = encode_marker_details(context_id, details.data)
     attrs = history.MarkerRecordedEventAttributes(
         marker_name=marker_name,
-        details=Payload(data=encoded),
+        details=details,
+        header=Header(fields={MARKER_HEADER_KEY: encode_marker_header(context_id)}),
     )
     return history.HistoryEvent(
         event_id=event_id,

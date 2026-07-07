@@ -16,7 +16,8 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionType,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
-    decode_marker_details,
+    marker_context_id,
+    marker_decision_id,
     VERSION_MARKER_NAME,
 )
 from cadence.api.v1 import decision, history
@@ -362,7 +363,7 @@ def _(
     )
 
 
-# Markers - Enforce marker type (marker_name) and instance id (context_id encoded in Details)
+# Markers - Enforce marker type (marker_name) and instance id (context_id from the Header)
 # via the DecisionId alone; the Expectation body is empty since the DecisionId already
 # captures both the type and the identity.
 #
@@ -373,26 +374,22 @@ def _(
 # values in _recorded_marker_details and returns the historical value on replay directly.
 @to_expectation.register
 def _(attrs: decision.RecordMarkerDecisionAttributes) -> Expectation | None:
-    context_id, _ = decode_marker_details(attrs.details.data)
+    context_id = marker_context_id(attrs)
     if context_id is None:
         return None
     if attrs.marker_name == VERSION_MARKER_NAME:
         return None
-    return Expectation(
-        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"), {}
-    )
+    return Expectation(marker_decision_id(attrs.marker_name, context_id), {})
 
 
 @to_expectation.register
 def _(attrs: history.MarkerRecordedEventAttributes) -> Expectation | None:
-    context_id, _ = decode_marker_details(attrs.details.data)
+    context_id = marker_context_id(attrs)
     if context_id is None:
         return None
     if attrs.marker_name == VERSION_MARKER_NAME:
         return None
-    return Expectation(
-        DecisionId(DecisionType.MARKER, f"{attrs.marker_name}_{context_id}"), {}
-    )
+    return Expectation(marker_decision_id(attrs.marker_name, context_id), {})
 
 
 # Workflow Completion - Enforce complete vs failure. Maybe we should enforce the output data?

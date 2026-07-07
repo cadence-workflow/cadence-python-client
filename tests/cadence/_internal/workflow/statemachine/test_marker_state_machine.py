@@ -1,7 +1,13 @@
+from cadence._internal.workflow.statemachine.decision_state_machine import (
+    DecisionId,
+    DecisionType,
+)
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     MarkerStateMachine,
-    encode_marker_details,
-    decode_marker_details,
+    encode_marker_header,
+    marker_context_id,
+    marker_decision_id,
+    MARKER_HEADER_KEY,
     SIDE_EFFECT_MARKER_NAME,
 )
 from cadence.api.v1 import decision, history
@@ -24,7 +30,7 @@ async def test_marker_state_machine_recorded():
     machine.handle_recorded(
         history.MarkerRecordedEventAttributes(
             marker_name=SIDE_EFFECT_MARKER_NAME,
-            details=Payload(data=encode_marker_details("0", b"recorded")),
+            details=Payload(data=b"recorded"),
         )
     )
 
@@ -42,71 +48,75 @@ async def test_marker_state_machine_not_cancellable():
 
 
 async def test_marker_state_machine_preserves_details_and_header():
-    encoded = encode_marker_details("0", b"payload")
     attrs = decision.RecordMarkerDecisionAttributes(
         marker_name=SIDE_EFFECT_MARKER_NAME,
-        details=Payload(data=encoded),
-        header=Header(fields={"key": Payload(data=b"value")}),
+        details=Payload(data=b"payload"),
+        header=Header(fields={MARKER_HEADER_KEY: encode_marker_header("0")}),
     )
     machine = MarkerStateMachine(attrs, SIDE_EFFECT_MARKER_NAME, "0")
 
     emitted = machine.get_decision()
 
     assert emitted == decision.Decision(record_marker_decision_attributes=attrs)
-    assert emitted.record_marker_decision_attributes.details == Payload(data=encoded)
-    assert emitted.record_marker_decision_attributes.header == Header(
-        fields={"key": Payload(data=b"value")}
-    )
+    # Details stay the raw user payload; the context_id lives in the header.
+    assert emitted.record_marker_decision_attributes.details == Payload(data=b"payload")
+    assert marker_context_id(emitted.record_marker_decision_attributes) == "0"
 
 
 async def test_marker_state_machine_id_uses_type_context_format():
     attrs = decision.RecordMarkerDecisionAttributes(marker_name=SIDE_EFFECT_MARKER_NAME)
     machine = MarkerStateMachine(attrs, SIDE_EFFECT_MARKER_NAME, "42")
 
+    assert machine.get_id() == marker_decision_id(SIDE_EFFECT_MARKER_NAME, "42")
     assert machine.get_id().id == "SideEffect_42"
 
 
-async def test_encode_decode_marker_details_roundtrip():
-    context_id = "my-id"
-    user_data = b"hello world"
-
-    encoded = encode_marker_details(context_id, user_data)
-    decoded_id, decoded_data = decode_marker_details(encoded)
-
-    assert decoded_id == context_id
-    assert decoded_data == user_data
+async def test_marker_decision_id_format():
+    # This format is the single source of truth for marker DecisionIds — every lookup
+    # (routing, the replay details cache, non-determinism expectations) must derive its
+    # key from marker_decision_id rather than reconstructing the string inline.
+    assert marker_decision_id(SIDE_EFFECT_MARKER_NAME, "0") == DecisionId(
+        DecisionType.MARKER, "SideEffect_0"
+    )
 
 
-async def test_decode_marker_details_no_encoding_returns_none():
-    # Raw payload that isn't a JSON [context_id, user_data] pair — treated as from
-    # another SDK or pre-encoding history.
-    decoded_id, decoded_data = decode_marker_details(b"raw-history-value")
+async def test_marker_context_id_roundtrip():
+    attrs = history.MarkerRecordedEventAttributes(
+        marker_name=SIDE_EFFECT_MARKER_NAME,
+        details=Payload(data=b"hello world"),
+        header=Header(fields={MARKER_HEADER_KEY: encode_marker_header("my-id")}),
+    )
 
-    assert decoded_id is None
-    assert decoded_data == b"raw-history-value"
-
-
-async def test_encode_decode_marker_details_empty_user_data():
-    encoded = encode_marker_details("0", b"")
-    context_id, user_data = decode_marker_details(encoded)
-
-    assert context_id == "0"
-    assert user_data == b""
+    assert marker_context_id(attrs) == "my-id"
+    # The payload is untouched by the metadata encoding.
+    assert attrs.details == Payload(data=b"hello world")
 
 
-async def test_encode_marker_details_is_json_array():
-    # Encoding is a JSON [context_id, user_data] array, mirroring the Go SDK's
-    # encodeArgs(dataConverter, [id, result]) rather than a custom binary format.
-    encoded = encode_marker_details("0", b"hello")
+async def test_marker_context_id_absent_header_returns_none():
+    # A marker with no marker header — e.g. from another SDK or pre-header history.
+    attrs = history.MarkerRecordedEventAttributes(
+        marker_name=SIDE_EFFECT_MARKER_NAME,
+        details=Payload(data=b"raw-history-value"),
+    )
 
-    assert encoded == b'["0","aGVsbG8="]'
+    assert marker_context_id(attrs) is None
 
 
-async def test_decode_marker_details_rejects_non_tuple_json():
-    # A JSON object (e.g. the Cancel_ immediate-cancellation marker's Details, which
-    # is a {"canceled": ..., "type": ...} object) is not a [context_id, user_data]
-    # pair and must be treated as foreign/unencoded rather than misparsed.
-    decoded_id, decoded_data = decode_marker_details(b'{"canceled": true}')
+async def test_marker_context_id_ignores_unrelated_header_keys():
+    # A header that carries other keys but not ours is treated as having no context_id.
+    attrs = history.MarkerRecordedEventAttributes(
+        marker_name=SIDE_EFFECT_MARKER_NAME,
+        header=Header(fields={"SomethingElse": Payload(data=b"value")}),
+    )
 
-    assert decoded_id is None
-    assert decoded_data == b'{"canceled": true}'
+    assert marker_context_id(attrs) is None
+
+
+async def test_marker_context_id_malformed_header_returns_none():
+    # Garbage under our header key must be treated as absent rather than raising.
+    attrs = history.MarkerRecordedEventAttributes(
+        marker_name=SIDE_EFFECT_MARKER_NAME,
+        header=Header(fields={MARKER_HEADER_KEY: Payload(data=b"not-json")}),
+    )
+
+    assert marker_context_id(attrs) is None

@@ -53,6 +53,13 @@ class ActiveClusterSelectionPolicy(TypedDict, total=False):
     cluster_attribute: ClusterAttribute
 
 
+@dataclass(frozen=True)
+class WorkflowCancellationInfo:
+    cause: str
+    identity: str
+    request_id: str
+
+
 class ActivityOptions(TypedDict, total=False):
     task_list: str
     schedule_to_close_timeout: timedelta
@@ -179,6 +186,10 @@ async def wait_condition(predicate: Callable[[], bool]) -> None:
     If the predicate is already True, returns immediately.
     """
     await WorkflowContext.get().wait_condition(predicate)
+
+
+def is_cancel_requested() -> bool:
+    return WorkflowContext.get().is_cancel_requested()
 
 
 def continue_as_new(
@@ -595,6 +606,9 @@ class WorkflowContext(ABC):
 
     @abstractmethod
     async def wait_condition(self, predicate: Callable[[], bool]) -> None: ...
+
+    @abstractmethod
+    def is_cancel_requested(self) -> bool: ...
 
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:

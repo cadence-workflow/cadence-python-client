@@ -54,10 +54,27 @@ async def test_cancellation_not_immediate():
         decision.ScheduleActivityTaskDecisionAttributes()
     )
     decisions.handle_history_event(activity_scheduled(1, "0"))
-    activity_result.cancel()
+    cancelled = activity_result.cancel()
 
+    assert cancelled is False
     assert activity_result.done() is False
     assert activity_result.cancelled() is False
+
+
+async def test_cancellation_with_message_cancels_future_immediately():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    activity_result = decisions.schedule_activity(
+        decision.ScheduleActivityTaskDecisionAttributes()
+    )
+    decisions.handle_history_event(activity_scheduled(1, "0"))
+    cancelled = activity_result.cancel("workflow cancelled")
+
+    assert cancelled is True
+    assert activity_result.done() is True
+    assert activity_result.cancelled() is True
+    with pytest.raises(CancelledError, match="workflow cancelled"):
+        activity_result.result()
 
 
 async def test_cancellation_completed():
@@ -125,6 +142,35 @@ async def test_collect_decisions_ignore_empty():
     decisions.handle_history_event(activity_scheduled(1, "0"))
 
     assert decisions.collect_pending_decisions() == []
+
+
+async def test_collect_pending_decisions_timer_cancel_before_complete():
+    """User-initiated timer cancel must still emit CancelTimer when workflow completes."""
+    decisions = DecisionManager(asyncio.get_event_loop())
+    timer_fut = decisions.start_timer(decision.StartTimerDecisionAttributes())
+    decisions.handle_history_event(
+        history.HistoryEvent(
+            event_id=1,
+            timer_started_event_attributes=history.TimerStartedEventAttributes(
+                timer_id="0"
+            ),
+        )
+    )
+    timer_fut.cancel()
+    decisions.complete_workflow(
+        decision.Decision(
+            complete_workflow_execution_decision_attributes=decision.CompleteWorkflowExecutionDecisionAttributes(
+                result=Payload(data=b'"done"')
+            )
+        )
+    )
+    pending = decisions.collect_pending_decisions()
+    assert len(pending) == 2
+    assert pending[0].WhichOneof("attributes") == "cancel_timer_decision_attributes"
+    assert (
+        pending[1].WhichOneof("attributes")
+        == "complete_workflow_execution_decision_attributes"
+    )
 
 
 async def test_collection_decisions_reordering():

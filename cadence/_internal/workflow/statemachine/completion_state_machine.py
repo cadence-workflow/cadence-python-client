@@ -21,5 +21,5 @@ class CompletionStateMachine(DecisionStateMachine):
     def get_decision(self) -> decision.Decision | None:
         return self.outcome
 
-    def request_cancel(self) -> bool:
+    def request_cancel(self, message: str | None = None) -> bool:
         return False

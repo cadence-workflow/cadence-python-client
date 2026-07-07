@@ -14,9 +14,11 @@ from cadence._internal.workflow.statemachine.child_workflow_execution_state_mach
     ChildWorkflowExecutionStateMachine,
 )
 from cadence._internal.workflow.statemachine.completion_state_machine import (
+    COMPLETION_ID,
     CompletionStateMachine,
 )
 from cadence._internal.workflow.statemachine.decision_state_machine import (
+    CancelFn,
     DecisionId,
     DecisionStateMachine,
     DecisionType,
@@ -154,9 +156,7 @@ class DecisionManager:
         decision_id = DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id)
         execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
         execution.add_done_callback(_consume_future_exception)
-        result: DecisionFuture[Payload] = DecisionFuture(
-            self._event_loop, lambda: self._request_cancel(decision_id)
-        )
+        result: DecisionFuture[Payload] = self._create_future(decision_id)
         machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
         self._add_state_machine(machine)
         return execution, result
@@ -366,23 +366,43 @@ class DecisionManager:
     # ----- Decision aggregation -----
 
     def collect_pending_decisions(self) -> List[decision.Decision]:
-        decisions: List[decision.Decision] = []
+        completion_machine = self.state_machines.get(COMPLETION_ID)
+        completion_decision = (
+            completion_machine.get_decision() if completion_machine else None
+        )
+        is_completing = completion_decision is not None
 
-        for machine in self.state_machines.values():
-            to_send = machine.get_decision()
-            if to_send is not None:
-                decisions.append(to_send)
+        decisions: List[decision.Decision] = []
+        for decision_id, machine in self.state_machines.items():
+            if decision_id == COMPLETION_ID:
+                continue
+            d = machine.get_decision()
+            if d is not None:
+                decisions.append(d)
+
+        if is_completing:
+            assert completion_decision is not None  # same predicate as is_completing
+            decisions.append(completion_decision)
 
         return decisions
 
     def _create_future(self, decision_id: DecisionId) -> DecisionFuture[T]:
         return DecisionFuture[T](
-            self._event_loop, lambda: self._request_cancel(decision_id)
+            self._event_loop,
+            self._create_cancel_callback(decision_id),
         )
 
-    def _request_cancel(self, decision_id: DecisionId) -> bool:
+    def _create_cancel_callback(self, decision_id: DecisionId) -> CancelFn:
+        def request_cancel(message: str | None = None) -> bool:
+            return self._request_cancel(decision_id, message)
+
+        return request_cancel
+
+    def _request_cancel(
+        self, decision_id: DecisionId, message: str | None = None
+    ) -> bool:
         machine = self._get_machine(decision_id)
-        if machine.request_cancel():
+        if machine.request_cancel(message):
             if self._replaying:
                 self._determinism_tracker.validate_cancel(decision_id)
             # Interactions with the state machines should move them to the end so that the decisions are ordered as they

@@ -53,6 +53,13 @@ class ActiveClusterSelectionPolicy(TypedDict, total=False):
     cluster_attribute: ClusterAttribute
 
 
+@dataclass(frozen=True)
+class WorkflowCancellationInfo:
+    cause: str
+    identity: str
+    request_id: str
+
+
 class ActivityOptions(TypedDict, total=False):
     task_list: str
     schedule_to_close_timeout: timedelta
@@ -190,6 +197,10 @@ def side_effect(
     On replay the function is not called; the value from workflow history is returned.
     """
     return WorkflowContext.get().side_effect(fn, result_type)
+
+
+def is_cancel_requested() -> bool:
+    return WorkflowContext.get().is_cancel_requested()
 
 
 def continue_as_new(
@@ -613,6 +624,9 @@ class WorkflowContext(ABC):
         fn: Callable[[], ResultType],
         result_type: Type[ResultType],
     ) -> ResultType: ...
+
+    @abstractmethod
+    def is_cancel_requested(self) -> bool: ...
 
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:

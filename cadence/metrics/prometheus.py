@@ -13,7 +13,7 @@ from prometheus_client import (  # type: ignore[import-not-found]
     generate_latest,
 )
 
-from .metrics import MetricsEmitter
+from .metrics import MetricsEmitter, _TaggedEmitter
 
 
 logger = logging.getLogger(__name__)
@@ -97,6 +97,8 @@ class PrometheusMetrics(MetricsEmitter):
 
         if metric_name not in self._histograms:
             label_names = list(self._merge_labels(labels).keys()) if labels else []
+            # Current histogram uses the prometheus_client default buckets; aligning
+            # bucket definitions with the Go SDK is planned for a later PR.
             self._histograms[metric_name] = Histogram(
                 metric_name,
                 f"Histogram metric for {name}",
@@ -106,6 +108,9 @@ class PrometheusMetrics(MetricsEmitter):
             logger.debug(f"Created histogram metric: {metric_name}")
 
         return self._histograms[metric_name]
+
+    def with_tags(self, tags: Dict[str, str]) -> "MetricsEmitter":
+        return _TaggedEmitter(self, tags)
 
     def counter(
         self, key: str, n: int = 1, tags: Optional[Dict[str, str]] = None

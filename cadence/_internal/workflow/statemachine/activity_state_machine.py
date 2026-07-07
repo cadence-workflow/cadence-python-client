@@ -49,10 +49,10 @@ class ActivityStateMachine(BaseDecisionStateMachine):
 
         return None
 
-    def request_cancel(self) -> bool:
+    def request_cancel(self, message: str | None = None) -> bool:
         if self.state is DecisionState.REQUESTED:
             self._transition(DecisionState.CANCELED_AFTER_REQUESTED)
-            self.completed.force_cancel()
+            self._force_cancel(message)
             return True
 
         if self.state is DecisionState.RECORDED:
@@ -60,6 +60,10 @@ class ActivityStateMachine(BaseDecisionStateMachine):
             return True
 
         return False
+
+    def _force_cancel(self, message: str | None = None) -> None:
+        if not self.completed.done():
+            self.completed.force_cancel(message)
 
     @activity_events.event(id_attr="activity_id", event_id_is_alias=True)
     def handle_scheduled(self, _: history.ActivityTaskScheduledEventAttributes) -> None:
@@ -77,26 +81,26 @@ class ActivityStateMachine(BaseDecisionStateMachine):
         self, event: history.ActivityTaskCompletedEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self.completed.set_result(event.result)
+        self._resolve(self.completed, result=event.result)
 
     @activity_events.event()
     def handle_failed(self, event: history.ActivityTaskFailedEventAttributes) -> None:
         self._transition(DecisionState.COMPLETED)
-        self.completed.set_exception(ActivityFailure(event.failure.reason))
+        self._resolve(self.completed, exc=ActivityFailure(event.failure.reason))
 
     @activity_events.event()
     def handle_timeout(
         self, event: history.ActivityTaskTimedOutEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self.completed.set_exception(ActivityFailure(event.details.data.decode()))
+        self._resolve(self.completed, exc=ActivityFailure(event.details.data.decode()))
 
     @activity_events.event()
     def handle_canceled(
         self, event: history.ActivityTaskCanceledEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self.completed.force_cancel(event.details.data.decode())
+        self._force_cancel(event.details.data.decode())
 
     @activity_events.event("activity_id")
     def handle_cancel_requested(

@@ -370,7 +370,9 @@ class TestDecisionPanicAndLifecycleMetrics:
         ):
             loop = asyncio.get_event_loop()
             with patch.object(
-                loop, "run_in_executor", new=AsyncMock(side_effect=RuntimeError("engine boom"))
+                loop,
+                "run_in_executor",
+                new=AsyncMock(side_effect=RuntimeError("engine boom")),
             ):
                 with pytest.raises(RuntimeError):
                     await handler._handle_task_implementation(task)

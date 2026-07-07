@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from typing import cast
 import pytest
 from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
@@ -25,7 +26,6 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_FAILED_COUNTER,
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
-    DECISION_TASK_FORCE_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
     TAG_DOMAIN,
     TAG_TASK_LIST,
@@ -63,7 +63,7 @@ def _mock_emitter() -> Mock:
 
 
 def _tagged(emitter: Mock) -> Mock:
-    return emitter.with_tags.return_value
+    return cast(Mock, emitter.with_tags.return_value)
 
 
 def _make_ts(seconds: int) -> Timestamp:
@@ -281,7 +281,9 @@ class TestDecisionResponseMetrics:
         assert DECISION_TASK_COMPLETED_COUNTER in counter_names
 
     @pytest.mark.asyncio
-    async def test_emits_force_completed_counter_for_query(self):
+    async def test_query_completion_emits_no_counter(self):
+        # Go/Java don't track query completions; DECISION_TASK_FORCE_COMPLETED
+        # means something unrelated there (decision-heartbeat force-complete).
         from cadence.api.v1.query_pb2 import (
             WorkflowQueryResult,
             QUERY_RESULT_TYPE_ANSWERED,
@@ -292,10 +294,9 @@ class TestDecisionResponseMetrics:
         task = _make_task(with_query=True)
         result = WorkflowQueryResult(result_type=QUERY_RESULT_TYPE_ANSWERED)
 
-        await handler._respond_query_task_completed(task, result, emitter)
+        await handler._respond_query_task_completed(task, result)
 
-        counter_names = [c.args[0] for c in emitter.counter.call_args_list]
-        assert DECISION_TASK_FORCE_COMPLETED_COUNTER in counter_names
+        emitter.counter.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_workflow_outcome_metrics_emitted_when_respond_fails(self):
@@ -341,14 +342,39 @@ class TestDecisionResponseMetrics:
 
 class TestDecisionPanicAndLifecycleMetrics:
     @pytest.mark.asyncio
-    async def test_emits_panic_counter_in_handle_task_failure(self):
+    async def test_handle_task_failure_does_not_emit_panic_counter(self):
+        # DECISION_TASK_PANIC_COUNTER is scoped to workflow-engine execution
+        # failures (matches Go's "decider panic"), not every decision-task
+        # failure reason (e.g. unregistered workflow type, RPC errors).
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
         task = _make_task()
 
         await handler.handle_task_failure(task, RuntimeError("boom"))
 
-        emitter.with_tags.assert_called_once_with(EXPECTED_TAGS)
+        counter_names = [c.args[0] for c in emitter.counter.call_args_list]
+        assert DECISION_TASK_PANIC_COUNTER not in counter_names
+
+    @pytest.mark.asyncio
+    async def test_emits_panic_counter_on_workflow_engine_execution_failure(self):
+        emitter = _mock_emitter()
+        handler = _make_handler(emitter, _mock_registry())
+        task = _make_task()
+
+        with (
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
+            patch("cadence.worker._decision_task_handler.WorkflowEngine"),
+        ):
+            loop = asyncio.get_event_loop()
+            with patch.object(
+                loop, "run_in_executor", new=AsyncMock(side_effect=RuntimeError("engine boom"))
+            ):
+                with pytest.raises(RuntimeError):
+                    await handler._handle_task_implementation(task)
+
         counter_names = [c.args[0] for c in _tagged(emitter).counter.call_args_list]
         assert DECISION_TASK_PANIC_COUNTER in counter_names
 

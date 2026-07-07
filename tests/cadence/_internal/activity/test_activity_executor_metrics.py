@@ -1,6 +1,7 @@
 """Tests for activity execution and response metrics in ActivityExecutor."""
 
 import time
+from typing import cast
 import pytest
 from unittest.mock import AsyncMock, Mock, PropertyMock
 
@@ -51,7 +52,7 @@ def _mock_emitter() -> Mock:
 
 
 def _tagged(emitter: Mock) -> Mock:
-    return emitter.with_tags.return_value
+    return cast(Mock, emitter.with_tags.return_value)
 
 
 def _make_ts(seconds: int) -> Timestamp:

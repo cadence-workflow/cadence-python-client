@@ -26,7 +26,6 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_FAILED_COUNTER,
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
-    DECISION_TASK_FORCE_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
     TAG_DOMAIN,
     TAG_TASK_LIST,
@@ -194,6 +193,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
         except Exception:
             emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
+            emitter.counter(DECISION_TASK_PANIC_COUNTER)
             raise
         finally:
             emitter.histogram(
@@ -202,9 +202,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         if is_query_task:
             if not decision_result.query_result:
                 raise ValueError("Query result is empty")
-            await self._respond_query_task_completed(
-                task, decision_result.query_result, emitter
-            )
+            await self._respond_query_task_completed(task, decision_result.query_result)
         else:
             await self._respond_decision_task_completed(task, decision_result, emitter)
             outcome = next(
@@ -242,14 +240,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             task: The task that failed
             error: The exception that occurred
         """
-        wf_type = task.workflow_type.name if task.workflow_type else "unknown"
-        panic_tags = {
-            TAG_WORKFLOW_TYPE: wf_type,
-            TAG_DOMAIN: self._client.domain,
-            TAG_TASK_LIST: self.task_list,
-        }
-        self._metrics_emitter.with_tags(panic_tags).counter(DECISION_TASK_PANIC_COUNTER)
-
         workflow_execution = task.workflow_execution
         workflow_id = (
             workflow_execution.workflow_id if workflow_execution else "unknown"
@@ -420,16 +410,13 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         self,
         task: PollForDecisionTaskResponse,
         result: WorkflowQueryResult,
-        emitter: Optional[MetricsEmitter] = None,
     ) -> None:
-        emitter = emitter if emitter is not None else self._metrics_emitter
         try:
             request = RespondQueryTaskCompletedRequest(
                 task_token=task.task_token,
                 result=result,
             )
             await self._client.worker_stub.RespondQueryTaskCompleted(request)
-            emitter.counter(DECISION_TASK_FORCE_COMPLETED_COUNTER)
 
             logger.debug(
                 "Query task completion response sent",

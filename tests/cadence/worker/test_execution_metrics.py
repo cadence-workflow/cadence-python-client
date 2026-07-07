@@ -40,12 +40,19 @@ from cadence.metrics.constants import (
 )
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
-from cadence._internal.workflow.workflow_engine import DecisionResult, _outcome_from_decision
+from cadence._internal.workflow.workflow_engine import (
+    DecisionResult,
+    _outcome_from_decision,
+)
 
 DOMAIN = "test-domain"
 TASK_LIST = "test-tl"
 WF_TYPE = "TestWorkflow"
-EXPECTED_TAGS = {TAG_WORKFLOW_TYPE: WF_TYPE, TAG_DOMAIN: DOMAIN, TAG_TASK_LIST: TASK_LIST}
+EXPECTED_TAGS = {
+    TAG_WORKFLOW_TYPE: WF_TYPE,
+    TAG_DOMAIN: DOMAIN,
+    TAG_TASK_LIST: TASK_LIST,
+}
 
 
 def _mock_emitter() -> Mock:
@@ -67,6 +74,7 @@ def _make_ts(seconds: int) -> Timestamp:
 
 def _make_started_event(event_time_seconds: int = 0) -> HistoryEvent:
     from cadence.api.v1.history_pb2 import WorkflowExecutionStartedEventAttributes
+
     ev = HistoryEvent(
         workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes()
     )
@@ -142,6 +150,7 @@ class TestOutcomeFromDecision:
 
     def test_failed(self):
         from cadence.api.v1.common_pb2 import Failure
+
         d = Decision(
             fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes(
                 failure=Failure(reason="oops")
@@ -151,6 +160,7 @@ class TestOutcomeFromDecision:
 
     def test_continue_as_new(self):
         from cadence.api.v1.common_pb2 import WorkflowType
+
         d = Decision(
             continue_as_new_workflow_execution_decision_attributes=ContinueAsNewWorkflowExecutionDecisionAttributes(
                 workflow_type=WorkflowType(name="MyWf")
@@ -177,8 +187,10 @@ class TestDecisionExecutionMetrics:
         dr = DecisionResult(decisions=[])
 
         with (
-            patch("cadence.worker._decision_task_handler.iterate_history_events",
-                  return_value=_async_iter([_make_started_event()])),
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
             patch("cadence.worker._decision_task_handler.WorkflowEngine"),
             patch.object(handler, "_respond_decision_task_completed", new=AsyncMock()),
         ):
@@ -197,13 +209,17 @@ class TestDecisionExecutionMetrics:
         task = _make_task()
 
         with (
-            patch("cadence.worker._decision_task_handler.iterate_history_events",
-                  return_value=_async_iter([_make_started_event()])),
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
             patch("cadence.worker._decision_task_handler.WorkflowEngine"),
         ):
             loop = asyncio.get_event_loop()
             with patch.object(
-                loop, "run_in_executor", new=AsyncMock(side_effect=RuntimeError("engine boom"))
+                loop,
+                "run_in_executor",
+                new=AsyncMock(side_effect=RuntimeError("engine boom")),
             ):
                 with pytest.raises(RuntimeError):
                     await handler._handle_task_implementation(task)
@@ -266,7 +282,11 @@ class TestDecisionResponseMetrics:
 
     @pytest.mark.asyncio
     async def test_emits_force_completed_counter_for_query(self):
-        from cadence.api.v1.query_pb2 import WorkflowQueryResult, QUERY_RESULT_TYPE_ANSWERED
+        from cadence.api.v1.query_pb2 import (
+            WorkflowQueryResult,
+            QUERY_RESULT_TYPE_ANSWERED,
+        )
+
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
         task = _make_task(with_query=True)
@@ -276,7 +296,6 @@ class TestDecisionResponseMetrics:
 
         counter_names = [c.args[0] for c in emitter.counter.call_args_list]
         assert DECISION_TASK_FORCE_COMPLETED_COUNTER in counter_names
-
 
     @pytest.mark.asyncio
     async def test_no_workflow_outcome_metrics_emitted_when_respond_fails(self):
@@ -293,8 +312,10 @@ class TestDecisionResponseMetrics:
         )
 
         with (
-            patch("cadence.worker._decision_task_handler.iterate_history_events",
-                  return_value=_async_iter([_make_started_event()])),
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
             patch("cadence.worker._decision_task_handler.WorkflowEngine"),
         ):
             loop = asyncio.get_event_loop()
@@ -372,10 +393,11 @@ class TestDecisionPanicAndLifecycleMetrics:
         histogram_names = [c.args[0] for c in emitter.histogram.call_args_list]
         assert WORKFLOW_END_TO_END_LATENCY in histogram_names
         latency_call = next(
-            c for c in emitter.histogram.call_args_list
+            c
+            for c in emitter.histogram.call_args_list
             if c.args[0] == WORKFLOW_END_TO_END_LATENCY
         )
-        assert 5.0 < latency_call.args[1] < 20.0
+        assert 5e9 < latency_call.args[1] < 20e9
 
     def test_no_end_to_end_latency_when_event_time_zero(self):
         emitter = _mock_emitter()
@@ -396,8 +418,12 @@ class TestDecisionPanicAndLifecycleMetrics:
 class TestHistoryFetchMetrics:
     @pytest.mark.asyncio
     async def test_emits_get_history_metrics_per_page(self):
-        from cadence._internal.workflow.history_event_iterator import iterate_history_events
-        from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryResponse
+        from cadence._internal.workflow.history_event_iterator import (
+            iterate_history_events,
+        )
+        from cadence.api.v1.service_workflow_pb2 import (
+            GetWorkflowExecutionHistoryResponse,
+        )
         from cadence.api.v1.history_pb2 import History
 
         emitter = _mock_emitter()
@@ -425,7 +451,9 @@ class TestHistoryFetchMetrics:
 
     @pytest.mark.asyncio
     async def test_no_metrics_emitted_for_single_page(self):
-        from cadence._internal.workflow.history_event_iterator import iterate_history_events
+        from cadence._internal.workflow.history_event_iterator import (
+            iterate_history_events,
+        )
 
         emitter = _mock_emitter()
         client = _mock_client()

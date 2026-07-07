@@ -147,9 +147,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         # fetch full workflow history
         # TODO sticky cache
         workflow_events = [
-            event async for event in iterate_history_events(
-                task, self._client, emitter
-            )
+            event async for event in iterate_history_events(task, self._client, emitter)
         ]
 
         if not workflow_events:
@@ -199,22 +197,26 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             raise
         finally:
             emitter.histogram(
-                DECISION_EXECUTION_LATENCY, time.monotonic() - exec_start
+                DECISION_EXECUTION_LATENCY, (time.monotonic() - exec_start) * 1e9
             )
         if is_query_task:
             if not decision_result.query_result:
                 raise ValueError("Query result is empty")
-            await self._respond_query_task_completed(task, decision_result.query_result, emitter)
+            await self._respond_query_task_completed(
+                task, decision_result.query_result, emitter
+            )
         else:
             await self._respond_decision_task_completed(task, decision_result, emitter)
             outcome = next(
-                (o for d in decision_result.decisions if (o := _outcome_from_decision(d))),
+                (
+                    o
+                    for d in decision_result.decisions
+                    if (o := _outcome_from_decision(d))
+                ),
                 None,
             )
             if outcome is not None:
-                self._emit_workflow_outcome_metrics(
-                    outcome, workflow_events, emitter
-                )
+                self._emit_workflow_outcome_metrics(outcome, workflow_events, emitter)
 
         logger.info(
             "Successfully processed decision task",
@@ -337,10 +339,12 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 + workflow_events[0].event_time.nanos / 1e9
             )
             e2e = time.time() - start_ts
-            emitter.histogram(WORKFLOW_END_TO_END_LATENCY, max(0.0, e2e))
+            emitter.histogram(WORKFLOW_END_TO_END_LATENCY, max(0.0, e2e) * 1e9)
 
     async def _respond_decision_task_completed(
-        self, task: PollForDecisionTaskResponse, decision_result: DecisionResult,
+        self,
+        task: PollForDecisionTaskResponse,
+        decision_result: DecisionResult,
         emitter: Optional[MetricsEmitter] = None,
     ) -> None:
         """
@@ -409,11 +413,13 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             raise
         finally:
             emitter.histogram(
-                DECISION_RESPONSE_LATENCY, time.monotonic() - resp_start
+                DECISION_RESPONSE_LATENCY, (time.monotonic() - resp_start) * 1e9
             )
 
     async def _respond_query_task_completed(
-        self, task: PollForDecisionTaskResponse, result: WorkflowQueryResult,
+        self,
+        task: PollForDecisionTaskResponse,
+        result: WorkflowQueryResult,
         emitter: Optional[MetricsEmitter] = None,
     ) -> None:
         emitter = emitter if emitter is not None else self._metrics_emitter

@@ -93,7 +93,9 @@ def _make_executor(emitter=None, registry=None) -> ActivityExecutor:
     client = _mock_client()
     if registry is None:
         registry = Registry()
-    return ActivityExecutor(client, TASK_LIST, "test-id", 1, registry.get_activity, emitter)
+    return ActivityExecutor(
+        client, TASK_LIST, "test-id", 1, registry.get_activity, emitter
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -136,10 +138,11 @@ class TestActivityExecutionSuccess:
         histogram_names = [c.args[0] for c in _tagged(emitter).histogram.call_args_list]
         assert ACTIVITY_END_TO_END_LATENCY in histogram_names
         e2e_call = next(
-            c for c in _tagged(emitter).histogram.call_args_list
+            c
+            for c in _tagged(emitter).histogram.call_args_list
             if c.args[0] == ACTIVITY_END_TO_END_LATENCY
         )
-        assert 1.0 < e2e_call.args[1] < 30.0
+        assert 1e9 < e2e_call.args[1] < 30e9
 
     @pytest.mark.asyncio
     async def test_no_end_to_end_latency_when_scheduled_time_zero(self):

@@ -10,7 +10,10 @@ from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryResponse,
 )
 from cadence.client import Client
-from cadence.metrics.constants import WORKFLOW_GET_HISTORY_COUNTER, WORKFLOW_GET_HISTORY_LATENCY
+from cadence.metrics.constants import (
+    WORKFLOW_GET_HISTORY_COUNTER,
+    WORKFLOW_GET_HISTORY_LATENCY,
+)
 
 if TYPE_CHECKING:
     from cadence.metrics import MetricsEmitter
@@ -46,7 +49,7 @@ async def iterate_history_events(
         fetch_elapsed = time.monotonic() - fetch_start
         if metrics_emitter is not None:
             metrics_emitter.counter(WORKFLOW_GET_HISTORY_COUNTER)
-            metrics_emitter.histogram(WORKFLOW_GET_HISTORY_LATENCY, fetch_elapsed)
+            metrics_emitter.histogram(WORKFLOW_GET_HISTORY_LATENCY, fetch_elapsed * 1e9)
         current_page = response.history.events
         next_page_token = response.next_page_token
 

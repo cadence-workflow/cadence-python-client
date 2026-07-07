@@ -79,7 +79,9 @@ class ActivityExecutor:
         except Exception as e:
             error = e
         finally:
-            emitter.histogram(ACTIVITY_EXECUTION_LATENCY, time.monotonic() - exec_start)
+            emitter.histogram(
+                ACTIVITY_EXECUTION_LATENCY, (time.monotonic() - exec_start) * 1e9
+            )
 
         e2e = time.time() - scheduled_ts if scheduled_ts else None
         if error is not None:
@@ -137,12 +139,16 @@ class ActivityExecutor:
             )
             emitter.counter(ACTIVITY_TASK_FAILED_COUNTER)
             if e2e_latency is not None:
-                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, max(0.0, e2e_latency))
+                emitter.histogram(
+                    ACTIVITY_END_TO_END_LATENCY, max(0.0, e2e_latency) * 1e9
+                )
         except Exception:
             emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
             _logger.exception("Exception reporting activity failure")
         finally:
-            emitter.histogram(ACTIVITY_RESPONSE_LATENCY, time.monotonic() - resp_start)
+            emitter.histogram(
+                ACTIVITY_RESPONSE_LATENCY, (time.monotonic() - resp_start) * 1e9
+            )
 
     async def _report_success(
         self,
@@ -164,12 +170,16 @@ class ActivityExecutor:
             )
             emitter.counter(ACTIVITY_TASK_COMPLETED_COUNTER)
             if e2e_latency is not None:
-                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, max(0.0, e2e_latency))
+                emitter.histogram(
+                    ACTIVITY_END_TO_END_LATENCY, max(0.0, e2e_latency) * 1e9
+                )
         except Exception:
             emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
             _logger.exception("Exception reporting activity complete")
         finally:
-            emitter.histogram(ACTIVITY_RESPONSE_LATENCY, time.monotonic() - resp_start)
+            emitter.histogram(
+                ACTIVITY_RESPONSE_LATENCY, (time.monotonic() - resp_start) * 1e9
+            )
 
     def _create_info(self, task: PollForActivityTaskResponse) -> ActivityInfo:
         return ActivityInfo(

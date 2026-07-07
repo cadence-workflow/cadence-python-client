@@ -58,8 +58,8 @@ class ActivityExecutor:
         )
 
     async def execute(self, task: PollForActivityTaskResponse):
-        activity_type = task.activity_type.name if task.activity_type else "unknown"
-        wf_type = task.workflow_type.name if task.workflow_type else "unknown"
+        activity_type = task.activity_type.name if task.activity_type else ""
+        wf_type = task.workflow_type.name if task.workflow_type else ""
         emitter = self._metrics_emitter.with_tags(
             {
                 TAG_ACTIVITY_TYPE: activity_type,

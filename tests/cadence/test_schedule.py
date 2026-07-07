@@ -156,6 +156,18 @@ class TestDescribeSchedule:
         assert servicer.last_describe.domain == "test-domain"
         assert resp.spec.cron_expression == "0 9 * * *"
 
+    @pytest.mark.asyncio
+    async def test_returns_queue_state(self, client, servicer):
+        servicer.describe_response = DescribeScheduleResponse(
+            info=schedule_pb2.ScheduleInfo(
+                buffered_fire_count=3,
+                running_workflow_count=2,
+            ),
+        )
+        resp = await client.describe_schedule("sched-x")
+        assert resp.info.buffered_fire_count == 3
+        assert resp.info.running_workflow_count == 2
+
 
 # ---------------------------------------------------------------------------
 # pause_schedule / unpause_schedule

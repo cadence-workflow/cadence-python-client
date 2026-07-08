@@ -35,7 +35,7 @@ async def iterate_history_events(
             yield event
         if not next_page_token:
             break
-        fetch_start = time.monotonic()
+        fetch_start_ns = time.monotonic_ns()
         response: GetWorkflowExecutionHistoryResponse = (
             await client.workflow_stub.GetWorkflowExecutionHistory(
                 GetWorkflowExecutionHistoryRequest(
@@ -46,10 +46,11 @@ async def iterate_history_events(
                 )
             )
         )
-        fetch_elapsed = time.monotonic() - fetch_start
         if metrics_emitter is not None:
             metrics_emitter.counter(WORKFLOW_GET_HISTORY_COUNTER)
-            metrics_emitter.histogram(WORKFLOW_GET_HISTORY_LATENCY, fetch_elapsed * 1e9)
+            metrics_emitter.histogram(
+                WORKFLOW_GET_HISTORY_LATENCY, time.monotonic_ns() - fetch_start_ns
+            )
         current_page = response.history.events
         next_page_token = response.next_page_token
 

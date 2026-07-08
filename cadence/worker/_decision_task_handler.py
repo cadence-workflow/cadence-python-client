@@ -4,6 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import Optional
 
+from google.protobuf.timestamp_pb2 import Timestamp
+
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.workflow.memo import memo_from_proto
 from cadence.api.v1.common_pb2 import Payload
@@ -19,7 +21,7 @@ from cadence.api.v1.query_pb2 import (
 )
 from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.client import Client
-from cadence.metrics import MetricsEmitter
+from cadence.metrics import duration_between_ns, MetricsEmitter
 from cadence.metrics.constants import (
     DECISION_EXECUTION_FAILED_COUNTER,
     DECISION_EXECUTION_LATENCY,
@@ -183,7 +185,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_definition=workflow_definition,
         )
 
-        exec_start = time.monotonic()
+        exec_start_ns = time.monotonic_ns()
         try:
             decision_result = await asyncio.get_running_loop().run_in_executor(
                 self._executor,
@@ -197,7 +199,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             raise
         finally:
             emitter.histogram(
-                DECISION_EXECUTION_LATENCY, (time.monotonic() - exec_start) * 1e9
+                DECISION_EXECUTION_LATENCY, time.monotonic_ns() - exec_start_ns
             )
         if is_query_task:
             if not decision_result.query_result:
@@ -323,13 +325,12 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         if counter := counter_map.get(outcome):
             emitter.counter(counter)
 
-        if workflow_events and workflow_events[0].event_time.seconds:
-            start_ts = (
-                workflow_events[0].event_time.seconds
-                + workflow_events[0].event_time.nanos / 1e9
-            )
-            e2e = time.time() - start_ts
-            emitter.histogram(WORKFLOW_END_TO_END_LATENCY, max(0.0, e2e) * 1e9)
+        if workflow_events:
+            now = Timestamp()
+            now.GetCurrentTime()
+            e2e_latency_ns = duration_between_ns(workflow_events[0].event_time, now)
+            if e2e_latency_ns is not None:
+                emitter.histogram(WORKFLOW_END_TO_END_LATENCY, e2e_latency_ns)
 
     async def _respond_decision_task_completed(
         self,
@@ -345,7 +346,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             decision_result: The result containing decisions
         """
         emitter = emitter if emitter is not None else self._metrics_emitter
-        resp_start = time.monotonic()
+        resp_start_ns = time.monotonic_ns()
         try:
             request = RespondDecisionTaskCompletedRequest(
                 task_token=task.task_token,
@@ -403,7 +404,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             raise
         finally:
             emitter.histogram(
-                DECISION_RESPONSE_LATENCY, (time.monotonic() - resp_start) * 1e9
+                DECISION_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
             )
 
     async def _respond_query_task_completed(

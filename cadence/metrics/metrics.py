@@ -47,7 +47,7 @@ class MetricsEmitter(Protocol):
 
 
 def duration_between_ns(start: Timestamp, end: Timestamp) -> Optional[timedelta]:
-    """Return a non-negative duration between two set protobuf timestamps."""
+    """Return a non-negative duration in nanoseconds (consistent with existing SDK) between two set protobuf timestamps."""
     if not _timestamp_is_set(start) or not _timestamp_is_set(end):
         return None
     return cast(

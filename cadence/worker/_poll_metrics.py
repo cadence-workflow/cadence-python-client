@@ -52,11 +52,11 @@ class PollMetrics:
             stopwatch.stop()
 
     def record_result(self, task: PollTask) -> None:
-        """Record succeed vs idle and optional schedule-to-start lag."""
+        """Record succeed vs idle and optional schedule-to-start latency."""
         if not (task and task.task_token):
             self.emitter.counter(self.no_task)
             return
         self.emitter.counter(self.succeed)
-        lag = duration_between_ns(task.scheduled_time, task.started_time)
-        if lag is not None:
-            record_duration(self.emitter, self.scheduled_to_start, lag)
+        latency = duration_between_ns(task.scheduled_time, task.started_time)
+        if latency is not None:
+            record_duration(self.emitter, self.scheduled_to_start, latency)

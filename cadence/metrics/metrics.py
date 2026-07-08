@@ -4,7 +4,11 @@ import logging
 from enum import Enum
 from typing import Dict, Optional, Protocol
 
+from google.protobuf.timestamp_pb2 import Timestamp
+
 logger = logging.getLogger(__name__)
+
+_NANOSECONDS_PER_SECOND = 1_000_000_000
 
 
 class MetricType(Enum):
@@ -37,6 +41,22 @@ class MetricsEmitter(Protocol):
     ) -> None:
         """Send a histogram metric."""
         ...
+
+
+def duration_between_ns(start: Timestamp, end: Timestamp) -> Optional[int]:
+    """Return a non-negative duration in nanoseconds between two set timestamps."""
+    if not _timestamp_is_set(start) or not _timestamp_is_set(end):
+        return None
+    duration = (
+        (end.seconds - start.seconds) * _NANOSECONDS_PER_SECOND
+        + end.nanos
+        - start.nanos
+    )
+    return max(0, int(duration))
+
+
+def _timestamp_is_set(timestamp: Timestamp) -> bool:
+    return bool(timestamp.seconds or timestamp.nanos)
 
 
 class _TaggedEmitter:

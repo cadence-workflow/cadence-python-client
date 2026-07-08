@@ -47,12 +47,12 @@ def duration_between_ns(start: Timestamp, end: Timestamp) -> Optional[int]:
     """Return a non-negative duration in nanoseconds between two set timestamps."""
     if not _timestamp_is_set(start) or not _timestamp_is_set(end):
         return None
-    return max(
-        0,
+    duration = (
         (end.seconds - start.seconds) * _NANOSECONDS_PER_SECOND
         + end.nanos
-        - start.nanos,
+        - start.nanos
     )
+    return max(0, int(duration))
 
 
 def _timestamp_is_set(timestamp: Timestamp) -> bool:

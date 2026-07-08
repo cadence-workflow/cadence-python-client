@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence
 
 from prometheus_client import (  # type: ignore[import-not-found]
     REGISTRY,
@@ -13,6 +13,7 @@ from prometheus_client import (  # type: ignore[import-not-found]
     generate_latest,
 )
 
+from .histogram_buckets import DurationBucketResolver, default_buckets_for_metric
 from .metrics import MetricsEmitter, _TaggedEmitter
 
 
@@ -28,6 +29,15 @@ class PrometheusConfig:
 
     # Custom registry (if None, uses default global registry)
     registry: Optional[CollectorRegistry] = None
+
+    # Per-metric bucket overrides, keyed by exact metric name (e.g.
+    # "cadence-activity-execution-latency_ns"). Takes precedence over
+    # duration_bucket_resolver and the built-in Go/Java-aligned defaults.
+    histogram_buckets: Dict[str, Sequence[float]] = field(default_factory=dict)
+
+    # Overrides how default buckets are chosen for any `_ns`-suffixed metric not
+    # covered by histogram_buckets. Defaults to histogram_buckets.default_buckets_for_metric.
+    duration_bucket_resolver: Optional[DurationBucketResolver] = None
 
 
 class PrometheusMetrics(MetricsEmitter):
@@ -97,17 +107,40 @@ class PrometheusMetrics(MetricsEmitter):
 
         if metric_name not in self._histograms:
             label_names = list(self._merge_labels(labels).keys()) if labels else []
-            # Current histogram uses the prometheus_client default buckets; aligning
-            # bucket definitions with the Go SDK is planned for a later PR.
-            self._histograms[metric_name] = Histogram(
-                metric_name,
-                f"Histogram metric for {name}",
-                labelnames=label_names,
-                registry=self.registry,
-            )
+            buckets = self._resolve_buckets(metric_name)
+            if buckets is not None:
+                histogram = Histogram(
+                    metric_name,
+                    f"Histogram metric for {name}",
+                    labelnames=label_names,
+                    registry=self.registry,
+                    buckets=tuple(buckets),
+                )
+            else:
+                histogram = Histogram(
+                    metric_name,
+                    f"Histogram metric for {name}",
+                    labelnames=label_names,
+                    registry=self.registry,
+                )
+            self._histograms[metric_name] = histogram
             logger.debug(f"Created histogram metric: {metric_name}")
 
         return self._histograms[metric_name]
+
+    def _resolve_buckets(self, metric_name: str) -> Optional[Sequence[float]]:
+        """Resolve bucket boundaries for a histogram, or None for Prometheus's defaults.
+
+        Precedence: per-metric override, then custom resolver, then Go/Java-aligned
+        defaults for `_ns` metrics, then Prometheus's own defaults otherwise.
+        """
+        override = self.config.histogram_buckets.get(metric_name)
+        if override is not None:
+            return override
+        if not metric_name.endswith("_ns"):
+            return None
+        resolver = self.config.duration_bucket_resolver or default_buckets_for_metric
+        return resolver(metric_name)
 
     def with_tags(self, tags: Dict[str, str]) -> "MetricsEmitter":
         return _TaggedEmitter(self, tags)

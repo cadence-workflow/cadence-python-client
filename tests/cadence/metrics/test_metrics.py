@@ -1,13 +1,23 @@
 """Tests for metrics collection functionality."""
 
+from datetime import timedelta
 from unittest.mock import Mock
 
+import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence.metrics import (
+    duration_between_ns,
     MetricsEmitter,
+    MetricsStopwatch,
     MetricType,
     NoOpMetricsEmitter,
+    record_duration,
 )
+
+
+def _timestamp(seconds: int = 0, nanos: int = 0) -> Timestamp:
+    return Timestamp(seconds=seconds, nanos=nanos)
 
 
 class TestMetricsEmitter:
@@ -51,3 +61,73 @@ class TestMetricType:
         assert MetricType.COUNTER.value == "counter"
         assert MetricType.GAUGE.value == "gauge"
         assert MetricType.HISTOGRAM.value == "histogram"
+
+
+class TestDurationMetrics:
+    def test_duration_between_ns_set_timestamps(self):
+        assert duration_between_ns(
+            _timestamp(seconds=10, nanos=100_000_000),
+            _timestamp(seconds=12, nanos=350_000_000),
+        ) == timedelta(seconds=2, microseconds=250_000)
+
+    def test_duration_between_ns_requires_both_timestamps(self):
+        assert duration_between_ns(_timestamp(), _timestamp(seconds=1)) is None
+        assert duration_between_ns(_timestamp(seconds=1), _timestamp()) is None
+
+    def test_duration_between_ns_clamps_clock_skew(self):
+        assert duration_between_ns(
+            _timestamp(seconds=2),
+            _timestamp(seconds=1),
+        ) == timedelta(0)
+
+    def test_record_duration_converts_to_nanoseconds(self):
+        emitter = Mock(spec=MetricsEmitter)
+
+        record_duration(
+            emitter,
+            "latency_ns",
+            timedelta(seconds=2, microseconds=345),
+            {"operation": "test"},
+        )
+
+        emitter.histogram.assert_called_once_with(
+            "latency_ns",
+            2_000_345_000,
+            {"operation": "test"},
+        )
+
+    def test_record_duration_rejects_negative_values(self):
+        emitter = Mock(spec=MetricsEmitter)
+
+        with pytest.raises(ValueError, match="non-negative"):
+            record_duration(emitter, "latency_ns", timedelta(microseconds=-1))
+
+        emitter.histogram.assert_not_called()
+
+    def test_stopwatch_records_once_using_monotonic_nanoseconds(self):
+        emitter = Mock(spec=MetricsEmitter)
+        clock = Mock(side_effect=[10, 42])
+        stopwatch = MetricsStopwatch(emitter, "latency_ns", clock_ns=clock)
+
+        assert stopwatch.stop() == 32
+        assert stopwatch.stop() == 32
+
+        emitter.histogram.assert_called_once_with("latency_ns", 32)
+
+    def test_stopwatch_context_manager_records_with_tags(self):
+        emitter = Mock(spec=MetricsEmitter)
+        clock = Mock(side_effect=[100, 150])
+
+        with MetricsStopwatch(
+            emitter,
+            "latency_ns",
+            {"operation": "test"},
+            clock_ns=clock,
+        ):
+            pass
+
+        emitter.histogram.assert_called_once_with(
+            "latency_ns",
+            50,
+            {"operation": "test"},
+        )

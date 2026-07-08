@@ -7,8 +7,6 @@ from collections.abc import Callable
 from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
-from google.protobuf.duration_pb2 import Duration
-from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
@@ -259,13 +257,6 @@ class Client:
             except Exception as e:
                 raise ValueError(f"Failed to encode workflow arguments: {e}")
 
-        # Convert timedelta to protobuf Duration
-        execution_timeout = Duration()
-        execution_timeout.FromTimedelta(options["execution_start_to_close_timeout"])
-
-        task_timeout = Duration()
-        task_timeout.FromTimedelta(options["task_start_to_close_timeout"])
-
         # Build the request
         request = StartWorkflowExecutionRequest(
             domain=self.domain,
@@ -277,8 +268,12 @@ class Client:
         )
 
         # Set required timeout fields
-        request.execution_start_to_close_timeout.CopyFrom(execution_timeout)
-        request.task_start_to_close_timeout.CopyFrom(task_timeout)
+        request.execution_start_to_close_timeout.FromTimedelta(
+            options["execution_start_to_close_timeout"]
+        )
+        request.task_start_to_close_timeout.FromTimedelta(
+            options["task_start_to_close_timeout"]
+        )
 
         # Set optional fields
         if input_payload:
@@ -293,23 +288,17 @@ class Client:
         # Set delay_start if provided
         delay_start = options.get("delay_start")
         if delay_start is not None:
-            delay_duration = Duration()
-            delay_duration.FromTimedelta(delay_start)
-            request.delay_start.CopyFrom(delay_duration)
+            request.delay_start.FromTimedelta(delay_start)
 
         # Set jitter_start if provided
         jitter_start = options.get("jitter_start")
         if jitter_start is not None:
-            jitter_duration = Duration()
-            jitter_duration.FromTimedelta(jitter_start)
-            request.jitter_start.CopyFrom(jitter_duration)
+            request.jitter_start.FromTimedelta(jitter_start)
 
         # Set first_run_at if provided
         first_run_at = options.get("first_run_at")
         if first_run_at is not None:
-            first_run_timestamp = Timestamp()
-            first_run_timestamp.FromDatetime(first_run_at)
-            request.first_run_at.CopyFrom(first_run_timestamp)
+            request.first_run_at.FromDatetime(first_run_at)
 
         # Set retry_policy if provided
         retry_proto = retry_policy_to_proto(options.get("retry_policy"))

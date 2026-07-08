@@ -108,18 +108,14 @@ class TestPrometheusMetrics:
 
         metrics.histogram("cadence-workflow-endtoend-latency_ns", 1_000_000_000)
 
-        assert mock_histogram_class.call_args.kwargs["buckets"] == tuple(
-            HIGH_1MS_24H
-        )
+        assert mock_histogram_class.call_args.kwargs["buckets"] == tuple(HIGH_1MS_24H)
 
     @patch("cadence.metrics.prometheus.Histogram")
     def test_histogram_buckets_override_by_exact_metric_name(
         self, mock_histogram_class
     ):
         custom_buckets = (1.0, 2.0, 3.0)
-        config = PrometheusConfig(
-            histogram_buckets={"test_latency_ns": custom_buckets}
-        )
+        config = PrometheusConfig(histogram_buckets={"test_latency_ns": custom_buckets})
         metrics = PrometheusMetrics(config)
 
         metrics.histogram("test_latency_ns", 1_000_000_000)
@@ -128,7 +124,7 @@ class TestPrometheusMetrics:
 
     @patch("cadence.metrics.prometheus.Histogram")
     def test_duration_bucket_resolver_override(self, mock_histogram_class):
-        custom_buckets = (5.0, 10.0)
+        custom_buckets = (5, 10)
         config = PrometheusConfig(duration_bucket_resolver=lambda name: custom_buckets)
         metrics = PrometheusMetrics(config)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
@@ -12,8 +13,6 @@ from cadence.error import CadenceRpcError
 from cadence.metrics import (
     duration_between_ns,
     MetricsEmitter,
-    MetricsStopwatch,
-    record_duration,
 )
 
 
@@ -38,7 +37,7 @@ class PollMetrics:
     async def track(self) -> AsyncIterator[None]:
         """Emit poll counter; guarantee exactly one outcome counter on error."""
         self.emitter.counter(self.poll)
-        stopwatch = MetricsStopwatch(self.emitter, self.latency)
+        start = time.monotonic_ns()
         try:
             yield
         except CadenceRpcError as e:
@@ -49,7 +48,7 @@ class PollMetrics:
             self.emitter.counter(self.failed)
             raise
         finally:
-            stopwatch.stop()
+            self.emitter.histogram(self.latency, time.monotonic_ns() - start)
 
     def record_result(self, task: PollTask) -> None:
         """Record succeed vs idle and optional schedule-to-start latency."""
@@ -57,6 +56,6 @@ class PollMetrics:
             self.emitter.counter(self.no_task)
             return
         self.emitter.counter(self.succeed)
-        latency = duration_between_ns(task.scheduled_time, task.started_time)
-        if latency is not None:
-            record_duration(self.emitter, self.scheduled_to_start, latency)
+        latency_ns = duration_between_ns(task.scheduled_time, task.started_time)
+        if latency_ns is not None:
+            self.emitter.histogram(self.scheduled_to_start, latency_ns)

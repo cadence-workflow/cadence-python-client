@@ -26,6 +26,12 @@ class ActivityFailure(Exception):
         super().__init__(message)
 
 
+class ActivityCancelledError(Exception):
+    def __init__(self, *details: Any) -> None:
+        super().__init__("Activity cancelled")
+        self.details = list(details)
+
+
 class WorkflowFailure(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)

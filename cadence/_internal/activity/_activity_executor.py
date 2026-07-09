@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 import time
@@ -11,9 +12,10 @@ from cadence._internal.activity._context import _Context, _SyncContext
 from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityDefinition
-from cadence.api.v1.common_pb2 import Failure
+from cadence.api.v1.common_pb2 import Failure, Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForActivityTaskResponse,
+    RespondActivityTaskCanceledRequest,
     RespondActivityTaskFailedRequest,
     RespondActivityTaskCompletedRequest,
 )
@@ -25,6 +27,7 @@ from cadence.metrics.constants import (
     ACTIVITY_EXECUTION_LATENCY,
     ACTIVITY_RESPONSE_FAILED_COUNTER,
     ACTIVITY_RESPONSE_LATENCY,
+    ACTIVITY_TASK_CANCELED_COUNTER,
     ACTIVITY_TASK_COMPLETED_COUNTER,
     ACTIVITY_TASK_FAILED_COUNTER,
     TAG_ACTIVITY_TYPE,
@@ -32,6 +35,7 @@ from cadence.metrics.constants import (
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
 )
+from cadence.error import ActivityCancelledError
 
 _logger = getLogger(__name__)
 
@@ -58,7 +62,7 @@ class ActivityExecutor:
             max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
         )
 
-    async def execute(self, task: PollForActivityTaskResponse):
+    async def execute(self, task: PollForActivityTaskResponse) -> None:
         activity_type = task.activity_type.name if task.activity_type else ""
         wf_type = task.workflow_type.name if task.workflow_type else ""
         emitter = self._metrics_emitter.with_tags(
@@ -69,12 +73,28 @@ class ActivityExecutor:
                 TAG_TASK_LIST: self._task_list,
             }
         )
+        context: Union[_Context, _SyncContext] | None = None
         error: Optional[Exception] = None
         result: Any = None
         exec_start_ns = time.monotonic_ns()
         try:
             context = self._create_context(task)
             result = await context.execute(task.input)
+        except asyncio.CancelledError as e:
+            if context is not None and context.is_cancelled():
+                details = list(e.args) if e.args else None
+                await self._report_cancelled(task, details, emitter)
+                return
+            raise
+        except ActivityCancelledError as e:
+            if context is not None and context.is_cancelled():
+                await self._report_cancelled(task, e.details, emitter)
+                return
+            _logger.exception(
+                "Activity failed: ActivityCancelledError raised but cancellation was "
+                "not requested; this is likely a bug in cadence-python-client"
+            )
+            error = e
         except Exception as e:
             error = e
         finally:
@@ -117,14 +137,13 @@ class ActivityExecutor:
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:
             return _Context(self._client, info, activity_def, heartbeat_sender)
-        else:
-            return _SyncContext(
-                self._client,
-                info,
-                activity_def,
-                self._thread_pool,
-                heartbeat_sender,
-            )
+        return _SyncContext(
+            self._client,
+            info,
+            activity_def,
+            self._thread_pool,
+            heartbeat_sender,
+        )
 
     async def _report_failure(
         self,
@@ -148,6 +167,31 @@ class ActivityExecutor:
         except Exception:
             emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
             _logger.exception("Exception reporting activity failure")
+        finally:
+            emitter.histogram(
+                ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+            )
+
+    async def _report_cancelled(
+        self,
+        task: PollForActivityTaskResponse,
+        details: list[Any] | None,
+        emitter: MetricsEmitter,
+    ) -> None:
+        as_payload = self._data_converter.to_data(details) if details else Payload()
+        resp_start_ns = time.monotonic_ns()
+        try:
+            await self._client.worker_stub.RespondActivityTaskCanceled(
+                RespondActivityTaskCanceledRequest(
+                    task_token=task.task_token,
+                    details=as_payload,
+                    identity=self._identity,
+                )
+            )
+            emitter.counter(ACTIVITY_TASK_CANCELED_COUNTER)
+        except Exception:
+            emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
+            _logger.exception("Exception reporting activity cancelled")
         finally:
             emitter.histogram(
                 ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns

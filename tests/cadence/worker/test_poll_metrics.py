@@ -219,7 +219,7 @@ class TestDecisionWorkerPollMetrics:
         assert DECISION_SCHEDULED_TO_START_LATENCY not in histogram_names
 
     @pytest.mark.asyncio
-    async def test_clamps_negative_scheduled_to_start_latency(self):
+    async def test_skips_negative_scheduled_to_start_latency(self):
         emitter = _mock_emitter()
         client = _mock_client()
         mock_task = Mock()
@@ -231,8 +231,8 @@ class TestDecisionWorkerPollMetrics:
 
         await worker._poll()
 
-        histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
-        assert histogram_calls[DECISION_SCHEDULED_TO_START_LATENCY].args[1] == 0.0
+        histogram_names = [c.args[0] for c in emitter.histogram.call_args_list]
+        assert DECISION_SCHEDULED_TO_START_LATENCY not in histogram_names
 
     @pytest.mark.asyncio
     async def test_emits_transient_failed_counter_on_retryable_error(self):

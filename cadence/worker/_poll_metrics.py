@@ -57,5 +57,5 @@ class PollMetrics:
             return
         self.emitter.counter(self.succeed)
         latency_ns = duration_between_ns(task.scheduled_time, task.started_time)
-        if latency_ns is not None:
+        if latency_ns is not None and latency_ns >= 0:
             self.emitter.histogram(self.scheduled_to_start, latency_ns)

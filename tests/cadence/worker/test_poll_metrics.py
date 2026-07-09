@@ -203,7 +203,7 @@ class TestDecisionWorkerPollMetrics:
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert DECISION_SCHEDULED_TO_START_LATENCY in histogram_calls
         latency_call = histogram_calls[DECISION_SCHEDULED_TO_START_LATENCY]
-        assert abs(latency_call.args[1] - 2.0) < 0.01
+        assert latency_call.args[1] == 2_000_000_000
 
     @pytest.mark.asyncio
     async def test_no_scheduled_to_start_when_timestamps_zero(self):
@@ -222,7 +222,7 @@ class TestDecisionWorkerPollMetrics:
         assert DECISION_SCHEDULED_TO_START_LATENCY not in histogram_names
 
     @pytest.mark.asyncio
-    async def test_clamps_negative_scheduled_to_start_latency(self):
+    async def test_skips_negative_scheduled_to_start_latency(self):
         emitter = _mock_emitter()
         client = _mock_client()
         mock_task = Mock()
@@ -234,8 +234,8 @@ class TestDecisionWorkerPollMetrics:
 
         await worker._poll()
 
-        histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
-        assert histogram_calls[DECISION_SCHEDULED_TO_START_LATENCY].args[1] == 0.0
+        histogram_names = [c.args[0] for c in emitter.histogram.call_args_list]
+        assert DECISION_SCHEDULED_TO_START_LATENCY not in histogram_names
 
     @pytest.mark.asyncio
     async def test_emits_transient_failed_counter_on_retryable_error(self):
@@ -271,6 +271,23 @@ class TestDecisionWorkerPollMetrics:
 
         emitter.counter.assert_any_call(
             DECISION_POLL_FAILED_COUNTER, 1, tags=EXPECTED_TAGS
+        )
+
+    @pytest.mark.asyncio
+    async def test_emits_latency_on_unexpected_error(self):
+        emitter = _mock_emitter()
+        client = _mock_client()
+        client.worker_stub.PollForDecisionTask = AsyncMock(
+            side_effect=RuntimeError("unexpected")
+        )
+        worker = DecisionWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
+
+        with pytest.raises(RuntimeError, match="unexpected"):
+            await worker._poll()
+
+        assert any(
+            call.args[0] == DECISION_POLL_LATENCY
+            for call in emitter.histogram.call_args_list
         )
 
 
@@ -396,8 +413,8 @@ class TestActivityWorkerPollMetrics:
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert ACTIVITY_SCHEDULED_TO_START_LATENCY in histogram_calls
         assert (
-            abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 3.0)
-            < 0.01
+            histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1]
+            == 3_000_000_000
         )
 
     @pytest.mark.asyncio
@@ -415,8 +432,7 @@ class TestActivityWorkerPollMetrics:
 
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert (
-            abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 0.2)
-            < 0.01
+            histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] == 200_000_000
         )
 
     @pytest.mark.asyncio

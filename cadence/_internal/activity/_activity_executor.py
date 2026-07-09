@@ -1,22 +1,41 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
+import time
 from traceback import format_exception
-from typing import Any, Callable, Union, cast
+from typing import Any, Callable, Optional, Union, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence._internal.activity._context import _Context, _SyncContext
 from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityDefinition
-from cadence.api.v1.common_pb2 import Failure
+from cadence.api.v1.common_pb2 import Failure, Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForActivityTaskResponse,
+    RespondActivityTaskCanceledRequest,
     RespondActivityTaskFailedRequest,
     RespondActivityTaskCompletedRequest,
 )
 from cadence.client import Client
-from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics import duration_between_ns, MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics.constants import (
+    ACTIVITY_END_TO_END_LATENCY,
+    ACTIVITY_EXECUTION_FAILED_COUNTER,
+    ACTIVITY_EXECUTION_LATENCY,
+    ACTIVITY_RESPONSE_FAILED_COUNTER,
+    ACTIVITY_RESPONSE_LATENCY,
+    ACTIVITY_TASK_CANCELED_COUNTER,
+    ACTIVITY_TASK_COMPLETED_COUNTER,
+    ACTIVITY_TASK_FAILED_COUNTER,
+    TAG_ACTIVITY_TYPE,
+    TAG_DOMAIN,
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_TYPE,
+)
+from cadence.error import ActivityCancelledError
 
 _logger = getLogger(__name__)
 
@@ -43,14 +62,60 @@ class ActivityExecutor:
             max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
         )
 
-    async def execute(self, task: PollForActivityTaskResponse):
+    async def execute(self, task: PollForActivityTaskResponse) -> None:
+        activity_type = task.activity_type.name if task.activity_type else ""
+        wf_type = task.workflow_type.name if task.workflow_type else ""
+        emitter = self._metrics_emitter.with_tags(
+            {
+                TAG_ACTIVITY_TYPE: activity_type,
+                TAG_WORKFLOW_TYPE: wf_type,
+                TAG_DOMAIN: self._client.domain,
+                TAG_TASK_LIST: self._task_list,
+            }
+        )
+        context: Union[_Context, _SyncContext] | None = None
+        error: Optional[Exception] = None
+        result: Any = None
+        exec_start_ns = time.monotonic_ns()
         try:
             context = self._create_context(task)
             result = await context.execute(task.input)
-            await self._report_success(task, result)
+        except asyncio.CancelledError as e:
+            if context is not None and context.is_cancelled():
+                details = list(e.args) if e.args else None
+                await self._report_cancelled(task, details, emitter)
+                return
+            raise
+        except ActivityCancelledError as e:
+            if context is not None and context.is_cancelled():
+                await self._report_cancelled(task, e.details, emitter)
+                return
+            _logger.exception(
+                "Activity failed: ActivityCancelledError raised but cancellation was "
+                "not requested; this is likely a bug in cadence-python-client"
+            )
+            error = e
         except Exception as e:
-            _logger.exception("Activity failed")
-            await self._report_failure(task, e)
+            error = e
+        finally:
+            emitter.histogram(
+                ACTIVITY_EXECUTION_LATENCY, time.monotonic_ns() - exec_start_ns
+            )
+
+        now = Timestamp()
+        now.GetCurrentTime()
+        e2e_latency_ns = duration_between_ns(task.scheduled_time, now)
+        if e2e_latency_ns is None:
+            _logger.warning(
+                "Activity task is missing scheduled_time; skipping end-to-end latency"
+            )
+            e2e_latency_ns = -1
+        if error is not None:
+            emitter.counter(ACTIVITY_EXECUTION_FAILED_COUNTER)
+            _logger.error("Activity failed", exc_info=error)
+            await self._report_failure(task, error, emitter, e2e_latency_ns)
+        else:
+            await self._report_success(task, result, emitter, e2e_latency_ns)
 
     def _create_context(
         self, task: PollForActivityTaskResponse
@@ -72,18 +137,22 @@ class ActivityExecutor:
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:
             return _Context(self._client, info, activity_def, heartbeat_sender)
-        else:
-            return _SyncContext(
-                self._client,
-                info,
-                activity_def,
-                self._thread_pool,
-                heartbeat_sender,
-            )
+        return _SyncContext(
+            self._client,
+            info,
+            activity_def,
+            self._thread_pool,
+            heartbeat_sender,
+        )
 
     async def _report_failure(
-        self, task: PollForActivityTaskResponse, error: Exception
+        self,
+        task: PollForActivityTaskResponse,
+        error: Exception,
+        emitter: MetricsEmitter,
+        e2e_latency_ns: int,
     ):
+        resp_start_ns = time.monotonic_ns()
         try:
             await self._client.worker_stub.RespondActivityTaskFailed(
                 RespondActivityTaskFailedRequest(
@@ -92,12 +161,51 @@ class ActivityExecutor:
                     identity=self._identity,
                 )
             )
+            emitter.counter(ACTIVITY_TASK_FAILED_COUNTER)
+            if e2e_latency_ns >= 0:
+                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency_ns)
         except Exception:
+            emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
             _logger.exception("Exception reporting activity failure")
+        finally:
+            emitter.histogram(
+                ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+            )
 
-    async def _report_success(self, task: PollForActivityTaskResponse, result: Any):
+    async def _report_cancelled(
+        self,
+        task: PollForActivityTaskResponse,
+        details: list[Any] | None,
+        emitter: MetricsEmitter,
+    ) -> None:
+        as_payload = self._data_converter.to_data(details) if details else Payload()
+        resp_start_ns = time.monotonic_ns()
+        try:
+            await self._client.worker_stub.RespondActivityTaskCanceled(
+                RespondActivityTaskCanceledRequest(
+                    task_token=task.task_token,
+                    details=as_payload,
+                    identity=self._identity,
+                )
+            )
+            emitter.counter(ACTIVITY_TASK_CANCELED_COUNTER)
+        except Exception:
+            emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
+            _logger.exception("Exception reporting activity cancelled")
+        finally:
+            emitter.histogram(
+                ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+            )
+
+    async def _report_success(
+        self,
+        task: PollForActivityTaskResponse,
+        result: Any,
+        emitter: MetricsEmitter,
+        e2e_latency_ns: int,
+    ):
         as_payload = self._data_converter.to_data([result])
-
+        resp_start_ns = time.monotonic_ns()
         try:
             await self._client.worker_stub.RespondActivityTaskCompleted(
                 RespondActivityTaskCompletedRequest(
@@ -106,8 +214,16 @@ class ActivityExecutor:
                     identity=self._identity,
                 )
             )
+            emitter.counter(ACTIVITY_TASK_COMPLETED_COUNTER)
+            if e2e_latency_ns >= 0:
+                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency_ns)
         except Exception:
+            emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
             _logger.exception("Exception reporting activity complete")
+        finally:
+            emitter.histogram(
+                ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+            )
 
     def _create_info(self, task: PollForActivityTaskResponse) -> ActivityInfo:
         return ActivityInfo(

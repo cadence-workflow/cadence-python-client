@@ -328,6 +328,19 @@ class WorkflowEngine:
         self._workflow_instance.request_cancel(info)
 
 
+def _outcome_from_decision(decision: Decision) -> Optional[str]:
+    attr = decision.WhichOneof("attributes")
+    if attr == "complete_workflow_execution_decision_attributes":
+        return "completed"
+    if attr == "fail_workflow_execution_decision_attributes":
+        return "failed"
+    if attr == "cancel_workflow_execution_decision_attributes":
+        return "canceled"
+    if attr == "continue_as_new_workflow_execution_decision_attributes":
+        return "continue_as_new"
+    return None
+
+
 def _failure_from_exception(e: Exception) -> Failure:
     stacktrace = "".join(traceback.format_exception(e))
 

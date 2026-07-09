@@ -82,7 +82,7 @@ class DecisionWorker:
             raise
 
     async def _poll(self) -> Optional[PollForDecisionTaskResponse]:
-        async with self._poll_metrics.track() as start:
+        async with self._poll_metrics.track():
             task: PollForDecisionTaskResponse = (
                 await self._client.worker_stub.PollForDecisionTask(
                     PollForDecisionTaskRequest(
@@ -96,7 +96,7 @@ class DecisionWorker:
                     timeout=_LONG_POLL_TIMEOUT.total_seconds(),
                 )
             )
-            self._poll_metrics.record_result(start, task)
+            self._poll_metrics.record_result(task)
             return task if (task and task.task_token) else None
 
     async def _execute(self, task: PollForDecisionTaskResponse) -> None:

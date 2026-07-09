@@ -95,3 +95,29 @@ async def test_heartbeat_details_not_updated_on_failure(
 
     details = sender.get_details(str)
     assert details == ["old"]
+
+
+async def test_heartbeat_returns_true_when_cancel_requested(sender, worker_stub):
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    assert await sender.send_heartbeat() is True
+
+
+async def test_heartbeat_returns_false_by_default(sender):
+    assert await sender.send_heartbeat() is False
+
+
+async def test_heartbeat_returns_false_on_rpc_failure(worker_stub, data_converter):
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        side_effect=Exception("rpc error")
+    )
+    sender = _HeartbeatSender(
+        worker_stub=worker_stub,
+        data_converter=data_converter,
+        task_token=b"task_token",
+        identity="test-identity",
+        previous_details=Payload(),
+    )
+    assert await sender.send_heartbeat() is False

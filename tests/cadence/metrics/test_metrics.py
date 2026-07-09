@@ -73,11 +73,11 @@ class TestDurationMetrics:
         assert duration_between_ns(_timestamp(), _timestamp(seconds=1)) is None
         assert duration_between_ns(_timestamp(seconds=1), _timestamp()) is None
 
-    def test_duration_between_ns_clamps_clock_skew(self):
+    def test_duration_between_ns_preserves_clock_skew(self):
         assert (
             duration_between_ns(
                 _timestamp(seconds=2),
                 _timestamp(seconds=1),
             )
-            == 0
+            == -1_000_000_000
         )

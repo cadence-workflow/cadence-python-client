@@ -76,7 +76,7 @@ def _mock_client() -> Mock:
     return client
 
 
-def _make_task(scheduled_secs: int = 0) -> PollForActivityTaskResponse:
+def _make_task(scheduled_secs: int = 1) -> PollForActivityTaskResponse:
     task = PollForActivityTaskResponse(
         task_token=b"token",
         activity_id="act-1",
@@ -146,7 +146,7 @@ class TestActivityExecutionSuccess:
         assert 1e9 < e2e_call.args[1] < 30e9
 
     @pytest.mark.asyncio
-    async def test_no_end_to_end_latency_when_scheduled_time_zero(self):
+    async def test_skips_end_to_end_latency_when_scheduled_time_is_missing(self):
         emitter = _mock_emitter()
         reg = Registry()
 
@@ -156,6 +156,21 @@ class TestActivityExecutionSuccess:
 
         executor = _make_executor(emitter, reg)
         await executor.execute(_make_task(scheduled_secs=0))
+
+        histogram_names = [c.args[0] for c in _tagged(emitter).histogram.call_args_list]
+        assert ACTIVITY_END_TO_END_LATENCY not in histogram_names
+
+    @pytest.mark.asyncio
+    async def test_skips_end_to_end_latency_when_scheduled_time_is_in_the_future(self):
+        emitter = _mock_emitter()
+        reg = Registry()
+
+        @reg.activity(name=ACTIVITY_TYPE)
+        async def my_activity():
+            return "ok"
+
+        executor = _make_executor(emitter, reg)
+        await executor.execute(_make_task(scheduled_secs=int(time.time()) + 60))
 
         histogram_names = [c.args[0] for c in _tagged(emitter).histogram.call_args_list]
         assert ACTIVITY_END_TO_END_LATENCY not in histogram_names

@@ -85,6 +85,11 @@ class ActivityExecutor:
         now = Timestamp()
         now.GetCurrentTime()
         e2e_latency_ns = duration_between_ns(task.scheduled_time, now)
+        if e2e_latency_ns is None:
+            _logger.warning(
+                "Activity task is missing scheduled_time; skipping end-to-end latency"
+            )
+            e2e_latency_ns = -1
         if error is not None:
             emitter.counter(ACTIVITY_EXECUTION_FAILED_COUNTER)
             _logger.error("Activity failed", exc_info=error)
@@ -126,7 +131,7 @@ class ActivityExecutor:
         task: PollForActivityTaskResponse,
         error: Exception,
         emitter: MetricsEmitter,
-        e2e_latency_ns: Optional[int],
+        e2e_latency_ns: int,
     ):
         resp_start_ns = time.monotonic_ns()
         try:
@@ -138,7 +143,7 @@ class ActivityExecutor:
                 )
             )
             emitter.counter(ACTIVITY_TASK_FAILED_COUNTER)
-            if e2e_latency_ns is not None:
+            if e2e_latency_ns >= 0:
                 emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency_ns)
         except Exception:
             emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
@@ -153,7 +158,7 @@ class ActivityExecutor:
         task: PollForActivityTaskResponse,
         result: Any,
         emitter: MetricsEmitter,
-        e2e_latency_ns: Optional[int],
+        e2e_latency_ns: int,
     ):
         as_payload = self._data_converter.to_data([result])
         resp_start_ns = time.monotonic_ns()
@@ -166,7 +171,7 @@ class ActivityExecutor:
                 )
             )
             emitter.counter(ACTIVITY_TASK_COMPLETED_COUNTER)
-            if e2e_latency_ns is not None:
+            if e2e_latency_ns >= 0:
                 emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency_ns)
         except Exception:
             emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)

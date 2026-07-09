@@ -329,7 +329,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             now = Timestamp()
             now.GetCurrentTime()
             e2e_latency_ns = duration_between_ns(workflow_events[0].event_time, now)
-            if e2e_latency_ns is not None:
+            if e2e_latency_ns is not None and e2e_latency_ns >= 0:
                 emitter.histogram(WORKFLOW_END_TO_END_LATENCY, e2e_latency_ns)
 
     async def _respond_decision_task_completed(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from asyncio import get_running_loop
-from datetime import timedelta
+from datetime import datetime, timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
@@ -45,7 +45,7 @@ class Context(WorkflowContext):
     ):
         self._info = info
         self._replay_mode = True
-        self._replay_current_time_milliseconds: Optional[int] = None
+        self._replay_current_time: Optional[datetime] = None
         self._decision_manager = decision_manager
         self._cancellation_info: WorkflowCancellationInfo | None = None
 
@@ -100,13 +100,21 @@ class Context(WorkflowContext):
             domain=self.info().workflow_domain,
             task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
             input=activity_input,
-            schedule_to_close_timeout=_round_to_nearest_second(schedule_to_close),
-            schedule_to_start_timeout=_round_to_nearest_second(schedule_to_start),
-            start_to_close_timeout=_round_to_nearest_second(start_to_close),
-            heartbeat_timeout=_round_to_nearest_second(heartbeat),
             retry_policy=retry_policy_to_proto(opts.get("retry_policy")),
             header=None,
             request_local_dispatch=False,
+        )
+        schedule_attributes.schedule_to_close_timeout.FromTimedelta(
+            _round_to_nearest_second(schedule_to_close)
+        )
+        schedule_attributes.schedule_to_start_timeout.FromTimedelta(
+            _round_to_nearest_second(schedule_to_start)
+        )
+        schedule_attributes.start_to_close_timeout.FromTimedelta(
+            _round_to_nearest_second(start_to_close)
+        )
+        schedule_attributes.heartbeat_timeout.FromTimedelta(
+            _round_to_nearest_second(heartbeat)
         )
 
         future = self._decision_manager.schedule_activity(schedule_attributes)
@@ -196,13 +204,15 @@ class Context(WorkflowContext):
             workflow_type=WorkflowType(name=workflow_type),
             task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
             input=child_input,
-            execution_start_to_close_timeout=_round_to_nearest_second(
-                execution_timeout
-            ),
-            task_start_to_close_timeout=_round_to_nearest_second(task_timeout),
             parent_close_policy=parent_close_policy,
             workflow_id_reuse_policy=workflow_id_reuse_policy,
             retry_policy=retry_policy_to_proto(kwargs.get("retry_policy")),
+        )
+        schedule_attributes.execution_start_to_close_timeout.FromTimedelta(
+            _round_to_nearest_second(execution_timeout)
+        )
+        schedule_attributes.task_start_to_close_timeout.FromTimedelta(
+            _round_to_nearest_second(task_timeout)
         )
 
         cron_schedule = kwargs.get("cron_schedule")
@@ -244,11 +254,9 @@ class Context(WorkflowContext):
     async def start_timer(self, duration: timedelta):
         if duration.total_seconds() <= 0:  # shortcut
             return
-        future = self._decision_manager.start_timer(
-            StartTimerDecisionAttributes(
-                start_to_fire_timeout=duration,
-            )
-        )
+        attributes = StartTimerDecisionAttributes()
+        attributes.start_to_fire_timeout.FromTimedelta(duration)
+        future = self._decision_manager.start_timer(attributes)
         await future
 
     def set_replay_mode(self, replay: bool) -> None:
@@ -259,13 +267,13 @@ class Context(WorkflowContext):
         """Check if the workflow is currently in replay mode."""
         return self._replay_mode
 
-    def set_replay_current_time_milliseconds(self, time_millis: int) -> None:
-        """Set the current replay time in milliseconds."""
-        self._replay_current_time_milliseconds = time_millis
+    def set_replay_current_time(self, current_time: datetime) -> None:
+        """Set the current replay timestamp."""
+        self._replay_current_time = current_time
 
-    def get_replay_current_time_milliseconds(self) -> Optional[int]:
-        """Get the current replay time in milliseconds."""
-        return self._replay_current_time_milliseconds
+    def get_replay_current_time(self) -> Optional[datetime]:
+        """Get the current replay timestamp."""
+        return self._replay_current_time
 
     async def wait_condition(self, predicate: Callable[[], bool]) -> None:
         loop = cast(DeterministicEventLoop, get_running_loop())

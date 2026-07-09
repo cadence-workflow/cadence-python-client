@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Callable, Any, cast
 
 from grpc import StatusCode
@@ -18,15 +19,18 @@ RETRYABLE_CODES = {
 # No expiration interval, use the GRPC timeout value instead
 @dataclass
 class ExponentialRetryPolicy:
-    initial_interval: float
+    initial_interval: timedelta
     backoff_coefficient: float
-    max_interval: float
-    max_attempts: float
+    max_interval: timedelta
+    max_attempts: int
 
     def next_delay(
-        self, attempts: int, elapsed: float, expiration: float
-    ) -> float | None:
-        if elapsed >= expiration:
+        self,
+        attempts: int,
+        elapsed: timedelta,
+        expiration: timedelta | None,
+    ) -> timedelta | None:
+        if expiration is not None and elapsed >= expiration:
             return None
         if self.max_attempts != 0 and attempts >= self.max_attempts:
             return None
@@ -35,14 +39,17 @@ class ExponentialRetryPolicy:
             self.initial_interval * pow(self.backoff_coefficient, attempts - 1),
             self.max_interval,
         )
-        if (elapsed + backoff) >= expiration:
+        if expiration is not None and (elapsed + backoff) >= expiration:
             return None
 
         return backoff
 
 
 DEFAULT_RETRY_POLICY = ExponentialRetryPolicy(
-    initial_interval=0.02, backoff_coefficient=1.2, max_interval=6, max_attempts=0
+    initial_interval=timedelta(milliseconds=20),
+    backoff_coefficient=1.2,
+    max_interval=timedelta(seconds=6),
+    max_attempts=0,
 )
 GET_WORKFLOW_HISTORY = b"/uber.cadence.api.v1.WorkflowAPI/GetWorkflowExecutionHistory"
 
@@ -60,19 +67,23 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
     ) -> Any:
         loop = asyncio.get_running_loop()
         expiration_interval = (
-            client_call_details.timeout
+            timedelta(seconds=client_call_details.timeout)
             if client_call_details.timeout is not None
-            else float("inf")
+            else None
         )
         start_time = loop.time()
-        deadline = start_time + expiration_interval
 
         attempts = 0
         while True:
-            remaining = deadline - loop.time()
+            elapsed = timedelta(seconds=loop.time() - start_time)
+            remaining = (
+                expiration_interval - elapsed
+                if expiration_interval is not None
+                else None
+            )
             call_details = ClientCallDetails(
                 method=client_call_details.method,
-                timeout=remaining,
+                timeout=remaining.total_seconds() if remaining is not None else None,
                 metadata=client_call_details.metadata,
                 credentials=client_call_details.credentials,
                 wait_for_ready=client_call_details.wait_for_ready,
@@ -88,14 +99,14 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
                 err = e
 
             attempts += 1
-            elapsed = loop.time() - start_time
+            elapsed = timedelta(seconds=loop.time() - start_time)
             backoff = self._retry_policy.next_delay(
                 attempts, elapsed, expiration_interval
             )
             if not is_retryable(err, client_call_details) or backoff is None:
                 break
 
-            await asyncio.sleep(backoff)
+            await asyncio.sleep(backoff.total_seconds())
 
         # On policy expiration, return the most recent UnaryUnaryCall. It has the error we want
         return rpc_call

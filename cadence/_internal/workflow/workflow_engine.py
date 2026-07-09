@@ -167,16 +167,13 @@ class WorkflowEngine:
                     "workflow_id": ctx.info().workflow_id,
                     "markers_count": len(decision_events.markers),
                     "replay_mode": decision_events.replay,
-                    "replay_time": decision_events.replay_current_time_milliseconds,
+                    "replay_time": decision_events.replay_current_time,
                 },
             )
 
             # Update context with replay information
             ctx.set_replay_mode(decision_events.replay)
-            if decision_events.replay_current_time_milliseconds:
-                ctx.set_replay_current_time_milliseconds(
-                    decision_events.replay_current_time_milliseconds
-                )
+            ctx.set_replay_current_time(decision_events.replay_current_time)
             with self._decision_manager.track_nondeterminism(
                 decision_events.replay, decision_events.output
             ):

@@ -2,7 +2,6 @@ import asyncio
 import time
 from datetime import timedelta
 
-import pytest
 
 from cadence import workflow, Registry, activity
 from cadence.error import ActivityCancelledError
@@ -46,14 +45,11 @@ class HeartbeatWorkflow:
 
 
 @registry.activity()
-def sync_wait_cancel_activity(timeout_kind: str) -> str:
-    """Sync activity using ``wait_for_cancelled`` with timedelta or float timeouts."""
+def sync_wait_cancel_activity() -> str:
+    """Sync activity using ``wait_for_cancelled`` with a typed timeout."""
     while True:
         activity.heartbeat("waiting")
-        if timeout_kind == "timedelta":
-            cancelled = activity.wait_for_cancelled(timedelta(milliseconds=300))
-        else:
-            cancelled = activity.wait_for_cancelled(0.3)
+        cancelled = activity.wait_for_cancelled(timedelta(milliseconds=300))
         if cancelled:
             raise ActivityCancelledError("bye")
         time.sleep(0.05)
@@ -62,13 +58,13 @@ def sync_wait_cancel_activity(timeout_kind: str) -> str:
 @registry.workflow()
 class SyncWaitForCancelledWorkflow:
     @workflow.run
-    async def run(self, timeout_kind: str) -> str:
+    async def run(self) -> str:
         activity_task = asyncio.create_task(
             sync_wait_cancel_activity.with_options(
                 schedule_to_close_timeout=timedelta(seconds=30),
                 start_to_close_timeout=timedelta(seconds=30),
                 heartbeat_timeout=timedelta(seconds=2),
-            ).execute(timeout_kind)
+            ).execute()
         )
 
         await workflow.sleep(timedelta(seconds=1))
@@ -242,15 +238,11 @@ async def test_activity_cancellation_is_delivered_by_heartbeat(
         assert cancel_requested_events
 
 
-@pytest.mark.parametrize("timeout_kind", ["timedelta", "float"])
-async def test_sync_wait_for_cancelled_with_timedelta_or_float_timeout(
-    helper: CadenceHelper, timeout_kind: str
-):
-    """Integration: sync ``wait_for_cancelled`` accepts timedelta or float timeouts."""
+async def test_sync_wait_for_cancelled(helper: CadenceHelper):
+    """Integration: sync ``wait_for_cancelled`` accepts a typed timeout."""
     async with helper.worker(registry) as worker:
         execution = await worker.client.start_workflow(
             "SyncWaitForCancelledWorkflow",
-            timeout_kind,
             task_list=worker.task_list,
             execution_start_to_close_timeout=timedelta(seconds=30),
         )

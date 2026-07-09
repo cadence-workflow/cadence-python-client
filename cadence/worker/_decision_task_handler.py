@@ -1,14 +1,14 @@
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 import logging
-from typing import Optional
-
-from google.protobuf.timestamp_pb2 import Timestamp
+from typing import Optional, Sequence
 
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.workflow.memo import memo_from_proto
 from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.decision_pb2 import Decision
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
     RespondDecisionTaskCompletedRequest,
@@ -21,7 +21,11 @@ from cadence.api.v1.query_pb2 import (
 )
 from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.client import Client
-from cadence.metrics import duration_between_ns, MetricsEmitter
+from cadence.metrics import (
+    duration_between,
+    duration_from_nanoseconds,
+    MetricsEmitter,
+)
 from cadence.metrics.constants import (
     DECISION_EXECUTION_FAILED_COUNTER,
     DECISION_EXECUTION_LATENCY,
@@ -48,6 +52,13 @@ from cadence.workflow import WorkflowInfo
 from cadence.worker._registry import Registry
 
 logger = logging.getLogger(__name__)
+
+_WORKFLOW_OUTCOME_COUNTERS = {
+    "completed": WORKFLOW_COMPLETED_COUNTER,
+    "failed": WORKFLOW_FAILED_COUNTER,
+    "canceled": WORKFLOW_CANCELED_COUNTER,
+    "continue_as_new": WORKFLOW_CONTINUE_AS_NEW_COUNTER,
+}
 
 
 class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
@@ -199,7 +210,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             raise
         finally:
             emitter.histogram(
-                DECISION_EXECUTION_LATENCY, time.monotonic_ns() - exec_start_ns
+                DECISION_EXECUTION_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - exec_start_ns),
             )
         if is_query_task:
             if not decision_result.query_result:
@@ -207,16 +219,13 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             await self._respond_query_task_completed(task, decision_result.query_result)
         else:
             await self._respond_decision_task_completed(task, decision_result, emitter)
-            outcome = next(
-                (
-                    o
-                    for d in decision_result.decisions
-                    if (o := _outcome_from_decision(d))
+            self._emit_workflow_outcome_metrics(
+                decision_result.decisions,
+                duration_between(
+                    workflow_events[0].event_time, datetime.now(timezone.utc)
                 ),
-                None,
+                emitter,
             )
-            if outcome is not None:
-                self._emit_workflow_outcome_metrics(outcome, workflow_events, emitter)
 
         logger.info(
             "Successfully processed decision task",
@@ -314,23 +323,25 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
 
     def _emit_workflow_outcome_metrics(
-        self, outcome: str, workflow_events: list, emitter: MetricsEmitter
+        self,
+        decisions: Sequence[Decision],
+        workflow_duration: timedelta | None,
+        emitter: MetricsEmitter,
     ) -> None:
-        counter_map = {
-            "completed": WORKFLOW_COMPLETED_COUNTER,
-            "failed": WORKFLOW_FAILED_COUNTER,
-            "canceled": WORKFLOW_CANCELED_COUNTER,
-            "continue_as_new": WORKFLOW_CONTINUE_AS_NEW_COUNTER,
-        }
-        if counter := counter_map.get(outcome):
-            emitter.counter(counter)
+        outcome = next(
+            (
+                outcome
+                for decision in decisions
+                if (outcome := _outcome_from_decision(decision))
+            ),
+            None,
+        )
+        if outcome is None:
+            return
 
-        if workflow_events:
-            now = Timestamp()
-            now.GetCurrentTime()
-            e2e_latency_ns = duration_between_ns(workflow_events[0].event_time, now)
-            if e2e_latency_ns is not None and e2e_latency_ns >= 0:
-                emitter.histogram(WORKFLOW_END_TO_END_LATENCY, e2e_latency_ns)
+        emitter.counter(_WORKFLOW_OUTCOME_COUNTERS[outcome])
+        if workflow_duration is not None and workflow_duration >= timedelta(0):
+            emitter.histogram(WORKFLOW_END_TO_END_LATENCY, workflow_duration)
 
     async def _respond_decision_task_completed(
         self,
@@ -404,7 +415,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             raise
         finally:
             emitter.histogram(
-                DECISION_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+                DECISION_RESPONSE_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - resp_start_ns),
             )
 
     async def _respond_query_task_completed(

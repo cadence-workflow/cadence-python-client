@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Dict, Optional, Sequence
 
 from prometheus_client import (  # type: ignore[import-not-found]
@@ -178,17 +179,18 @@ class PrometheusMetrics(MetricsEmitter):
             logger.error(f"Failed to send gauge {key}: {e}")
 
     def histogram(
-        self, key: str, value: float, tags: Optional[Dict[str, str]] = None
+        self, key: str, value: timedelta, tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Send a histogram metric."""
+        """Send a duration histogram metric."""
         try:
             histogram = self._get_or_create_histogram(key, tags)
             merged_tags = self._merge_labels(tags)
+            value_ns = _timedelta_to_nanoseconds(value)
 
             if merged_tags:
-                histogram.labels(**merged_tags).observe(value)
+                histogram.labels(**merged_tags).observe(value_ns)
             else:
-                histogram.observe(value)
+                histogram.observe(value_ns)
 
         except Exception as e:
             logger.error(f"Failed to send histogram {key}: {e}")
@@ -201,3 +203,12 @@ class PrometheusMetrics(MetricsEmitter):
         except Exception as e:
             logger.error(f"Failed to generate metrics text: {e}")
             return ""
+
+
+def _timedelta_to_nanoseconds(value: timedelta) -> int:
+    """Convert a Python duration to the nanoseconds used by Cadence metrics."""
+    return (
+        value.days * 86_400_000_000_000
+        + value.seconds * 1_000_000_000
+        + value.microseconds * 1_000
+    )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Iterator, List, Optional
+from typing import Iterator, List, Optional
 
 from cadence.api.v1.history_pb2 import HistoryEvent
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
@@ -10,19 +10,17 @@ from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryResponse,
 )
 from cadence.client import Client
+from cadence.metrics import MetricsEmitter, duration_from_nanoseconds
 from cadence.metrics.constants import (
     WORKFLOW_GET_HISTORY_COUNTER,
     WORKFLOW_GET_HISTORY_LATENCY,
 )
 
-if TYPE_CHECKING:
-    from cadence.metrics import MetricsEmitter
-
 
 async def iterate_history_events(
     decision_task: PollForDecisionTaskResponse,
     client: Client,
-    metrics_emitter: Optional[MetricsEmitter] = None,
+    metrics_emitter: MetricsEmitter,
 ):
     PAGE_SIZE = 1000
 
@@ -46,11 +44,11 @@ async def iterate_history_events(
                 )
             )
         )
-        if metrics_emitter is not None:
-            metrics_emitter.counter(WORKFLOW_GET_HISTORY_COUNTER)
-            metrics_emitter.histogram(
-                WORKFLOW_GET_HISTORY_LATENCY, time.monotonic_ns() - fetch_start_ns
-            )
+        metrics_emitter.counter(WORKFLOW_GET_HISTORY_COUNTER)
+        metrics_emitter.histogram(
+            WORKFLOW_GET_HISTORY_LATENCY,
+            duration_from_nanoseconds(time.monotonic_ns() - fetch_start_ns),
+        )
         current_page = response.history.events
         next_page_token = response.next_page_token
 

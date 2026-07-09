@@ -7,6 +7,7 @@ from cadence.api.v1.history_pb2 import HistoryEvent, History
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
 from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryResponse
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
+from cadence.metrics import NoOpMetricsEmitter
 
 
 @pytest.fixture
@@ -44,7 +45,10 @@ async def test_iterate_history_events_single_page_no_next_token(
 
     # Iterate and collect events
     result_events = [
-        e async for e in iterate_history_events(decision_task, mock_client)
+        e
+        async for e in iterate_history_events(
+            decision_task, mock_client, NoOpMetricsEmitter()
+        )
     ]
 
     # Verify all events were returned
@@ -70,7 +74,10 @@ async def test_iterate_history_events_empty_events(
 
     # Iterate and collect events
     result_events = [
-        e async for e in iterate_history_events(decision_task, mock_client)
+        e
+        async for e in iterate_history_events(
+            decision_task, mock_client, NoOpMetricsEmitter()
+        )
     ]
 
     # Verify no events were returned
@@ -111,7 +118,10 @@ async def test_iterate_history_events_multiple_pages(
 
     # Iterate and collect events
     result_events = [
-        e async for e in iterate_history_events(decision_task, mock_client)
+        e
+        async for e in iterate_history_events(
+            decision_task, mock_client, NoOpMetricsEmitter()
+        )
     ]
 
     # Verify all events from all pages were returned
@@ -168,7 +178,10 @@ async def test_iterate_history_events_single_page_with_next_token_then_empty(
 
     # Iterate and collect events
     result_events = [
-        e async for e in iterate_history_events(decision_task, mock_client)
+        e
+        async for e in iterate_history_events(
+            decision_task, mock_client, NoOpMetricsEmitter()
+        )
     ]
 
     # Verify only first page events were returned

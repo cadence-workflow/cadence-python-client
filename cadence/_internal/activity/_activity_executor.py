@@ -1,13 +1,12 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from logging import getLogger
 import time
 from traceback import format_exception
 from typing import Any, Callable, Optional, Union, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
-from google.protobuf.timestamp_pb2 import Timestamp
-
 from cadence._internal.activity._context import _Context, _SyncContext
 from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
 from cadence._internal.activity._heartbeat import _HeartbeatSender
@@ -20,7 +19,12 @@ from cadence.api.v1.service_worker_pb2 import (
     RespondActivityTaskCompletedRequest,
 )
 from cadence.client import Client
-from cadence.metrics import duration_between_ns, MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics import (
+    duration_between,
+    duration_from_nanoseconds,
+    MetricsEmitter,
+    NoOpMetricsEmitter,
+)
 from cadence.metrics.constants import (
     ACTIVITY_END_TO_END_LATENCY,
     ACTIVITY_EXECUTION_FAILED_COUNTER,
@@ -99,23 +103,21 @@ class ActivityExecutor:
             error = e
         finally:
             emitter.histogram(
-                ACTIVITY_EXECUTION_LATENCY, time.monotonic_ns() - exec_start_ns
+                ACTIVITY_EXECUTION_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - exec_start_ns),
             )
 
-        now = Timestamp()
-        now.GetCurrentTime()
-        e2e_latency_ns = duration_between_ns(task.scheduled_time, now)
-        if e2e_latency_ns is None:
+        e2e_latency = duration_between(task.scheduled_time, datetime.now(timezone.utc))
+        if e2e_latency is None:
             _logger.warning(
                 "Activity task is missing scheduled_time; skipping end-to-end latency"
             )
-            e2e_latency_ns = -1
         if error is not None:
             emitter.counter(ACTIVITY_EXECUTION_FAILED_COUNTER)
             _logger.error("Activity failed", exc_info=error)
-            await self._report_failure(task, error, emitter, e2e_latency_ns)
+            await self._report_failure(task, error, emitter, e2e_latency)
         else:
-            await self._report_success(task, result, emitter, e2e_latency_ns)
+            await self._report_success(task, result, emitter, e2e_latency)
 
     def _create_context(
         self, task: PollForActivityTaskResponse
@@ -150,7 +152,7 @@ class ActivityExecutor:
         task: PollForActivityTaskResponse,
         error: Exception,
         emitter: MetricsEmitter,
-        e2e_latency_ns: int,
+        e2e_latency: timedelta | None,
     ):
         resp_start_ns = time.monotonic_ns()
         try:
@@ -162,14 +164,15 @@ class ActivityExecutor:
                 )
             )
             emitter.counter(ACTIVITY_TASK_FAILED_COUNTER)
-            if e2e_latency_ns >= 0:
-                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency_ns)
+            if e2e_latency is not None and e2e_latency >= timedelta(0):
+                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency)
         except Exception:
             emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
             _logger.exception("Exception reporting activity failure")
         finally:
             emitter.histogram(
-                ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+                ACTIVITY_RESPONSE_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - resp_start_ns),
             )
 
     async def _report_cancelled(
@@ -194,7 +197,8 @@ class ActivityExecutor:
             _logger.exception("Exception reporting activity cancelled")
         finally:
             emitter.histogram(
-                ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+                ACTIVITY_RESPONSE_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - resp_start_ns),
             )
 
     async def _report_success(
@@ -202,7 +206,7 @@ class ActivityExecutor:
         task: PollForActivityTaskResponse,
         result: Any,
         emitter: MetricsEmitter,
-        e2e_latency_ns: int,
+        e2e_latency: timedelta | None,
     ):
         as_payload = self._data_converter.to_data([result])
         resp_start_ns = time.monotonic_ns()
@@ -215,14 +219,15 @@ class ActivityExecutor:
                 )
             )
             emitter.counter(ACTIVITY_TASK_COMPLETED_COUNTER)
-            if e2e_latency_ns >= 0:
-                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency_ns)
+            if e2e_latency is not None and e2e_latency >= timedelta(0):
+                emitter.histogram(ACTIVITY_END_TO_END_LATENCY, e2e_latency)
         except Exception:
             emitter.counter(ACTIVITY_RESPONSE_FAILED_COUNTER)
             _logger.exception("Exception reporting activity complete")
         finally:
             emitter.histogram(
-                ACTIVITY_RESPONSE_LATENCY, time.monotonic_ns() - resp_start_ns
+                ACTIVITY_RESPONSE_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - resp_start_ns),
             )
 
     def _create_info(self, task: PollForActivityTaskResponse) -> ActivityInfo:

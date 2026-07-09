@@ -496,7 +496,7 @@ async def test_activity_sync_wait_for_cancelled(client):
     @reg.activity(name="activity_type")
     def activity_fn():
         activity.heartbeat("progress")
-        if activity.wait_for_cancelled(timeout=5):
+        if activity.wait_for_cancelled(timeout=timedelta(seconds=5)):
             raise ActivityCancelledError("cleanup")
         raise AssertionError("expected activity cancellation")
 
@@ -529,7 +529,9 @@ async def test_activity_sync_raise_if_cancelled(client):
     @reg.activity(name="activity_type")
     def activity_fn():
         activity.heartbeat("progress")
-        activity.wait_for_cancelled(timeout=5)  # block until cancel event is set
+        activity.wait_for_cancelled(
+            timeout=timedelta(seconds=5)
+        )  # block until cancel event is set
         activity.raise_if_cancelled()
         raise AssertionError("expected cancellation")
 
@@ -562,7 +564,7 @@ async def test_activity_sync_api_raises_cancelled_after_cancel_request(client):
     @reg.activity(name="activity_type")
     def activity_fn():
         activity.heartbeat("progress")
-        assert activity.wait_for_cancelled(timeout=5)
+        assert activity.wait_for_cancelled(timeout=timedelta(seconds=5))
         activity.info()
         raise AssertionError("expected activity API to raise cancellation")
 

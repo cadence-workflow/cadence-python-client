@@ -1,7 +1,7 @@
 """Tests for decision task execution and workflow lifecycle metrics."""
 
 import asyncio
-import time
+from datetime import timedelta
 from typing import cast
 import pytest
 from unittest.mock import AsyncMock, Mock, PropertyMock, patch
@@ -383,9 +383,15 @@ class TestDecisionPanicAndLifecycleMetrics:
     def test_emits_completed_counter_for_completed_outcome(self):
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
-        events = [_make_started_event(event_time_seconds=0)]
-
-        handler._emit_workflow_outcome_metrics("completed", events, emitter)
+        handler._emit_workflow_outcome_metrics(
+            [
+                Decision(
+                    complete_workflow_execution_decision_attributes=CompleteWorkflowExecutionDecisionAttributes()
+                )
+            ],
+            None,
+            emitter,
+        )
 
         counter_names = [c.args[0] for c in emitter.counter.call_args_list]
         assert WORKFLOW_COMPLETED_COUNTER in counter_names
@@ -393,30 +399,56 @@ class TestDecisionPanicAndLifecycleMetrics:
     def test_emits_failed_counter_for_failed_outcome(self):
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
-        handler._emit_workflow_outcome_metrics("failed", [], emitter)
+        handler._emit_workflow_outcome_metrics(
+            [
+                Decision(
+                    fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes()
+                )
+            ],
+            None,
+            emitter,
+        )
         counter_names = [c.args[0] for c in emitter.counter.call_args_list]
         assert WORKFLOW_FAILED_COUNTER in counter_names
 
     def test_emits_canceled_counter_for_canceled_outcome(self):
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
-        handler._emit_workflow_outcome_metrics("canceled", [], emitter)
+        handler._emit_workflow_outcome_metrics(
+            [Decision(cancel_workflow_execution_decision_attributes={})],
+            None,
+            emitter,
+        )
         counter_names = [c.args[0] for c in emitter.counter.call_args_list]
         assert WORKFLOW_CANCELED_COUNTER in counter_names
 
     def test_emits_continue_as_new_counter(self):
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
-        handler._emit_workflow_outcome_metrics("continue_as_new", [], emitter)
+        handler._emit_workflow_outcome_metrics(
+            [
+                Decision(
+                    continue_as_new_workflow_execution_decision_attributes=ContinueAsNewWorkflowExecutionDecisionAttributes()
+                )
+            ],
+            None,
+            emitter,
+        )
         counter_names = [c.args[0] for c in emitter.counter.call_args_list]
         assert WORKFLOW_CONTINUE_AS_NEW_COUNTER in counter_names
 
     def test_emits_end_to_end_latency_when_event_time_set(self):
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
-        started = _make_started_event(event_time_seconds=int(time.time()) - 10)
-
-        handler._emit_workflow_outcome_metrics("completed", [started], emitter)
+        handler._emit_workflow_outcome_metrics(
+            [
+                Decision(
+                    complete_workflow_execution_decision_attributes=CompleteWorkflowExecutionDecisionAttributes()
+                )
+            ],
+            timedelta(seconds=10),
+            emitter,
+        )
 
         histogram_names = [c.args[0] for c in emitter.histogram.call_args_list]
         assert WORKFLOW_END_TO_END_LATENCY in histogram_names
@@ -425,14 +457,20 @@ class TestDecisionPanicAndLifecycleMetrics:
             for c in emitter.histogram.call_args_list
             if c.args[0] == WORKFLOW_END_TO_END_LATENCY
         )
-        assert 5e9 < latency_call.args[1] < 20e9
+        assert timedelta(seconds=5) < latency_call.args[1] < timedelta(seconds=20)
 
     def test_no_end_to_end_latency_when_event_time_zero(self):
         emitter = _mock_emitter()
         handler = _make_handler(emitter)
-        started = _make_started_event(event_time_seconds=0)
-
-        handler._emit_workflow_outcome_metrics("completed", [started], emitter)
+        handler._emit_workflow_outcome_metrics(
+            [
+                Decision(
+                    complete_workflow_execution_decision_attributes=CompleteWorkflowExecutionDecisionAttributes()
+                )
+            ],
+            None,
+            emitter,
+        )
 
         histogram_names = [c.args[0] for c in emitter.histogram.call_args_list]
         assert WORKFLOW_END_TO_END_LATENCY not in histogram_names

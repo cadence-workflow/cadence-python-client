@@ -130,13 +130,12 @@ def raise_if_cancelled() -> None:
         raise ActivityCancelledError()
 
 
-def wait_for_cancelled(timeout: timedelta | float | None = None) -> bool:
+def wait_for_cancelled(timeout: timedelta | None = None) -> bool:
     """Block until cancellation is requested for this sync activity.
 
     Args:
         timeout: Maximum time to wait. ``None`` waits indefinitely (the server's
             schedule-to-close or heartbeat timeout provides the eventual bound).
-            May be a ``timedelta`` or a number of seconds.
 
     Returns:
         ``True`` if cancellation was requested, ``False`` if the timeout elapsed.
@@ -166,7 +165,7 @@ class ActivityContext(ABC):
     def is_cancelled(self) -> bool: ...
 
     @abstractmethod
-    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool: ...
+    def wait_for_cancelled(self, timeout: timedelta | None = None) -> bool: ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:

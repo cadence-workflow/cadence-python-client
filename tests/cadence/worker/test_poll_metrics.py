@@ -203,7 +203,7 @@ class TestDecisionWorkerPollMetrics:
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert DECISION_SCHEDULED_TO_START_LATENCY in histogram_calls
         latency_call = histogram_calls[DECISION_SCHEDULED_TO_START_LATENCY]
-        assert latency_call.args[1] == 2_000_000_000
+        assert latency_call.args[1] == timedelta(seconds=2)
 
     @pytest.mark.asyncio
     async def test_no_scheduled_to_start_when_timestamps_zero(self):
@@ -412,10 +412,9 @@ class TestActivityWorkerPollMetrics:
 
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert ACTIVITY_SCHEDULED_TO_START_LATENCY in histogram_calls
-        assert (
-            histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1]
-            == 3_000_000_000
-        )
+        assert histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[
+            1
+        ] == timedelta(seconds=3)
 
     @pytest.mark.asyncio
     async def test_emits_scheduled_to_start_latency_when_only_nanos_set(self):
@@ -431,9 +430,9 @@ class TestActivityWorkerPollMetrics:
         await worker._poll()
 
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
-        assert (
-            histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] == 200_000_000
-        )
+        assert histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[
+            1
+        ] == timedelta(milliseconds=200)
 
     @pytest.mark.asyncio
     async def test_emits_transient_failed_counter_on_retryable_error(self):

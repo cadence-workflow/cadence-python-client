@@ -148,7 +148,7 @@ class _InMemoryActivityContext(ActivityContext):
     def is_cancelled(self) -> bool:
         return False
 
-    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool:
+    def wait_for_cancelled(self, timeout: timedelta | None = None) -> bool:
         return False
 
 

@@ -100,7 +100,7 @@ class _Context(ActivityContext):
     def is_cancelled(self) -> bool:
         return self._cancel_event.is_set()
 
-    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool:
+    def wait_for_cancelled(self, timeout: timedelta | None = None) -> bool:
         raise RuntimeError(
             "wait_for_cancelled is only supported in sync activities; "
             "handle asyncio.CancelledError in async activities instead"
@@ -156,11 +156,9 @@ class _SyncContext(_Context):
         except Exception:
             pass
 
-    def wait_for_cancelled(self, timeout: timedelta | float | None = None) -> bool:
+    def wait_for_cancelled(self, timeout: timedelta | None = None) -> bool:
         if timeout is None:
             sec: float | None = None
-        elif isinstance(timeout, timedelta):
-            sec = timeout.total_seconds()
         else:
-            sec = float(timeout)
+            sec = timeout.total_seconds()
         return self._sync_cancel_event.wait(sec)

@@ -8,7 +8,8 @@ from .histogram_buckets import (
     default_buckets_for_metric,
 )
 from .metrics import (
-    duration_between_ns,
+    duration_between,
+    duration_from_nanoseconds,
     MetricsEmitter,
     NoOpMetricsEmitter,
     MetricType,
@@ -21,7 +22,8 @@ __all__ = [
     "LOW_1MS_100S",
     "MID_1MS_24H",
     "default_buckets_for_metric",
-    "duration_between_ns",
+    "duration_between",
+    "duration_from_nanoseconds",
     "MetricsEmitter",
     "NoOpMetricsEmitter",
     "MetricType",

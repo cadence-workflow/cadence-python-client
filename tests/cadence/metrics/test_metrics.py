@@ -2,12 +2,18 @@
 
 from unittest.mock import Mock
 
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from cadence.metrics import (
+    duration_between_ns,
     MetricsEmitter,
     MetricType,
     NoOpMetricsEmitter,
 )
+
+
+def _timestamp(seconds: int = 0, nanos: int = 0) -> Timestamp:
+    return Timestamp(seconds=seconds, nanos=nanos)
 
 
 class TestMetricsEmitter:
@@ -51,3 +57,27 @@ class TestMetricType:
         assert MetricType.COUNTER.value == "counter"
         assert MetricType.GAUGE.value == "gauge"
         assert MetricType.HISTOGRAM.value == "histogram"
+
+
+class TestDurationMetrics:
+    def test_duration_between_ns_set_timestamps(self):
+        assert (
+            duration_between_ns(
+                _timestamp(seconds=10, nanos=100_000_000),
+                _timestamp(seconds=12, nanos=350_000_000),
+            )
+            == 2_250_000_000
+        )
+
+    def test_duration_between_ns_requires_both_timestamps(self):
+        assert duration_between_ns(_timestamp(), _timestamp(seconds=1)) is None
+        assert duration_between_ns(_timestamp(seconds=1), _timestamp()) is None
+
+    def test_duration_between_ns_clamps_clock_skew(self):
+        assert (
+            duration_between_ns(
+                _timestamp(seconds=2),
+                _timestamp(seconds=1),
+            )
+            == 0
+        )

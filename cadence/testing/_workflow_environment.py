@@ -250,6 +250,9 @@ class _InMemoryWorkflowContext(WorkflowContext):
         """
         self._env._enqueue_signal(workflow_id, signal_name, args)
 
+    def is_cancel_requested(self) -> bool:
+        return False
+
 
 class _Execution:
     """Holds the in-memory state machine for a single workflow execution."""

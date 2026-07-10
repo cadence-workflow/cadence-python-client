@@ -103,18 +103,10 @@ class Context(WorkflowContext):
             retry_policy=retry_policy_to_proto(opts.get("retry_policy")),
             header=None,
             request_local_dispatch=False,
-        )
-        schedule_attributes.schedule_to_close_timeout.FromTimedelta(
-            _round_to_nearest_second(schedule_to_close)
-        )
-        schedule_attributes.schedule_to_start_timeout.FromTimedelta(
-            _round_to_nearest_second(schedule_to_start)
-        )
-        schedule_attributes.start_to_close_timeout.FromTimedelta(
-            _round_to_nearest_second(start_to_close)
-        )
-        schedule_attributes.heartbeat_timeout.FromTimedelta(
-            _round_to_nearest_second(heartbeat)
+            schedule_to_close_timeout=_round_to_nearest_second(schedule_to_close),
+            schedule_to_start_timeout=_round_to_nearest_second(schedule_to_start),
+            start_to_close_timeout=_round_to_nearest_second(start_to_close),
+            heartbeat_timeout=_round_to_nearest_second(heartbeat),
         )
 
         future = self._decision_manager.schedule_activity(schedule_attributes)
@@ -207,12 +199,10 @@ class Context(WorkflowContext):
             parent_close_policy=parent_close_policy,
             workflow_id_reuse_policy=workflow_id_reuse_policy,
             retry_policy=retry_policy_to_proto(kwargs.get("retry_policy")),
-        )
-        schedule_attributes.execution_start_to_close_timeout.FromTimedelta(
-            _round_to_nearest_second(execution_timeout)
-        )
-        schedule_attributes.task_start_to_close_timeout.FromTimedelta(
-            _round_to_nearest_second(task_timeout)
+            execution_start_to_close_timeout=_round_to_nearest_second(
+                execution_timeout
+            ),
+            task_start_to_close_timeout=_round_to_nearest_second(task_timeout),
         )
 
         cron_schedule = kwargs.get("cron_schedule")

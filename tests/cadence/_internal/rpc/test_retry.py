@@ -6,7 +6,7 @@ import pytest
 from google.protobuf import any_pb2
 from google.rpc import status_pb2, code_pb2
 from grpc import server
-from grpc.aio import insecure_channel
+from grpc.aio import ClientCallDetails, insecure_channel
 from grpc_status.rpc_status import to_status
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
@@ -230,3 +230,44 @@ async def test_workflow_history(fake_service, case: str, expected_calls: int):
             )
 
         assert fake_service.counter == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_retry_interceptor_clamps_expired_timeout(monkeypatch):
+    class FakeLoop:
+        def __init__(self) -> None:
+            self._times = iter((0, 1))
+
+        def time(self) -> float:
+            return next(self._times)
+
+    class SuccessfulCall:
+        def __await__(self):
+            return self._wait().__await__()
+
+        async def _wait(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "cadence._internal.rpc.retry.asyncio.get_running_loop", lambda: FakeLoop()
+    )
+    timeouts: list[float | None] = []
+
+    async def continuation(call_details, request):
+        timeouts.append(call_details.timeout)
+        return SuccessfulCall()
+
+    result = await RetryInterceptor().intercept_unary_unary(
+        continuation,
+        ClientCallDetails(
+            method="/test",
+            timeout=timedelta(microseconds=1).total_seconds(),
+            metadata=None,
+            credentials=None,
+            wait_for_ready=None,
+        ),
+        None,
+    )
+
+    assert isinstance(result, SuccessfulCall)
+    assert timeouts == [0]

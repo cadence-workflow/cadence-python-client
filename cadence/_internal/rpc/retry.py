@@ -83,7 +83,9 @@ class RetryInterceptor(UnaryUnaryClientInterceptor):
             )
             call_details = ClientCallDetails(
                 method=client_call_details.method,
-                timeout=remaining.total_seconds() if remaining is not None else None,
+                timeout=max(remaining, timedelta(0)).total_seconds()
+                if remaining is not None
+                else None,
                 metadata=client_call_details.metadata,
                 credentials=client_call_details.credentials,
                 wait_for_ready=client_call_details.wait_for_ready,

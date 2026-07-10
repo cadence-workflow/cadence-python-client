@@ -1,6 +1,7 @@
 """Tests for activity execution and response metrics in ActivityExecutor."""
 
 import time
+from datetime import timedelta
 from typing import cast
 import pytest
 from unittest.mock import AsyncMock, Mock, PropertyMock
@@ -143,7 +144,7 @@ class TestActivityExecutionSuccess:
             for c in _tagged(emitter).histogram.call_args_list
             if c.args[0] == ACTIVITY_END_TO_END_LATENCY
         )
-        assert 1e9 < e2e_call.args[1] < 30e9
+        assert timedelta(seconds=1) < e2e_call.args[1] < timedelta(seconds=30)
 
     @pytest.mark.asyncio
     async def test_skips_end_to_end_latency_when_scheduled_time_is_missing(self):

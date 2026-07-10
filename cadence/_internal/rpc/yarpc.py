@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import Any, Callable
 
 from grpc.aio import Metadata
@@ -40,7 +41,8 @@ class YarpcMetadataInterceptor(UnaryUnaryClientInterceptor):
 
         return ClientCallDetails(
             method=client_call_details.method,
-            timeout=client_call_details.timeout or 60.0,
+            timeout=client_call_details.timeout
+            or timedelta(seconds=60).total_seconds(),
             metadata=metadata,
             credentials=client_call_details.credentials,
             wait_for_ready=client_call_details.wait_for_ready,

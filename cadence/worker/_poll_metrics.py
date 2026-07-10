@@ -4,6 +4,7 @@ import contextlib
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Protocol
 
 from google.protobuf import timestamp_pb2
@@ -11,7 +12,8 @@ from google.protobuf import timestamp_pb2
 from cadence._internal.rpc.retry import RETRYABLE_CODES
 from cadence.error import CadenceRpcError
 from cadence.metrics import (
-    duration_between_ns,
+    duration_between,
+    duration_from_nanoseconds,
     MetricsEmitter,
 )
 
@@ -48,7 +50,10 @@ class PollMetrics:
             self.emitter.counter(self.failed)
             raise
         finally:
-            self.emitter.histogram(self.latency, time.monotonic_ns() - start)
+            self.emitter.histogram(
+                self.latency,
+                duration_from_nanoseconds(time.monotonic_ns() - start),
+            )
 
     def record_result(self, task: PollTask) -> None:
         """Record succeed vs idle and optional schedule-to-start latency."""
@@ -56,6 +61,6 @@ class PollMetrics:
             self.emitter.counter(self.no_task)
             return
         self.emitter.counter(self.succeed)
-        latency_ns = duration_between_ns(task.scheduled_time, task.started_time)
-        if latency_ns is not None and latency_ns >= 0:
-            self.emitter.histogram(self.scheduled_to_start, latency_ns)
+        latency = duration_between(task.scheduled_time, task.started_time)
+        if latency is not None and latency >= timedelta(0):
+            self.emitter.histogram(self.scheduled_to_start, latency)

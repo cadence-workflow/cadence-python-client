@@ -58,6 +58,15 @@ class _BrokenPropagator:
         raise ValueError("cannot extract")
 
 
+class _ContextPropagationErrorPropagator:
+    def inject(self) -> Mapping[str, bytes]:
+        raise ContextPropagationError("propagator-specific failure")
+
+    @contextmanager
+    def extract(self, _headers: Mapping[str, bytes]) -> Iterator[None]:
+        yield
+
+
 class _RecordingPropagator(_StaticPropagator):
     def __init__(self, events: list[str], name: str) -> None:
         super().__init__({})
@@ -111,6 +120,12 @@ def test_injection_rejects_collisions_and_invalid_values() -> None:
 
     with pytest.raises(ContextPropagationError, match="inject failed"):
         context_header_from_propagators((_BrokenPropagator(),))
+
+    with pytest.raises(
+        ContextPropagationError, match="propagator-specific failure"
+    ) as error:
+        context_header_from_propagators((_ContextPropagationErrorPropagator(),))
+    assert str(error.value) == "propagator-specific failure"
 
 
 def test_scope_reverses_cleanup_and_wraps_propagator_errors() -> None:

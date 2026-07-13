@@ -32,6 +32,8 @@ def inject_context_fields(
     for propagator in propagators:
         try:
             emitted = propagator.inject()
+        except ContextPropagationError:
+            raise
         except Exception as exc:
             raise ContextPropagationError(
                 f"Context propagation inject failed for {type(propagator).__name__}"

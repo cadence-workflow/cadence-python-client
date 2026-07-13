@@ -111,7 +111,10 @@ def test_header_codec_preserves_raw_bytes_and_contextvar_scope() -> None:
 def test_injection_rejects_collisions_and_invalid_values() -> None:
     with pytest.raises(ContextPropagationError, match="Multiple context propagators"):
         context_header_from_propagators(
-            (_StaticPropagator({"shared": b"one"}), _StaticPropagator({"shared": b"two"}))
+            (
+                _StaticPropagator({"shared": b"one"}),
+                _StaticPropagator({"shared": b"two"}),
+            )
         )
 
     invalid = _StaticPropagator(cast(Mapping[str, bytes], {"invalid": "value"}))

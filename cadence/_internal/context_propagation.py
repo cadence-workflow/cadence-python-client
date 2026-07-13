@@ -112,6 +112,4 @@ def context_propagation_scope(
         try:
             stack.close()
         except Exception as exc:
-            raise ContextPropagationError(
-                "Context propagation cleanup failed"
-            ) from exc
+            raise ContextPropagationError("Context propagation cleanup failed") from exc

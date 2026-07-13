@@ -81,7 +81,7 @@ class ActivityWorker:
             raise
 
     async def _poll(self) -> Optional[PollForActivityTaskResponse]:
-        async with self._poll_metrics.track() as start:
+        async with self._poll_metrics.track():
             task: PollForActivityTaskResponse = (
                 await self._client.worker_stub.PollForActivityTask(
                     PollForActivityTaskRequest(
@@ -92,10 +92,10 @@ class ActivityWorker:
                         ),
                         identity=self._identity,
                     ),
-                    timeout=_LONG_POLL_TIMEOUT,
+                    timeout=_LONG_POLL_TIMEOUT.total_seconds(),
                 )
             )
-            self._poll_metrics.record_result(start, task)
+            self._poll_metrics.record_result(task)
             return task if task.task_token else None
 
     async def _execute(self, task: PollForActivityTaskResponse) -> None:

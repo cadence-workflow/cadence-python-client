@@ -145,6 +145,12 @@ class _InMemoryActivityContext(ActivityContext):
     def heartbeat_details(self, *types: Type) -> list[Any]:
         return list(self._heartbeat_details)
 
+    def is_cancelled(self) -> bool:
+        return False
+
+    def wait_for_cancelled(self, timeout: timedelta | None = None) -> bool:
+        return False
+
 
 class _InMemoryWorkflowContext(WorkflowContext):
     """A workflow context that runs entirely in memory.

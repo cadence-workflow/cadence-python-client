@@ -1,11 +1,14 @@
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 import logging
-from typing import Optional
+from typing import Optional, Sequence
 
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.workflow.memo import memo_from_proto
 from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.decision_pb2 import Decision
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskResponse,
     RespondDecisionTaskCompletedRequest,
@@ -18,12 +21,44 @@ from cadence.api.v1.query_pb2 import (
 )
 from cadence.api.v1.workflow_pb2 import DecisionTaskFailedCause
 from cadence.client import Client
+from cadence.metrics import (
+    duration_between,
+    duration_from_nanoseconds,
+    MetricsEmitter,
+)
+from cadence.metrics.constants import (
+    DECISION_EXECUTION_FAILED_COUNTER,
+    DECISION_EXECUTION_LATENCY,
+    DECISION_RESPONSE_FAILED_COUNTER,
+    DECISION_RESPONSE_LATENCY,
+    DECISION_TASK_COMPLETED_COUNTER,
+    DECISION_TASK_PANIC_COUNTER,
+    TAG_DOMAIN,
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_TYPE,
+    WORKFLOW_CANCELED_COUNTER,
+    WORKFLOW_COMPLETED_COUNTER,
+    WORKFLOW_CONTINUE_AS_NEW_COUNTER,
+    WORKFLOW_END_TO_END_LATENCY,
+    WORKFLOW_FAILED_COUNTER,
+)
 from cadence.worker._base_task_handler import BaseTaskHandler
-from cadence._internal.workflow.workflow_engine import WorkflowEngine, DecisionResult
+from cadence._internal.workflow.workflow_engine import (
+    WorkflowEngine,
+    DecisionResult,
+    _outcome_from_decision,
+)
 from cadence.workflow import WorkflowInfo
 from cadence.worker._registry import Registry
 
 logger = logging.getLogger(__name__)
+
+_WORKFLOW_OUTCOME_COUNTERS = {
+    "completed": WORKFLOW_COMPLETED_COUNTER,
+    "failed": WORKFLOW_FAILED_COUNTER,
+    "canceled": WORKFLOW_CANCELED_COUNTER,
+    "continue_as_new": WORKFLOW_CONTINUE_AS_NEW_COUNTER,
+}
 
 
 class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
@@ -82,6 +117,13 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
 
         is_query_task = task.HasField("query")
 
+        wf_tags = {
+            TAG_WORKFLOW_TYPE: workflow_type_name,
+            TAG_DOMAIN: self._client.domain,
+            TAG_TASK_LIST: self.task_list,
+        }
+        emitter = self._metrics_emitter.with_tags(wf_tags)
+
         logger.info(
             "Received decision task for workflow",
             extra={
@@ -117,7 +159,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         # fetch full workflow history
         # TODO sticky cache
         workflow_events = [
-            event async for event in iterate_history_events(task, self._client)
+            event async for event in iterate_history_events(task, self._client, emitter)
         ]
 
         if not workflow_events:
@@ -154,18 +196,36 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_definition=workflow_definition,
         )
 
-        decision_result = await asyncio.get_running_loop().run_in_executor(
-            self._executor,
-            workflow_engine.process_decision,
-            workflow_events,
-            task.query if is_query_task else None,
-        )
+        exec_start_ns = time.monotonic_ns()
+        try:
+            decision_result = await asyncio.get_running_loop().run_in_executor(
+                self._executor,
+                workflow_engine.process_decision,
+                workflow_events,
+                task.query if is_query_task else None,
+            )
+        except Exception:
+            emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
+            emitter.counter(DECISION_TASK_PANIC_COUNTER)
+            raise
+        finally:
+            emitter.histogram(
+                DECISION_EXECUTION_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - exec_start_ns),
+            )
         if is_query_task:
             if not decision_result.query_result:
                 raise ValueError("Query result is empty")
             await self._respond_query_task_completed(task, decision_result.query_result)
         else:
-            await self._respond_decision_task_completed(task, decision_result)
+            await self._respond_decision_task_completed(task, decision_result, emitter)
+            self._emit_workflow_outcome_metrics(
+                decision_result.decisions,
+                duration_between(
+                    workflow_events[0].event_time, datetime.now(timezone.utc)
+                ),
+                emitter,
+            )
 
         logger.info(
             "Successfully processed decision task",
@@ -262,8 +322,32 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 exc_info=True,
             )
 
+    def _emit_workflow_outcome_metrics(
+        self,
+        decisions: Sequence[Decision],
+        workflow_duration: timedelta | None,
+        emitter: MetricsEmitter,
+    ) -> None:
+        outcome = next(
+            (
+                outcome
+                for decision in decisions
+                if (outcome := _outcome_from_decision(decision))
+            ),
+            None,
+        )
+        if outcome is None:
+            return
+
+        emitter.counter(_WORKFLOW_OUTCOME_COUNTERS[outcome])
+        if workflow_duration is not None and workflow_duration >= timedelta(0):
+            emitter.histogram(WORKFLOW_END_TO_END_LATENCY, workflow_duration)
+
     async def _respond_decision_task_completed(
-        self, task: PollForDecisionTaskResponse, decision_result: DecisionResult
+        self,
+        task: PollForDecisionTaskResponse,
+        decision_result: DecisionResult,
+        emitter: Optional[MetricsEmitter] = None,
     ) -> None:
         """
         Respond to the service that the decision task has been completed.
@@ -272,6 +356,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             task: The original decision task
             decision_result: The result containing decisions
         """
+        emitter = emitter if emitter is not None else self._metrics_emitter
+        resp_start_ns = time.monotonic_ns()
         try:
             request = RespondDecisionTaskCompletedRequest(
                 task_token=task.task_token,
@@ -281,6 +367,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
 
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)
+            emitter.counter(DECISION_TASK_COMPLETED_COUNTER)
 
             workflow_execution = task.workflow_execution
             logger.debug(
@@ -305,6 +392,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             )
 
         except Exception as e:
+            emitter.counter(DECISION_RESPONSE_FAILED_COUNTER)
             workflow_execution = task.workflow_execution
             logger.error(
                 "Error responding to decision task completion",
@@ -325,9 +413,16 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 exc_info=True,
             )
             raise
+        finally:
+            emitter.histogram(
+                DECISION_RESPONSE_LATENCY,
+                duration_from_nanoseconds(time.monotonic_ns() - resp_start_ns),
+            )
 
     async def _respond_query_task_completed(
-        self, task: PollForDecisionTaskResponse, result: WorkflowQueryResult
+        self,
+        task: PollForDecisionTaskResponse,
+        result: WorkflowQueryResult,
     ) -> None:
         try:
             request = RespondQueryTaskCompletedRequest(

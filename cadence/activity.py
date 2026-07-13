@@ -24,6 +24,7 @@ from typing import (
 )
 
 from cadence import Client
+from cadence.error import ActivityCancelledError
 from cadence._internal.activity._definition import (
     AsyncImpl,
     SyncImpl,
@@ -52,6 +53,7 @@ class ActivityInfo:
 
 
 def client() -> Client:
+    raise_if_cancelled()
     return ActivityContext.get().client()
 
 
@@ -60,11 +62,13 @@ def in_activity() -> bool:
 
 
 def info() -> ActivityInfo:
+    raise_if_cancelled()
     return ActivityContext.get().info()
 
 
 def heartbeat(*details: Any) -> None:
     """Send a heartbeat for the current activity."""
+    raise_if_cancelled()
     ActivityContext.get().heartbeat(*details)
 
 
@@ -76,7 +80,70 @@ def heartbeat_details(*types: Type) -> list[Any]:
 
     Without type hints, returns raw JSON-decoded values.
     """
+    raise_if_cancelled()
     return ActivityContext.get().heartbeat_details(*types)
+
+
+def is_cancelled() -> bool:
+    """Return whether the server has requested cancellation for this activity.
+
+    For sync activities, poll this after each heartbeat and raise
+    ``ActivityCancelledError`` to report cancellation to the server::
+
+        def my_activity():
+            for item in work:
+                if activity.is_cancelled():
+                    # do cleanup
+                    raise ActivityCancelledError()
+                process(item)
+                activity.heartbeat(item)
+
+    For async activities, cancellation is delivered as ``asyncio.CancelledError``
+    injected after a heartbeat observes the cancellation request.  Re-raise it (or
+    raise ``ActivityCancelledError``) to report cancellation; catch and swallow it to
+    ignore the request and complete normally.
+    """
+    return ActivityContext.get().is_cancelled()
+
+
+def raise_if_cancelled() -> None:
+    """Raise ActivityCancelledError if the server has requested cancellation.
+
+    A convenience for sync activities that want to bail out at natural
+    checkpoints — especially around logging, metrics, or any Activity API
+    call — without a manual ``is_cancelled()`` check::
+
+        def my_activity():
+            for item in work:
+                activity.raise_if_cancelled()
+                process(item)
+                activity.heartbeat(item)
+
+    Equivalent to Go's ``select { case <-ctx.Done(): return ..., ctx.Err() }``
+    non-blocking check. Has no effect on async activities (they receive
+    ``asyncio.CancelledError`` directly).
+
+    Raises:
+        ActivityCancelledError: If the server has requested cancellation.
+    """
+    if ActivityContext.get().is_cancelled():
+        raise ActivityCancelledError()
+
+
+def wait_for_cancelled(timeout: timedelta | None = None) -> bool:
+    """Block until cancellation is requested for this sync activity.
+
+    Args:
+        timeout: Maximum time to wait. ``None`` waits indefinitely (the server's
+            schedule-to-close or heartbeat timeout provides the eventual bound).
+
+    Returns:
+        ``True`` if cancellation was requested, ``False`` if the timeout elapsed.
+
+    Raises:
+        RuntimeError: When called from an async activity.
+    """
+    return ActivityContext.get().wait_for_cancelled(timeout)
 
 
 class ActivityContext(ABC):
@@ -93,6 +160,12 @@ class ActivityContext(ABC):
 
     @abstractmethod
     def heartbeat_details(self, *types: Type) -> list[Any]: ...
+
+    @abstractmethod
+    def is_cancelled(self) -> bool: ...
+
+    @abstractmethod
+    def wait_for_cancelled(self, timeout: timedelta | None = None) -> bool: ...
 
     @contextmanager
     def _activate(self) -> Iterator[None]:

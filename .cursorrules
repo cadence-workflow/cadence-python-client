@@ -41,6 +41,11 @@ pip install -e ".[dev]"
 - Use `uv tool run ruff check --fix && uv run mypy cadence/` to run both together
 - **Standard workflow**: Make changes → Run linter → Run type checker → Commit
 
+## Time Types
+- Use `datetime` for internal points in time and `timedelta` for internal durations.
+- Use protobuf `Timestamp` and `Duration` only at gRPC/protobuf message boundaries.
+- Do not use raw `float` or `int` values for time units unless an external API explicitly requires them.
+
 ## Development Workflow
 1. Make code changes
 2. Run `uv tool run ruff check --fix` (fixes formatting and linting issues)

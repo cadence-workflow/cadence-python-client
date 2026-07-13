@@ -1,11 +1,14 @@
 """Tests for Prometheus metrics integration."""
 
+from datetime import timedelta
 from unittest.mock import Mock, patch
 
 from cadence.metrics import (
+    HIGH_1MS_24H,
     PrometheusMetrics,
     PrometheusConfig,
 )
+from cadence.metrics.histogram_buckets import DEFAULT_1MS_100S
 
 
 class TestPrometheusConfig:
@@ -79,12 +82,62 @@ class TestPrometheusMetrics:
         mock_histogram_class.return_value = mock_histogram
 
         metrics = PrometheusMetrics()
-        metrics.histogram("test_histogram", 1.5, {"type": "latency"})
+        metrics.histogram(
+            "test_histogram",
+            timedelta(seconds=1, milliseconds=500),
+            {"type": "latency"},
+        )
 
         # Verify histogram was created
         mock_histogram_class.assert_called_once()
         mock_histogram.labels.assert_called_once_with(type="latency")
-        mock_histogram.labels.return_value.observe.assert_called_once_with(1.5)
+        mock_histogram.labels.return_value.observe.assert_called_once_with(
+            1_500_000_000
+        )
+
+    @patch("cadence.metrics.prometheus.Histogram")
+    def test_duration_histogram_uses_default_1ms_100s_buckets(
+        self, mock_histogram_class
+    ):
+        metrics = PrometheusMetrics()
+
+        metrics.histogram("test_latency_ns", timedelta(seconds=1))
+
+        assert mock_histogram_class.call_args.kwargs["buckets"] == tuple(
+            DEFAULT_1MS_100S
+        )
+
+    @patch("cadence.metrics.prometheus.Histogram")
+    def test_endtoend_duration_histogram_uses_high_24h_buckets(
+        self, mock_histogram_class
+    ):
+        metrics = PrometheusMetrics()
+
+        metrics.histogram("cadence-workflow-endtoend-latency_ns", timedelta(seconds=1))
+
+        assert mock_histogram_class.call_args.kwargs["buckets"] == tuple(HIGH_1MS_24H)
+
+    @patch("cadence.metrics.prometheus.Histogram")
+    def test_histogram_buckets_override_by_exact_metric_name(
+        self, mock_histogram_class
+    ):
+        custom_buckets = (1.0, 2.0, 3.0)
+        config = PrometheusConfig(histogram_buckets={"test_latency_ns": custom_buckets})
+        metrics = PrometheusMetrics(config)
+
+        metrics.histogram("test_latency_ns", timedelta(seconds=1))
+
+        assert mock_histogram_class.call_args.kwargs["buckets"] == custom_buckets
+
+    @patch("cadence.metrics.prometheus.Histogram")
+    def test_duration_bucket_resolver_override(self, mock_histogram_class):
+        custom_buckets = (5, 10)
+        config = PrometheusConfig(duration_bucket_resolver=lambda name: custom_buckets)
+        metrics = PrometheusMetrics(config)
+
+        metrics.histogram("test_latency_ns", timedelta(seconds=1))
+
+        assert mock_histogram_class.call_args.kwargs["buckets"] == custom_buckets
 
     def test_metric_name_generation(self):
         """Test metric name generation."""

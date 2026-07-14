@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from logging import getLogger
 import time
 from traceback import format_exception
+from collections.abc import Sequence
 from typing import Any, Callable, Optional, Union, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
@@ -19,6 +20,7 @@ from cadence.api.v1.service_worker_pb2 import (
     RespondActivityTaskCompletedRequest,
 )
 from cadence.client import Client
+from cadence.context import ContextPropagator
 from cadence.metrics import (
     duration_between,
     duration_from_nanoseconds,
@@ -53,6 +55,7 @@ class ActivityExecutor:
         max_workers: int,
         registry: Callable[[str], ActivityDefinition],
         metrics_emitter: MetricsEmitter | None = None,
+        context_propagators: Sequence[ContextPropagator] = (),
     ):
         self._client = client
         self._data_converter = client.data_converter
@@ -65,6 +68,7 @@ class ActivityExecutor:
         self._thread_pool = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
         )
+        self._context_propagators = tuple(context_propagators)
 
     async def execute(self, task: PollForActivityTaskResponse) -> None:
         activity_type = task.activity_type.name if task.activity_type else ""
@@ -138,13 +142,22 @@ class ActivityExecutor:
         )
 
         if activity_def.strategy == ExecutionStrategy.ASYNC:
-            return _Context(self._client, info, activity_def, heartbeat_sender)
+            return _Context(
+                self._client,
+                info,
+                activity_def,
+                heartbeat_sender,
+                self._context_propagators,
+                task.header,
+            )
         return _SyncContext(
             self._client,
             info,
             activity_def,
             self._thread_pool,
             heartbeat_sender,
+            self._context_propagators,
+            task.header,
         )
 
     async def _report_failure(

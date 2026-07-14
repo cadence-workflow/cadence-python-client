@@ -91,6 +91,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         super().__init__(client, task_list, identity, **options)
         self._registry = registry
         self._executor = executor
+        self._context_propagators = tuple(options.get("context_propagators") or ())
 
     async def _handle_task_implementation(
         self, task: PollForDecisionTaskResponse
@@ -194,6 +195,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         workflow_engine = WorkflowEngine(
             info=workflow_info,
             workflow_definition=workflow_definition,
+            context_propagators=self._context_propagators,
+            start_header=started_attrs.header,
         )
 
         exec_start_ns = time.monotonic_ns()

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from asyncio import get_running_loop
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.context_propagation import context_header_from_propagators
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
@@ -20,6 +22,7 @@ from cadence.api.v1.decision_pb2 import (
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
+from cadence.context import ContextPropagator
 from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
@@ -42,12 +45,14 @@ class Context(WorkflowContext):
         self,
         info: WorkflowInfo,
         decision_manager: DecisionManager,
+        context_propagators: Sequence[ContextPropagator] = (),
     ):
         self._info = info
         self._replay_mode = True
         self._replay_current_time: Optional[datetime] = None
         self._decision_manager = decision_manager
         self._cancellation_info: WorkflowCancellationInfo | None = None
+        self._context_propagators = tuple(context_propagators)
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -101,7 +106,7 @@ class Context(WorkflowContext):
             task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
             input=activity_input,
             retry_policy=retry_policy_to_proto(opts.get("retry_policy")),
-            header=None,
+            header=context_header_from_propagators(self._context_propagators),
             request_local_dispatch=False,
             schedule_to_close_timeout=_round_to_nearest_second(schedule_to_close),
             schedule_to_start_timeout=_round_to_nearest_second(schedule_to_start),
@@ -203,6 +208,7 @@ class Context(WorkflowContext):
                 execution_timeout
             ),
             task_start_to_close_timeout=_round_to_nearest_second(task_timeout),
+            header=context_header_from_propagators(self._context_propagators),
         )
 
         cron_schedule = kwargs.get("cron_schedule")

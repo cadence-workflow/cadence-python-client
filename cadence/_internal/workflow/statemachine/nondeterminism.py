@@ -15,7 +15,7 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionId,
     DecisionType,
 )
-from cadence.api.v1 import decision, history
+from cadence.api.v1 import common, decision, history
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,13 @@ class Expectation:
 
 
 CANCEL = {"canceled": True}
+
+
+def _header_fields(header: common.Header) -> tuple[tuple[str, bytes], ...]:
+    """Return the byte carrier in a deterministic, protobuf-independent form."""
+    return tuple(
+        sorted((key, bytes(payload.data)) for key, payload in header.fields.items())
+    )
 
 
 class NonDeterminismError(FatalDecisionError):
@@ -243,6 +250,7 @@ def _(attrs: decision.ScheduleActivityTaskDecisionAttributes) -> Expectation:
         DecisionId(DecisionType.ACTIVITY, attrs.activity_id),
         {
             "activity_type": attrs.activity_type.name,
+            "header": _header_fields(attrs.header),
         },
     )
 
@@ -253,6 +261,7 @@ def _(attrs: history.ActivityTaskScheduledEventAttributes) -> Expectation:
         DecisionId(DecisionType.ACTIVITY, attrs.activity_id),
         {
             "activity_type": attrs.activity_type.name,
+            "header": _header_fields(attrs.header),
         },
     )
 
@@ -271,7 +280,10 @@ def _(attrs: history.ActivityTaskCancelRequestedEventAttributes) -> Expectation:
 def _(attrs: decision.StartChildWorkflowExecutionDecisionAttributes) -> Expectation:
     return Expectation(
         DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id),
-        {"workflow_type": attrs.workflow_type.name},
+        {
+            "workflow_type": attrs.workflow_type.name,
+            "header": _header_fields(attrs.header),
+        },
     )
 
 
@@ -281,7 +293,10 @@ def _(
 ) -> Expectation:
     return Expectation(
         DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id),
-        {"workflow_type": attrs.workflow_type.name},
+        {
+            "workflow_type": attrs.workflow_type.name,
+            "header": _header_fields(attrs.header),
+        },
     )
 
 
@@ -392,5 +407,27 @@ def _(_: history.WorkflowExecutionFailedEventAttributes) -> Expectation:
         COMPLETION_ID,
         {
             "success": False,
+        },
+    )
+
+
+@to_expectation.register
+def _(attrs: decision.ContinueAsNewWorkflowExecutionDecisionAttributes) -> Expectation:
+    return Expectation(
+        COMPLETION_ID,
+        {
+            "continued": True,
+            "header": _header_fields(attrs.header),
+        },
+    )
+
+
+@to_expectation.register
+def _(attrs: history.WorkflowExecutionContinuedAsNewEventAttributes) -> Expectation:
+    return Expectation(
+        COMPLETION_ID,
+        {
+            "continued": True,
+            "header": _header_fields(attrs.header),
         },
     )

@@ -1,11 +1,16 @@
 import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import singledispatchmethod
 from typing import List, Optional
 
 from cadence._internal.workflow.context import Context
+from cadence._internal.context_propagation import (
+    context_header_from_propagators,
+    context_propagation_scope,
+)
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
@@ -20,7 +25,7 @@ from cadence.api.v1.decision_pb2 import (
     CompleteWorkflowExecutionDecisionAttributes,
     ContinueAsNewWorkflowExecutionDecisionAttributes,
 )
-from cadence.api.v1.common_pb2 import Failure, Payload, WorkflowType
+from cadence.api.v1.common_pb2 import Failure, Header, Payload, WorkflowType
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     WorkflowExecutionCancelRequestedEventAttributes,
@@ -35,6 +40,7 @@ from cadence.api.v1.query_pb2 import (
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
+from cadence.context import ContextPropagator
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +52,13 @@ class DecisionResult:
 
 
 class WorkflowEngine:
-    def __init__(self, info: WorkflowInfo, workflow_definition: WorkflowDefinition):
+    def __init__(
+        self,
+        info: WorkflowInfo,
+        workflow_definition: WorkflowDefinition,
+        context_propagators: Sequence[ContextPropagator] = (),
+        start_header: Header | None = None,
+    ):
         self._event_loop = DeterministicEventLoop()
         self._decision_manager = DecisionManager(self._event_loop)
         self._data_converter = info.data_converter
@@ -55,7 +67,11 @@ class WorkflowEngine:
             self._event_loop,
             workflow_definition,
         )
-        self._context = Context(info, self._decision_manager)
+        self._context_propagators = tuple(context_propagators)
+        self._start_header = start_header
+        self._context = Context(
+            info, self._decision_manager, context_propagators=self._context_propagators
+        )
 
     def process_decision(
         self,
@@ -74,9 +90,15 @@ class WorkflowEngine:
         Returns:
             DecisionResult containing the list of decisions
         """
+        ctx = self._context
         try:
             # Activate workflow context for the entire decision processing
-            with self._context._activate() as ctx:
+            with (
+                context_propagation_scope(
+                    self._context_propagators, self._start_header
+                ),
+                self._context._activate() as ctx,
+            ):
                 # Log decision task processing start with full context (matches Java ReplayDecisionTaskHandler)
                 logger.info(
                     "Processing decision task for workflow",
@@ -243,6 +265,7 @@ class WorkflowEngine:
                 workflow_type=WorkflowType(name=e.workflow_type or info.workflow_type),
                 task_list=TaskList(name=e.task_list or info.workflow_task_list),
                 input=self._data_converter.to_data(list(e.workflow_args)),
+                header=context_header_from_propagators(self._context_propagators),
             )
             if e.execution_start_to_close_timeout is not None:
                 attrs.execution_start_to_close_timeout.FromTimedelta(

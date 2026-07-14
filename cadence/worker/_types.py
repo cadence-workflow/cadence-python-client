@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
+    from cadence.context import ContextPropagator
     from cadence.metrics import MetricsEmitter
 
 
@@ -18,6 +20,7 @@ class WorkerOptions(TypedDict, total=False):
     disable_activity_worker: bool
     identity: str
     metrics_emitter: MetricsEmitter
+    context_propagators: Sequence[ContextPropagator] | None
 
 
 _DEFAULT_WORKER_OPTIONS: WorkerOptions = {

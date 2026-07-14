@@ -60,6 +60,7 @@ class ActivityWorker:
             max_concurrent,
             registry.get_activity,
             options["metrics_emitter"],
+            options.get("context_propagators") or (),
         )
         self._poller = Poller[PollForActivityTaskResponse](
             self._num_pollers,

@@ -288,6 +288,54 @@ class TestDeterminismTracker:
             DecisionId(DecisionType.ACTIVITY, "0"), {"activity_type": "actual"}
         )
 
+    def test_activity_header_change_is_nondeterministic(self):
+        tracker = DeterminismTracker()
+        recorded_header = common.Header()
+        recorded_header.fields["trace"].data = b"recorded"
+        tracker.add_expectation(
+            history.HistoryEvent(
+                event_id=1,
+                activity_task_scheduled_event_attributes=history.ActivityTaskScheduledEventAttributes(
+                    activity_id="0",
+                    activity_type=common.ActivityType(name="act"),
+                    header=recorded_header,
+                ),
+            )
+        )
+
+        emitted_header = common.Header()
+        emitted_header.fields["trace"].data = b"changed"
+        with pytest.raises(NonDeterminismError):
+            tracker.validate_action(
+                decision.ScheduleActivityTaskDecisionAttributes(
+                    activity_id="0",
+                    activity_type=common.ActivityType(name="act"),
+                    header=emitted_header,
+                )
+            )
+
+    def test_continue_as_new_header_change_is_nondeterministic(self):
+        tracker = DeterminismTracker()
+        recorded_header = common.Header()
+        recorded_header.fields["trace"].data = b"recorded"
+        tracker.add_expectation(
+            history.HistoryEvent(
+                event_id=1,
+                workflow_execution_continued_as_new_event_attributes=history.WorkflowExecutionContinuedAsNewEventAttributes(
+                    header=recorded_header,
+                ),
+            )
+        )
+
+        emitted_header = common.Header()
+        emitted_header.fields["trace"].data = b"changed"
+        with pytest.raises(NonDeterminismError):
+            tracker.validate_action(
+                decision.ContinueAsNewWorkflowExecutionDecisionAttributes(
+                    header=emitted_header,
+                )
+            )
+
     def test_signal_external_workflow_failed_event_matches_decision(self):
         # If the server records a SignalExternalWorkflowExecutionFailed event (instead of
         # Initiated), replay must still validate the signal decision successfully.

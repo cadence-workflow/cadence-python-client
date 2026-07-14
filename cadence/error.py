@@ -4,6 +4,10 @@ from typing import Any
 import grpc
 
 
+class ContextPropagationError(RuntimeError):
+    """Raised when a context propagator cannot encode or install context."""
+
+
 class ContinueAsNewError(Exception):
     def __init__(
         self,

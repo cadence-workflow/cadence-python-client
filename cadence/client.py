@@ -11,6 +11,10 @@ from grpc import ChannelCredentials, Compression
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
+from cadence._internal.context_propagation import (
+    context_header_from_propagators,
+    normalize_context_propagators,
+)
 from cadence._internal.workflow.active_cluster_selection_policy import (
     active_cluster_selection_policy_to_proto,
 )
@@ -61,6 +65,7 @@ from cadence.error import QueryFailedError
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
+from cadence.context import ContextPropagator
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 from cadence.workflow import (
     ActiveClusterSelectionPolicy,
@@ -163,6 +168,7 @@ class ClientOptions(TypedDict, total=False):
     compression: Compression
     metrics_emitter: MetricsEmitter
     interceptors: list[ClientInterceptor]
+    context_propagators: Sequence[ContextPropagator]
 
 
 _DEFAULT_OPTIONS: ClientOptions = {
@@ -175,6 +181,7 @@ _DEFAULT_OPTIONS: ClientOptions = {
     "compression": Compression.NoCompression,
     "metrics_emitter": NoOpMetricsEmitter(),
     "interceptors": [],
+    "context_propagators": (),
 }
 
 
@@ -218,6 +225,10 @@ class Client:
     @property
     def metrics_emitter(self) -> MetricsEmitter:
         return self._options["metrics_emitter"]
+
+    @property
+    def context_propagators(self) -> tuple[ContextPropagator, ...]:
+        return cast(tuple[ContextPropagator, ...], self._options["context_propagators"])
 
     async def ready(self) -> None:
         await self._channel.channel_ready()
@@ -314,6 +325,10 @@ class Client:
         memo_proto = memo_to_proto(self.data_converter, options.get("memo"))
         if memo_proto is not None:
             request.memo.CopyFrom(memo_proto)
+
+        context_header = context_header_from_propagators(self.context_propagators)
+        if context_header is not None:
+            request.header.CopyFrom(context_header)
 
         return request
 
@@ -757,6 +772,10 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     for key, value in _DEFAULT_OPTIONS.items():
         if key not in options:
             cast(dict, options)[key] = value
+
+    options["context_propagators"] = normalize_context_propagators(
+        options["context_propagators"]
+    )
 
     return options
 

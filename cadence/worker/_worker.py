@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Sequence
 from typing import Unpack, cast
 
 from cadence.client import Client
+from cadence._internal.context_propagation import normalize_context_propagators
 from cadence.worker._registry import Registry
 from cadence.worker._activity import ActivityWorker
 from cadence.worker._decision import DecisionWorker
@@ -70,6 +72,15 @@ def _validate_and_copy_defaults(
 
     if "metrics_emitter" not in options:
         cast(dict, options)["metrics_emitter"] = client.metrics_emitter
+
+    if options.get("context_propagators") is None:
+        inherited_propagators = getattr(client, "context_propagators", ())
+        options["context_propagators"] = (
+            inherited_propagators if isinstance(inherited_propagators, Sequence) else ()
+        )
+    options["context_propagators"] = normalize_context_propagators(
+        options["context_propagators"]
+    )
 
     # TODO: More validation
 

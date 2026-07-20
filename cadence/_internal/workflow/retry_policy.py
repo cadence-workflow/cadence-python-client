@@ -19,9 +19,7 @@ def _round_to_whole_seconds(delta: timedelta) -> timedelta:
 
 def _set_duration_field(target: Duration, delta: timedelta) -> None:
     """Write ``delta``, ceil-rounded to whole seconds, into a proto ``Duration`` field."""
-    d = Duration()
-    d.FromTimedelta(_round_to_whole_seconds(delta))
-    target.CopyFrom(d)
+    target.FromTimedelta(_round_to_whole_seconds(delta))
 
 
 def retry_policy_to_proto(

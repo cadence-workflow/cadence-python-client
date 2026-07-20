@@ -5,6 +5,7 @@ This example shows how to create a gRPC client and make calls to Cadence workflo
 """
 
 import grpc
+from datetime import timedelta
 from cadence.api.v1 import service_workflow_grpc, service_workflow, common
 
 
@@ -63,8 +64,8 @@ def example_start_workflow(
     request.workflow_type.name = "MyWorkflow"
     request.task_list.name = "my-task-list"
     request.input.data = b"workflow input data"  # Serialized workflow input
-    request.execution_start_to_close_timeout.seconds = 3600  # 1 hour
-    request.task_start_to_close_timeout.seconds = 60  # 1 minute
+    request.execution_start_to_close_timeout.FromTimedelta(timedelta(hours=1))
+    request.task_start_to_close_timeout.FromTimedelta(timedelta(minutes=1))
     request.identity = "python-client"
 
     try:

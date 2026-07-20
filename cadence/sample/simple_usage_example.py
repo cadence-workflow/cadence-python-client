@@ -4,8 +4,9 @@ Simple usage example for cadence protobuf modules.
 This demonstrates basic usage patterns for the generated protobuf classes.
 """
 
-import sys
 import os
+import sys
+from datetime import datetime, timezone
 
 # Add the project root to the path so we can import cadence modules
 project_root = os.path.dirname(
@@ -33,13 +34,13 @@ def example_workflow_execution():
     wf_info = workflow.WorkflowExecutionInfo()
     wf_info.workflow_execution.CopyFrom(wf_exec)
     wf_info.type.name = "MyWorkflowType"
-    wf_info.start_time.seconds = 1234567890
-    wf_info.close_time.seconds = 1234567990
+    wf_info.start_time.FromDatetime(datetime.fromtimestamp(1234567890, tz=timezone.utc))
+    wf_info.close_time.FromDatetime(datetime.fromtimestamp(1234567990, tz=timezone.utc))
 
     print("Created workflow execution info:")
     print(f"  - Type: {wf_info.type.name}")
-    print(f"  - Start Time: {wf_info.start_time.seconds}")
-    print(f"  - Close Time: {wf_info.close_time.seconds}")
+    print(f"  - Start Time: {wf_info.start_time.ToDatetime().isoformat()}")
+    print(f"  - Close Time: {wf_info.close_time.ToDatetime().isoformat()}")
 
     return wf_exec, wf_info
 

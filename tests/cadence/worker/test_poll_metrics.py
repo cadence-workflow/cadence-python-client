@@ -1,5 +1,6 @@
 """Tests for poll and worker-start metrics in DecisionWorker and ActivityWorker."""
 
+from datetime import datetime, timedelta, timezone
 import pytest
 from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -71,10 +72,12 @@ def _worker_options(emitter) -> WorkerOptions:
     }
 
 
-def _make_ts(seconds: int, nanos: int = 0) -> Timestamp:
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _make_ts(when: datetime) -> Timestamp:
     ts = Timestamp()
-    ts.seconds = seconds
-    ts.nanos = nanos
+    ts.FromDatetime(when)
     return ts
 
 
@@ -171,8 +174,8 @@ class TestDecisionWorkerPollMetrics:
         client = _mock_client()
         mock_task = Mock()
         mock_task.task_token = b"token"
-        mock_task.scheduled_time = _make_ts(0)
-        mock_task.started_time = _make_ts(0)
+        mock_task.scheduled_time = _make_ts(_EPOCH)
+        mock_task.started_time = _make_ts(_EPOCH)
         client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
         worker = DecisionWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
 
@@ -190,8 +193,8 @@ class TestDecisionWorkerPollMetrics:
         client = _mock_client()
         mock_task = Mock()
         mock_task.task_token = b"token"
-        mock_task.scheduled_time = _make_ts(1000)
-        mock_task.started_time = _make_ts(1002)
+        mock_task.scheduled_time = _make_ts(_EPOCH + timedelta(seconds=1000))
+        mock_task.started_time = _make_ts(_EPOCH + timedelta(seconds=1002))
         client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
         worker = DecisionWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
 
@@ -200,7 +203,7 @@ class TestDecisionWorkerPollMetrics:
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert DECISION_SCHEDULED_TO_START_LATENCY in histogram_calls
         latency_call = histogram_calls[DECISION_SCHEDULED_TO_START_LATENCY]
-        assert abs(latency_call.args[1] - 2.0) < 0.01
+        assert latency_call.args[1] == timedelta(seconds=2)
 
     @pytest.mark.asyncio
     async def test_no_scheduled_to_start_when_timestamps_zero(self):
@@ -208,8 +211,8 @@ class TestDecisionWorkerPollMetrics:
         client = _mock_client()
         mock_task = Mock()
         mock_task.task_token = b"token"
-        mock_task.scheduled_time = _make_ts(0)
-        mock_task.started_time = _make_ts(0)
+        mock_task.scheduled_time = _make_ts(_EPOCH)
+        mock_task.started_time = _make_ts(_EPOCH)
         client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
         worker = DecisionWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
 
@@ -219,20 +222,20 @@ class TestDecisionWorkerPollMetrics:
         assert DECISION_SCHEDULED_TO_START_LATENCY not in histogram_names
 
     @pytest.mark.asyncio
-    async def test_clamps_negative_scheduled_to_start_latency(self):
+    async def test_skips_negative_scheduled_to_start_latency(self):
         emitter = _mock_emitter()
         client = _mock_client()
         mock_task = Mock()
         mock_task.task_token = b"token"
-        mock_task.scheduled_time = _make_ts(1002)
-        mock_task.started_time = _make_ts(1000)
+        mock_task.scheduled_time = _make_ts(_EPOCH + timedelta(seconds=1002))
+        mock_task.started_time = _make_ts(_EPOCH + timedelta(seconds=1000))
         client.worker_stub.PollForDecisionTask = AsyncMock(return_value=mock_task)
         worker = DecisionWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
 
         await worker._poll()
 
-        histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
-        assert histogram_calls[DECISION_SCHEDULED_TO_START_LATENCY].args[1] == 0.0
+        histogram_names = [c.args[0] for c in emitter.histogram.call_args_list]
+        assert DECISION_SCHEDULED_TO_START_LATENCY not in histogram_names
 
     @pytest.mark.asyncio
     async def test_emits_transient_failed_counter_on_retryable_error(self):
@@ -268,6 +271,23 @@ class TestDecisionWorkerPollMetrics:
 
         emitter.counter.assert_any_call(
             DECISION_POLL_FAILED_COUNTER, 1, tags=EXPECTED_TAGS
+        )
+
+    @pytest.mark.asyncio
+    async def test_emits_latency_on_unexpected_error(self):
+        emitter = _mock_emitter()
+        client = _mock_client()
+        client.worker_stub.PollForDecisionTask = AsyncMock(
+            side_effect=RuntimeError("unexpected")
+        )
+        worker = DecisionWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
+
+        with pytest.raises(RuntimeError, match="unexpected"):
+            await worker._poll()
+
+        assert any(
+            call.args[0] == DECISION_POLL_LATENCY
+            for call in emitter.histogram.call_args_list
         )
 
 
@@ -364,8 +384,8 @@ class TestActivityWorkerPollMetrics:
         client = _mock_client()
         mock_task = Mock()
         mock_task.task_token = b"token"
-        mock_task.scheduled_time = _make_ts(0)
-        mock_task.started_time = _make_ts(0)
+        mock_task.scheduled_time = _make_ts(_EPOCH)
+        mock_task.started_time = _make_ts(_EPOCH)
         client.worker_stub.PollForActivityTask = AsyncMock(return_value=mock_task)
         worker = ActivityWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
 
@@ -383,8 +403,8 @@ class TestActivityWorkerPollMetrics:
         client = _mock_client()
         mock_task = Mock()
         mock_task.task_token = b"token"
-        mock_task.scheduled_time = _make_ts(500)
-        mock_task.started_time = _make_ts(503)
+        mock_task.scheduled_time = _make_ts(_EPOCH + timedelta(seconds=500))
+        mock_task.started_time = _make_ts(_EPOCH + timedelta(seconds=503))
         client.worker_stub.PollForActivityTask = AsyncMock(return_value=mock_task)
         worker = ActivityWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
 
@@ -392,10 +412,9 @@ class TestActivityWorkerPollMetrics:
 
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
         assert ACTIVITY_SCHEDULED_TO_START_LATENCY in histogram_calls
-        assert (
-            abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 3.0)
-            < 0.01
-        )
+        assert histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[
+            1
+        ] == timedelta(seconds=3)
 
     @pytest.mark.asyncio
     async def test_emits_scheduled_to_start_latency_when_only_nanos_set(self):
@@ -403,18 +422,17 @@ class TestActivityWorkerPollMetrics:
         client = _mock_client()
         mock_task = Mock()
         mock_task.task_token = b"token"
-        mock_task.scheduled_time = _make_ts(0, 100_000_000)
-        mock_task.started_time = _make_ts(0, 300_000_000)
+        mock_task.scheduled_time = _make_ts(_EPOCH + timedelta(milliseconds=100))
+        mock_task.started_time = _make_ts(_EPOCH + timedelta(milliseconds=300))
         client.worker_stub.PollForActivityTask = AsyncMock(return_value=mock_task)
         worker = ActivityWorker(client, TASK_LIST, Registry(), _worker_options(emitter))
 
         await worker._poll()
 
         histogram_calls = {c.args[0]: c for c in emitter.histogram.call_args_list}
-        assert (
-            abs(histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[1] - 0.2)
-            < 0.01
-        )
+        assert histogram_calls[ACTIVITY_SCHEDULED_TO_START_LATENCY].args[
+            1
+        ] == timedelta(milliseconds=200)
 
     @pytest.mark.asyncio
     async def test_emits_transient_failed_counter_on_retryable_error(self):

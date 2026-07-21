@@ -217,6 +217,13 @@ class _InMemoryWorkflowContext(WorkflowContext):
         loop = cast(DeterministicEventLoop, get_running_loop())
         await loop.create_waiter(predicate)
 
+    def side_effect(
+        self,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+    ) -> ResultType:
+        return fn()
+
     async def signal_child_workflow(
         self,
         child_workflow_id: str,

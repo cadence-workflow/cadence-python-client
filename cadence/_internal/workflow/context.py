@@ -10,9 +10,18 @@ from cadence._internal.workflow.deterministic_event_loop import DeterministicEve
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
+from cadence._internal.workflow.statemachine.marker_state_machine import (
+    SIDE_EFFECT_MARKER_NAME,
+)
 from cadence.api.v1 import workflow_pb2
-from cadence.api.v1.common_pb2 import ActivityType, WorkflowType, WorkflowExecution
+from cadence.api.v1.common_pb2 import (
+    ActivityType,
+    Payload,
+    WorkflowType,
+    WorkflowExecution,
+)
 from cadence.api.v1.decision_pb2 import (
+    RecordMarkerDecisionAttributes,
     ScheduleActivityTaskDecisionAttributes,
     SignalExternalWorkflowExecutionDecisionAttributes,
     StartChildWorkflowExecutionDecisionAttributes,
@@ -256,6 +265,25 @@ class Context(WorkflowContext):
     def is_replay_mode(self) -> bool:
         """Check if the workflow is currently in replay mode."""
         return self._replay_mode
+
+    def side_effect(
+        self,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+    ) -> ResultType:
+        details = Payload()
+        if not self.is_replay_mode():
+            details = self.data_converter().to_data([fn()])
+        result_payload = self._decision_manager.record_marker(
+            RecordMarkerDecisionAttributes(
+                marker_name=SIDE_EFFECT_MARKER_NAME,
+                details=details,
+            )
+        )
+        return cast(
+            ResultType,
+            self.data_converter().from_data(result_payload, [result_type])[0],
+        )
 
     def set_replay_current_time(self, current_time: datetime) -> None:
         """Set the current replay timestamp."""

@@ -17,8 +17,8 @@ generate:
 # Run linter
 lint:
 	@echo "Running Ruff linter and fixing lint issues..."
-	uv tool run ruff check --fix
-	uv tool run ruff format
+	uv run ruff check --fix
+	uv run ruff format
 
 # Run type checker
 type-check:

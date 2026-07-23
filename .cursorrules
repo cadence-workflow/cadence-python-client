@@ -4,7 +4,7 @@
 - **Always use `uv` for Python package management**
 - Use `uv run` for running Python commands instead of `python` directly
 - Use `uv sync` for installing dependencies instead of `pip install`
-- Use `uv tool run` for running development tools (pytest, ruff, etc.); use `uv run mypy` so mypy uses the project environment (e.g. `types-grpcio`).
+- Use `uv run` for project-pinned development tools (ruff, pytest, mypy, etc.) so versions match CI.
 - Only use `pip` or `python` directly when specifically required by the tool or documentation
 
 ## Examples
@@ -13,7 +13,7 @@
 uv run python scripts/generate_proto.py
 uv run python -m pytest tests/
 uv run mypy cadence/
-uv tool run ruff check
+uv run ruff check
 
 # ❌ Avoid
 python scripts/generate_proto.py
@@ -28,7 +28,7 @@ pip install -e ".[dev]"
 ## Testing
 - Run tests with `uv run python -m pytest`
 - Use `uv run` for any Python script execution
-- Development tools should be run with `uv tool run`
+- Development tools should be run with `uv run` (project-pinned versions)
 
 ## Code Generation
 - Use `uv run python scripts/generate_proto.py` for protobuf generation
@@ -36,9 +36,9 @@ pip install -e ".[dev]"
 
 ## Code Quality
 - **ALWAYS run linter and type checker after making code changes**
-- Run linter with auto-fix: `uv tool run ruff check --fix`
+- Run linter with auto-fix: `uv run ruff check --fix`
 - Run type checking: `uv run mypy cadence/`
-- Use `uv tool run ruff check --fix && uv run mypy cadence/` to run both together
+- Use `uv run ruff check --fix && uv run mypy cadence/` to run both together
 - **Standard workflow**: Make changes → Run linter → Run type checker → Commit
 
 ## Time Types
@@ -48,7 +48,7 @@ pip install -e ".[dev]"
 
 ## Development Workflow
 1. Make code changes
-2. Run `uv tool run ruff check --fix` (fixes formatting and linting issues)
+2. Run `uv run ruff check --fix` (fixes formatting and linting issues)
 3. Run `uv run mypy cadence/` (checks type safety)
 4. Run `uv run python -m pytest` (run tests)
 5. Commit changes

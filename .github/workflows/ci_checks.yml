@@ -33,8 +33,8 @@ jobs:
           fi
       - name: Run Ruff linter
         run: |
-          uv tool run ruff check
-          uv tool run ruff format --check
+          uv run ruff check
+          uv run ruff format --check
 
   type-check:
     name: Type Safety Check

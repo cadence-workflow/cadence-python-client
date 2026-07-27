@@ -7,6 +7,7 @@ particularly focusing on decision-related events for replay and execution.
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterator, List, Optional
 
 from cadence._internal.workflow.history_event_iterator import HistoryEventsIterator
@@ -23,7 +24,7 @@ class DecisionEvents:
     output: List[HistoryEvent]
     markers: List[HistoryEvent]
     replay: bool
-    replay_current_time_milliseconds: int
+    replay_current_time: datetime
     next_decision_event_id: int
 
     def get_output_event_by_id(self, event_id: int) -> Optional[HistoryEvent]:
@@ -47,7 +48,6 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
     ):
         self._events: HistoryEventsIterator = HistoryEventsIterator(events)
         self._next_decision_event_id: Optional[int] = None
-        self._replay_current_time_milliseconds: Optional[int] = None
 
     def __iter__(self):
         return self
@@ -104,7 +104,7 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
                 break
             decision_output_events.append(next(self._events))
 
-        replay_current_time_milliseconds = decision_event.event_time.ToMilliseconds()
+        replay_current_time = decision_event.event_time.ToDatetime(tzinfo=timezone.utc)
 
         replay: bool
         next_decision_event_id: int
@@ -126,7 +126,7 @@ class DecisionEventsIterator(Iterator[DecisionEvents]):
             output=decision_output_events,
             markers=markers,
             replay=replay,
-            replay_current_time_milliseconds=replay_current_time_milliseconds,
+            replay_current_time=replay_current_time,
             next_decision_event_id=next_decision_event_id,
         )
 

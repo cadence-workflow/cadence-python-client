@@ -15,6 +15,11 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionId,
     DecisionType,
 )
+from cadence._internal.workflow.statemachine.marker_state_machine import (
+    marker_context_id,
+    marker_decision_id,
+    VERSION_MARKER_NAME,
+)
 from cadence.api.v1 import decision, history
 
 
@@ -113,12 +118,12 @@ class DeterminismTracker:
 
         self._expectations[decision_id] = to_expect
 
-    def validate_action(self, attributes: Any) -> None:
+    def validate_action(self, attributes: Any) -> Expectation | None:
         props = to_expectation(attributes)
         if props is None:
-            return
+            return None
 
-        self._validate_expectation(props)
+        return self._validate_expectation(props)
 
     def validate_cancel(self, decision_id: DecisionId) -> None:
         # Cancellation may happen automatically, ignore it
@@ -128,7 +133,8 @@ class DeterminismTracker:
             Expectation(decision_id=decision_id, properties=CANCEL)
         )
 
-    def _validate_expectation(self, actual: Expectation) -> None:
+    def _validate_expectation(self, actual: Expectation) -> Expectation:
+        """Returns the matched Expectation on success, or raises NonDeterminismError."""
         if not self._expectations:
             self._fail(None, actual)
 
@@ -157,7 +163,7 @@ class DeterminismTracker:
         # A: [Schedule, Cancel]
         if len(upcoming) == 1:
             # Using the above example, If they rewrote it to be:
-            # Schedula A
+            # Schedule A
             # Cancel A
             # Schedule B
             # All expectations would be met, but we still need to report that it's out of order.
@@ -166,13 +172,15 @@ class DeterminismTracker:
                 self._fail(next_expectation, actual)
 
             if actual == upcoming[0]:
+                matched = upcoming[0]
                 del self._expectations[actual.decision_id]
+                return matched
             else:
                 self._fail(next_expectation, actual)
         else:
             next_for_decision = upcoming[0]
             if next_for_decision == actual:
-                upcoming.pop(0)
+                return upcoming.pop(0)
             else:
                 self._fail(next_expectation, actual)
 
@@ -353,6 +361,35 @@ def _(
         DecisionId(DecisionType.SIGNAL, attrs.control.decode("utf-8")),
         {},
     )
+
+
+# Markers - Enforce marker type (marker_name) and instance id (context_id from the Header)
+# via the DecisionId alone; the Expectation body is empty since the DecisionId already
+# captures both the type and the identity.
+#
+# Version markers are exempt: adding/removing a version check is always safe, so both
+# handlers return None (no expectation on either side). This matches Go SDK behaviour.
+#
+# Details are intentionally excluded from Expectation; DecisionManager stores recorded
+# values in _recorded_marker_details and returns the historical value on replay directly.
+@to_expectation.register
+def _(attrs: decision.RecordMarkerDecisionAttributes) -> Expectation | None:
+    context_id = marker_context_id(attrs)
+    if context_id is None:
+        return None
+    if attrs.marker_name == VERSION_MARKER_NAME:
+        return None
+    return Expectation(marker_decision_id(attrs.marker_name, context_id), {})
+
+
+@to_expectation.register
+def _(attrs: history.MarkerRecordedEventAttributes) -> Expectation | None:
+    context_id = marker_context_id(attrs)
+    if context_id is None:
+        return None
+    if attrs.marker_name == VERSION_MARKER_NAME:
+        return None
+    return Expectation(marker_decision_id(attrs.marker_name, context_id), {})
 
 
 # Workflow Completion - Enforce complete vs failure. Maybe we should enforce the output data?

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
@@ -29,4 +30,4 @@ _DEFAULT_WORKER_OPTIONS: WorkerOptions = {
     "disable_activity_worker": False,
 }
 
-_LONG_POLL_TIMEOUT = 60.0
+_LONG_POLL_TIMEOUT = timedelta(seconds=60)

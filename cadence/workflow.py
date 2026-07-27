@@ -188,6 +188,17 @@ async def wait_condition(predicate: Callable[[], bool]) -> None:
     await WorkflowContext.get().wait_condition(predicate)
 
 
+def side_effect(
+    fn: Callable[[], ResultType],
+    result_type: Type[ResultType],
+) -> ResultType:
+    """Execute non-deterministic code and record the result as a SideEffect marker.
+
+    On replay the function is not called; the value from workflow history is returned.
+    """
+    return WorkflowContext.get().side_effect(fn, result_type)
+
+
 def is_cancel_requested() -> bool:
     return WorkflowContext.get().is_cancel_requested()
 
@@ -606,6 +617,13 @@ class WorkflowContext(ABC):
 
     @abstractmethod
     async def wait_condition(self, predicate: Callable[[], bool]) -> None: ...
+
+    @abstractmethod
+    def side_effect(
+        self,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+    ) -> ResultType: ...
 
     @abstractmethod
     def is_cancel_requested(self) -> bool: ...

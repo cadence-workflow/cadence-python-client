@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 import pytest
@@ -444,7 +444,7 @@ def create_workflow_engine(workflow_definition: WorkflowDefinition) -> WorkflowE
 
 def _event(event_id: int, **attributes) -> HistoryEvent:
     event = HistoryEvent(event_id=event_id)
-    event.event_time.FromMilliseconds(event_id * 1000)
+    event.event_time.FromDatetime(datetime.fromtimestamp(event_id, tz=timezone.utc))
     for name, value in attributes.items():
         getattr(event, name).CopyFrom(value)
     return event

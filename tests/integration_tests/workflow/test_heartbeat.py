@@ -1,7 +1,10 @@
 import asyncio
+import time
 from datetime import timedelta
 
+
 from cadence import workflow, Registry, activity
+from cadence.error import ActivityCancelledError
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
@@ -21,6 +24,16 @@ async def heartbeat_activity(iterations: int) -> str:
     return "done"
 
 
+@registry.activity()
+async def cancellable_heartbeat_activity() -> str:
+    try:
+        while True:
+            activity.heartbeat("running")
+            await asyncio.sleep(0.25)
+    except asyncio.CancelledError:
+        raise
+
+
 @registry.workflow()
 class HeartbeatWorkflow:
     @workflow.run
@@ -29,6 +42,63 @@ class HeartbeatWorkflow:
             schedule_to_close_timeout=timedelta(seconds=30),
             heartbeat_timeout=timedelta(seconds=2),
         ).execute(iterations)
+
+
+@registry.activity()
+def sync_wait_cancel_activity() -> str:
+    """Sync activity using ``wait_for_cancelled`` with a typed timeout."""
+    while True:
+        activity.heartbeat("waiting")
+        cancelled = activity.wait_for_cancelled(timedelta(milliseconds=300))
+        if cancelled:
+            raise ActivityCancelledError("bye")
+        time.sleep(0.05)
+
+
+@registry.workflow()
+class SyncWaitForCancelledWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        activity_task = asyncio.create_task(
+            sync_wait_cancel_activity.with_options(
+                schedule_to_close_timeout=timedelta(seconds=30),
+                start_to_close_timeout=timedelta(seconds=30),
+                heartbeat_timeout=timedelta(seconds=2),
+            ).execute()
+        )
+
+        await workflow.sleep(timedelta(seconds=1))
+        activity_task.cancel()
+
+        try:
+            await activity_task
+        except asyncio.CancelledError:
+            return "activity cancelled"
+
+        return "activity completed"
+
+
+@registry.workflow()
+class ActivityCancellationWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        activity_task = asyncio.create_task(
+            cancellable_heartbeat_activity.with_options(
+                schedule_to_close_timeout=timedelta(seconds=30),
+                start_to_close_timeout=timedelta(seconds=30),
+                heartbeat_timeout=timedelta(seconds=2),
+            ).execute()
+        )
+
+        await workflow.sleep(timedelta(seconds=1))
+        activity_task.cancel()
+
+        try:
+            await activity_task
+        except asyncio.CancelledError:
+            return "activity cancelled"
+
+        return "activity completed"
 
 
 @registry.activity()
@@ -116,3 +186,95 @@ async def test_activity_without_heartbeat_times_out(helper: CadenceHelper):
             timed_out_events[-1].activity_task_timed_out_event_attributes.timeout_type
             == TIMEOUT_TYPE_HEARTBEAT
         )
+
+
+async def test_activity_cancellation_is_delivered_by_heartbeat(
+    helper: CadenceHelper,
+):
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "ActivityCancellationWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        response: GetWorkflowExecutionHistoryResponse = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
+        )
+
+        assert (
+            '"activity cancelled"'
+            == response.history.events[
+                -1
+            ].workflow_execution_completed_event_attributes.result.data.decode()
+        )
+
+        response = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                skip_archival=True,
+            )
+        )
+
+        canceled_events = [
+            event
+            for event in response.history.events
+            if event.HasField("activity_task_canceled_event_attributes")
+        ]
+        assert canceled_events
+
+        cancel_requested_events = [
+            event
+            for event in response.history.events
+            if event.HasField("activity_task_cancel_requested_event_attributes")
+        ]
+        assert cancel_requested_events
+
+
+async def test_sync_wait_for_cancelled(helper: CadenceHelper):
+    """Integration: sync ``wait_for_cancelled`` accepts a typed timeout."""
+    async with helper.worker(registry) as worker:
+        execution = await worker.client.start_workflow(
+            "SyncWaitForCancelledWorkflow",
+            task_list=worker.task_list,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        response: GetWorkflowExecutionHistoryResponse = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
+        )
+
+        assert (
+            '"activity cancelled"'
+            == response.history.events[
+                -1
+            ].workflow_execution_completed_event_attributes.result.data.decode()
+        )
+
+        response = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                skip_archival=True,
+            )
+        )
+
+        canceled_events = [
+            event
+            for event in response.history.events
+            if event.HasField("activity_task_canceled_event_attributes")
+        ]
+        assert canceled_events

@@ -27,10 +27,10 @@ class _HeartbeatSender:
     def get_details(self, *types: Type) -> list[Any]:
         return self._data_converter.from_data(self._previous_details, list(types))
 
-    async def send_heartbeat(self, *details: Any) -> None:
+    async def send_heartbeat(self, *details: Any) -> bool:
         try:
             payload = self._data_converter.to_data(list(details))
-            await self._worker_stub.RecordActivityTaskHeartbeat(
+            response = await self._worker_stub.RecordActivityTaskHeartbeat(
                 RecordActivityTaskHeartbeatRequest(
                     task_token=self._task_token,
                     details=payload,
@@ -38,5 +38,7 @@ class _HeartbeatSender:
                 )
             )
             self._previous_details = payload
+            return bool(response.cancel_requested)
         except Exception:
             _logger.warning("Heartbeat failed", exc_info=True)
+            return False

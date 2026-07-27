@@ -145,6 +145,12 @@ class _InMemoryActivityContext(ActivityContext):
     def heartbeat_details(self, *types: Type) -> list[Any]:
         return list(self._heartbeat_details)
 
+    def is_cancelled(self) -> bool:
+        return False
+
+    def wait_for_cancelled(self, timeout: timedelta | None = None) -> bool:
+        return False
+
 
 class _InMemoryWorkflowContext(WorkflowContext):
     """A workflow context that runs entirely in memory.
@@ -210,6 +216,13 @@ class _InMemoryWorkflowContext(WorkflowContext):
     async def wait_condition(self, predicate: Callable[[], bool]) -> None:
         loop = cast(DeterministicEventLoop, get_running_loop())
         await loop.create_waiter(predicate)
+
+    def side_effect(
+        self,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+    ) -> ResultType:
+        return fn()
 
     async def signal_child_workflow(
         self,

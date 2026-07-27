@@ -3,6 +3,7 @@
 Tests for Decision Events Iterator.
 """
 
+from datetime import datetime, timezone
 from typing import List
 import pytest
 
@@ -32,7 +33,7 @@ class TestDecisionEventsIterator:
                         "output": 0,
                         "markers": 0,
                         "replay": False,
-                        "replay_time": 3000,
+                        "replay_time": datetime.fromtimestamp(3, tz=timezone.utc),
                         "next_decision_event_id": 5,
                     },
                 ],
@@ -52,7 +53,7 @@ class TestDecisionEventsIterator:
                         "output": 1,
                         "markers": 0,
                         "replay": True,
-                        "replay_time": 4000,
+                        "replay_time": datetime.fromtimestamp(4, tz=timezone.utc),
                         "next_decision_event_id": 5,
                     },
                 ],
@@ -76,7 +77,7 @@ class TestDecisionEventsIterator:
                         "output": 1,
                         "markers": 0,
                         "replay": True,
-                        "replay_time": 4000,
+                        "replay_time": datetime.fromtimestamp(4, tz=timezone.utc),
                         "next_decision_event_id": 5,
                     },
                     {
@@ -84,7 +85,7 @@ class TestDecisionEventsIterator:
                         "output": 0,
                         "markers": 0,
                         "replay": False,
-                        "replay_time": 9000,
+                        "replay_time": datetime.fromtimestamp(9, tz=timezone.utc),
                         "next_decision_event_id": 11,
                     },
                 ],
@@ -103,7 +104,7 @@ class TestDecisionEventsIterator:
             assert len(batch.output) == expect["output"]
             assert len(batch.markers) == expect["markers"]
             assert batch.replay == expect["replay"]
-            assert batch.replay_current_time_milliseconds == expect["replay_time"]
+            assert batch.replay_current_time == expect["replay_time"]
             assert batch.next_decision_event_id == expect["next_decision_event_id"]
 
 
@@ -112,7 +113,7 @@ def create_mock_history_event(event_types: List[str]) -> List[HistoryEvent]:
     for i, event_type in enumerate(event_types):
         event = HistoryEvent()
         event.event_id = i + 1
-        event.event_time.FromMilliseconds((i + 1) * 1000)
+        event.event_time.FromDatetime(datetime.fromtimestamp(i + 1, tz=timezone.utc))
 
         # Set the appropriate attribute based on event type
         if event_type == "decision_task_started":

@@ -10,19 +10,19 @@ from cadence.api.v1.common_pb2 import Payload
 from msgspec import json
 
 
-MARKER_PREFIX = "Cancel_"
+CANCEL_MARKER_NAME = "Cancel"
 
 
 def is_immediate_cancel(marker: history.MarkerRecordedEventAttributes) -> bool:
-    return marker.marker_name.startswith(MARKER_PREFIX)
+    return marker.marker_name == CANCEL_MARKER_NAME
 
 
 def to_marker(
     decision_id: DecisionId, props: Dict[str, Any]
 ) -> decision.RecordMarkerDecisionAttributes:
-    data = props | {"type": decision_id.decision_type.name}
+    data = props | {"id": decision_id.id, "type": decision_id.decision_type.name}
     return decision.RecordMarkerDecisionAttributes(
-        marker_name=MARKER_PREFIX + decision_id.id,
+        marker_name=CANCEL_MARKER_NAME,
         details=Payload(data=json.encode(data)),
     )
 
@@ -30,7 +30,6 @@ def to_marker(
 def from_marker(
     marker: history.MarkerRecordedEventAttributes,
 ) -> Tuple[DecisionId, Dict[str, Any]]:
-    decision_id = marker.marker_name.replace(MARKER_PREFIX, "")
     props = json.decode(marker.details.data)
-    decision_type = DecisionType[props.pop("type")]
-    return DecisionId(decision_type, decision_id), props
+    decision_id = DecisionId(DecisionType[props.pop("type")], props.pop("id"))
+    return decision_id, props

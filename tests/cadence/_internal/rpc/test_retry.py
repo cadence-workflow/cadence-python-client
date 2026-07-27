@@ -1,11 +1,12 @@
 from concurrent import futures
+from datetime import timedelta
 from typing import Any, Tuple, Type
 
 import pytest
 from google.protobuf import any_pb2
 from google.rpc import status_pb2, code_pb2
 from grpc import server
-from grpc.aio import insecure_channel
+from grpc.aio import ClientCallDetails, insecure_channel
 from grpc_status.rpc_status import to_status
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
@@ -20,39 +21,75 @@ from cadence.api.v1.service_workflow_pb2 import (
 from cadence.error import CadenceRpcError, FeatureNotEnabledError, EntityNotExistsError
 
 simple_policy = ExponentialRetryPolicy(
-    initial_interval=1, backoff_coefficient=2, max_interval=10, max_attempts=6
+    initial_interval=timedelta(seconds=1),
+    backoff_coefficient=2,
+    max_interval=timedelta(seconds=10),
+    max_attempts=6,
 )
 
 
 @pytest.mark.parametrize(
     "policy,params,expected",
     [
-        pytest.param(simple_policy, (1, 0.0, 100.0), 1, id="happy path"),
-        pytest.param(simple_policy, (2, 0.0, 100.0), 2, id="second attempt"),
-        pytest.param(simple_policy, (3, 0.0, 100.0), 4, id="third attempt"),
-        pytest.param(simple_policy, (5, 0.0, 100.0), 10, id="capped by max_interval"),
-        pytest.param(simple_policy, (6, 0.0, 100.0), None, id="out of attempts"),
-        pytest.param(simple_policy, (1, 100.0, 100.0), None, id="timeout"),
         pytest.param(
-            simple_policy, (1, 99.0, 100.0), None, id="backoff causes timeout"
+            simple_policy,
+            (1, timedelta(0), timedelta(seconds=100)),
+            timedelta(seconds=1),
+            id="happy path",
+        ),
+        pytest.param(
+            simple_policy,
+            (2, timedelta(0), timedelta(seconds=100)),
+            timedelta(seconds=2),
+            id="second attempt",
+        ),
+        pytest.param(
+            simple_policy,
+            (3, timedelta(0), timedelta(seconds=100)),
+            timedelta(seconds=4),
+            id="third attempt",
+        ),
+        pytest.param(
+            simple_policy,
+            (5, timedelta(0), timedelta(seconds=100)),
+            timedelta(seconds=10),
+            id="capped by max_interval",
+        ),
+        pytest.param(
+            simple_policy,
+            (6, timedelta(0), timedelta(seconds=100)),
+            None,
+            id="out of attempts",
+        ),
+        pytest.param(
+            simple_policy,
+            (1, timedelta(seconds=100), timedelta(seconds=100)),
+            None,
+            id="timeout",
+        ),
+        pytest.param(
+            simple_policy,
+            (1, timedelta(seconds=99), timedelta(seconds=100)),
+            None,
+            id="backoff causes timeout",
         ),
         pytest.param(
             ExponentialRetryPolicy(
-                initial_interval=1,
+                initial_interval=timedelta(seconds=1),
                 backoff_coefficient=1,
-                max_interval=10,
+                max_interval=timedelta(seconds=10),
                 max_attempts=0,
             ),
-            (100, 0.0, 100.0),
-            1,
+            (100, timedelta(0), None),
+            timedelta(seconds=1),
             id="unlimited retries",
         ),
     ],
 )
 def test_next_delay(
     policy: ExponentialRetryPolicy,
-    params: Tuple[int, float, float],
-    expected: float | None,
+    params: Tuple[int, timedelta, timedelta | None],
+    expected: timedelta | None,
 ):
     assert policy.next_delay(*params) == expected
 
@@ -124,7 +161,10 @@ def fake_service():
 
 
 TEST_POLICY = ExponentialRetryPolicy(
-    initial_interval=0, backoff_coefficient=0, max_interval=10, max_attempts=10
+    initial_interval=timedelta(0),
+    backoff_coefficient=0,
+    max_interval=timedelta(seconds=10),
+    max_attempts=10,
 )
 
 
@@ -190,3 +230,44 @@ async def test_workflow_history(fake_service, case: str, expected_calls: int):
             )
 
         assert fake_service.counter == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_retry_interceptor_clamps_expired_timeout(monkeypatch):
+    class FakeLoop:
+        def __init__(self) -> None:
+            self._times = iter((0, 1))
+
+        def time(self) -> float:
+            return next(self._times)
+
+    class SuccessfulCall:
+        def __await__(self):
+            return self._wait().__await__()
+
+        async def _wait(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "cadence._internal.rpc.retry.asyncio.get_running_loop", lambda: FakeLoop()
+    )
+    timeouts: list[float | None] = []
+
+    async def continuation(call_details, request):
+        timeouts.append(call_details.timeout)
+        return SuccessfulCall()
+
+    result = await RetryInterceptor().intercept_unary_unary(
+        continuation,
+        ClientCallDetails(
+            method="/test",
+            timeout=timedelta(microseconds=1).total_seconds(),
+            metadata=None,
+            credentials=None,
+            wait_for_ready=None,
+        ),
+        None,
+    )
+
+    assert isinstance(result, SuccessfulCall)
+    assert timeouts == [0]

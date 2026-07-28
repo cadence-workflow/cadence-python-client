@@ -1,40 +1,69 @@
 from concurrent import futures
 from datetime import timedelta
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 from google.protobuf import any_pb2
 from google.rpc import code_pb2, status_pb2
-from grpc import server
+from grpc import StatusCode, server
 from grpc.aio import insecure_channel
 from grpc_status.rpc_status import to_status
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.metrics import MetricsInterceptor, _extract_method_name
+from cadence._internal.rpc.retry import RetryInterceptor
 from cadence.api.v1 import error_pb2, service_workflow_pb2_grpc
 from cadence.api.v1.service_workflow_pb2 import (
     DescribeWorkflowExecutionRequest,
     DescribeWorkflowExecutionResponse,
 )
+from cadence.error import CadenceRpcError, EntityNotExistsError
 from cadence.metrics.constants import (
     CADENCE_ERROR,
+    CADENCE_INVALID_REQUEST,
     CADENCE_LATENCY,
     CADENCE_METRICS_PREFIX,
     CADENCE_REQUEST,
 )
 
 
+class _FakeCall:
+    def __init__(self, result: Any = None, error: BaseException | None = None):
+        self._result = result
+        self._error = error
+
+    def __await__(self):
+        return self._wait().__await__()
+
+    async def _wait(self):
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
 class _FakeWorkflowService(service_workflow_pb2_grpc.WorkflowAPIServicer):
+    def __init__(self):
+        self.calls: dict[str, int] = {}
+
     def DescribeWorkflowExecution(self, request, context):
+        self.calls[request.domain] = self.calls.get(request.domain, 0) + 1
         if request.domain == "success":
+            return DescribeWorkflowExecutionResponse()
+        if request.domain == "retry-success" and self.calls[request.domain] >= 3:
             return DescribeWorkflowExecutionResponse()
         detail = any_pb2.Any()
         detail.Pack(error_pb2.FeatureNotEnabledError(feature_flag="flag"))
         context.abort_with_status(
             to_status(
                 status_pb2.Status(
-                    code=code_pb2.PERMISSION_DENIED, message="denied", details=[detail]
+                    code=(
+                        code_pb2.RESOURCE_EXHAUSTED
+                        if request.domain == "retry-success"
+                        else code_pb2.PERMISSION_DENIED
+                    ),
+                    message="denied",
+                    details=[detail],
                 )
             )
         )
@@ -62,11 +91,29 @@ def _operation_metric(operation: str, metric: str) -> str:
     return f"{CADENCE_METRICS_PREFIX}{operation}.{metric}"
 
 
+async def _intercept_fake_call(
+    emitter,
+    error: BaseException | None = None,
+    method: bytes = b"/cadence.WorkflowAPI/DescribeWorkflowExecution",
+):
+    async def continuation(_details, _request):
+        return _FakeCall(error=error)
+
+    details = MagicMock(method=method)
+    return await MetricsInterceptor(emitter).intercept_unary_unary(
+        continuation, details, object()
+    )
+
+
 @pytest.mark.asyncio
 async def test_metrics_emitted_on_success(fake_wf_service):
     _, port = fake_wf_service
     emitter = _make_mock_emitter()
-    interceptors: list[Any] = [MetricsInterceptor(emitter), CadenceErrorInterceptor()]
+    interceptors: list[Any] = [
+        RetryInterceptor(),
+        MetricsInterceptor(emitter),
+        CadenceErrorInterceptor(),
+    ]
     async with insecure_channel(f"[::]:{port}", interceptors=interceptors) as channel:
         stub = service_workflow_pb2_grpc.WorkflowAPIStub(channel)
         await stub.DescribeWorkflowExecution(
@@ -75,7 +122,9 @@ async def test_metrics_emitted_on_success(fake_wf_service):
 
     operation = "DescribeWorkflowExecution"
     emitter.with_tags.assert_not_called()
-    emitter.counter.assert_called_once_with(_operation_metric(operation, CADENCE_REQUEST))
+    emitter.counter.assert_called_once_with(
+        _operation_metric(operation, CADENCE_REQUEST)
+    )
     emitter.histogram.assert_called_once()
     histogram_call = emitter.histogram.call_args
     assert histogram_call[0][0] == _operation_metric(operation, CADENCE_LATENCY)
@@ -86,10 +135,14 @@ async def test_metrics_emitted_on_success(fake_wf_service):
 async def test_metrics_emitted_on_error(fake_wf_service):
     _, port = fake_wf_service
     emitter = _make_mock_emitter()
-    interceptors: list[Any] = [MetricsInterceptor(emitter), CadenceErrorInterceptor()]
+    interceptors: list[Any] = [
+        RetryInterceptor(),
+        MetricsInterceptor(emitter),
+        CadenceErrorInterceptor(),
+    ]
     async with insecure_channel(f"[::]:{port}", interceptors=interceptors) as channel:
         stub = service_workflow_pb2_grpc.WorkflowAPIStub(channel)
-        with pytest.raises(Exception):
+        with pytest.raises(CadenceRpcError):
             await stub.DescribeWorkflowExecution(
                 DescribeWorkflowExecutionRequest(domain="fail"), timeout=10
             )
@@ -103,6 +156,31 @@ async def test_metrics_emitted_on_error(fake_wf_service):
     assert emitter.histogram.call_args[0][0] == _operation_metric(
         operation, CADENCE_LATENCY
     )
+
+
+@pytest.mark.asyncio
+async def test_metrics_emitted_once_per_retry_attempt(fake_wf_service):
+    service, port = fake_wf_service
+    service.calls["retry-success"] = 0
+    emitter = _make_mock_emitter()
+    interceptors: list[Any] = [
+        RetryInterceptor(),
+        MetricsInterceptor(emitter),
+        CadenceErrorInterceptor(),
+    ]
+    async with insecure_channel(f"[::]:{port}", interceptors=interceptors) as channel:
+        stub = service_workflow_pb2_grpc.WorkflowAPIStub(channel)
+        await stub.DescribeWorkflowExecution(
+            DescribeWorkflowExecutionRequest(domain="retry-success"), timeout=10
+        )
+
+    operation = "DescribeWorkflowExecution"
+    request = call(_operation_metric(operation, CADENCE_REQUEST))
+    error = call(_operation_metric(operation, CADENCE_ERROR))
+    assert service.calls["retry-success"] == 3
+    assert emitter.counter.call_args_list.count(request) == 3
+    assert emitter.counter.call_args_list.count(error) == 2
+    assert emitter.histogram.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -124,11 +202,40 @@ async def test_metrics_emitted_when_continuation_raises():
     emitter.histogram.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_invalid_request_emits_invalid_request_counter():
+    emitter = _make_mock_emitter()
+    rpc_call = await _intercept_fake_call(
+        emitter,
+        EntityNotExistsError(
+            message="not found",
+            code=StatusCode.NOT_FOUND,
+            current_cluster="",
+            active_cluster="",
+            active_clusters=[],
+        ),
+    )
+
+    with pytest.raises(EntityNotExistsError):
+        await rpc_call
+
+    operation = "DescribeWorkflowExecution"
+    emitter.counter.assert_any_call(_operation_metric(operation, CADENCE_REQUEST))
+    emitter.counter.assert_any_call(
+        _operation_metric(operation, CADENCE_INVALID_REQUEST)
+    )
+    assert emitter.counter.call_count == 2
+    emitter.histogram.assert_called_once()
+
+
 @pytest.mark.parametrize(
     "method,expected",
     [
         (b"/uber.cadence.api.v1.WorkerAPI/PollForDecisionTask", "PollForDecisionTask"),
-        (b"/uber.cadence.api.v1.WorkflowAPI/StartWorkflowExecution", "StartWorkflowExecution"),
+        (
+            b"/uber.cadence.api.v1.WorkflowAPI/StartWorkflowExecution",
+            "StartWorkflowExecution",
+        ),
         ("SimpleMethod", "SimpleMethod"),
         (b"NoSlash", "NoSlash"),
     ],

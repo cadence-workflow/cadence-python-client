@@ -129,3 +129,96 @@ def test_side_effect_module_level_dispatches_through_context():
 
     assert result == 7
     dm.record_marker.assert_called_once()
+
+
+def test_mutable_side_effect_records_first_value():
+    ctx, dm = _make_ctx()
+    dc = _dc()
+    dm.mutable_side_effect_value.return_value = (0, None, False)
+    dm.record_mutable_side_effect.return_value = dc.to_data(["first"])
+
+    result = ctx.mutable_side_effect(
+        "config", lambda: "first", str, lambda old, new: old != new
+    )
+
+    assert result == "first"
+    dm.record_mutable_side_effect.assert_called_once_with(
+        "config", 0, dc.to_data(["first"])
+    )
+
+
+def test_mutable_side_effect_reuses_unchanged_value_without_marker():
+    ctx, dm = _make_ctx()
+    dc = _dc()
+    dm.mutable_side_effect_value.return_value = (3, dc.to_data(["stored"]), False)
+
+    result = ctx.mutable_side_effect(
+        "config", lambda: "candidate", str, lambda old, new: old == new
+    )
+
+    assert result == "stored"
+    dm.record_mutable_side_effect.assert_not_called()
+
+
+def test_mutable_side_effect_records_changed_value():
+    ctx, dm = _make_ctx()
+    dc = _dc()
+    dm.mutable_side_effect_value.return_value = (1, dc.to_data(["old"]), False)
+    dm.record_mutable_side_effect.return_value = dc.to_data(["new"])
+
+    result = ctx.mutable_side_effect(
+        "config", lambda: "new", str, lambda old, new: old != new
+    )
+
+    assert result == "new"
+    dm.record_mutable_side_effect.assert_called_once_with(
+        "config", 1, dc.to_data(["new"])
+    )
+
+
+def test_mutable_side_effect_replay_skips_callbacks_and_uses_history():
+    ctx, dm = _make_ctx(replay=True)
+    dc = _dc()
+    dm.mutable_side_effect_value.return_value = (2, dc.to_data(["history"]), True)
+    fn = MagicMock()
+    updated = MagicMock()
+    dm.record_mutable_side_effect.return_value = dc.to_data(["history"])
+
+    result = ctx.mutable_side_effect("config", fn, str, updated)
+
+    assert result == "history"
+    fn.assert_not_called()
+    updated.assert_not_called()
+    dm.record_mutable_side_effect.assert_called_once_with("config", 2, Payload())
+
+
+def test_mutable_side_effect_replay_without_recorded_value_fails():
+    ctx, dm = _make_ctx(replay=True)
+    dm.mutable_side_effect_value.return_value = (0, None, False)
+
+    with pytest.raises(ValueError, match="No recorded value"):
+        ctx.mutable_side_effect(
+            "config", lambda: "value", str, lambda old, new: old != new
+        )
+
+
+def test_mutable_side_effect_requires_id():
+    ctx, _ = _make_ctx()
+
+    with pytest.raises(ValueError, match="id must not be empty"):
+        ctx.mutable_side_effect("", lambda: "value", str, lambda old, new: old != new)
+
+
+def test_mutable_side_effect_module_level_dispatches_through_context():
+    ctx, dm = _make_ctx()
+    dc = _dc()
+    dm.mutable_side_effect_value.return_value = (0, None, False)
+    dm.record_mutable_side_effect.return_value = dc.to_data([7])
+
+    with ctx._activate():
+        result = workflow_module.mutable_side_effect(
+            "value", lambda: 7, int, lambda old, new: old != new
+        )
+
+    assert result == 7
+    dm.record_mutable_side_effect.assert_called_once()

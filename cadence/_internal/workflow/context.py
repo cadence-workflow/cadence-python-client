@@ -285,6 +285,54 @@ class Context(WorkflowContext):
             self.data_converter().from_data(result_payload, [result_type])[0],
         )
 
+    def mutable_side_effect(
+        self,
+        id: str,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+        updated: Callable[[ResultType, ResultType], bool],
+    ) -> ResultType:
+        """Return a non-deterministic value, recording it only when it changes."""
+        if not id:
+            raise ValueError("id must not be empty")
+
+        access_count, stored_payload, has_history_update = (
+            self._decision_manager.mutable_side_effect_value(id)
+        )
+        if self.is_replay_mode():
+            if stored_payload is None:
+                raise ValueError(
+                    "No recorded value for mutable_side_effect "
+                    f"id={id!r} at access count {access_count}"
+                )
+            if has_history_update:
+                stored_payload = self._decision_manager.record_mutable_side_effect(
+                    id, access_count, Payload()
+                )
+            return cast(
+                ResultType,
+                self.data_converter().from_data(stored_payload, [result_type])[0],
+            )
+
+        value = fn()
+        if stored_payload is not None:
+            stored_value = cast(
+                ResultType,
+                self.data_converter().from_data(stored_payload, [result_type])[0],
+            )
+            if not updated(stored_value, value):
+                return stored_value
+
+        result_payload = self._decision_manager.record_mutable_side_effect(
+            id,
+            access_count,
+            self.data_converter().to_data([value]),
+        )
+        return cast(
+            ResultType,
+            self.data_converter().from_data(result_payload, [result_type])[0],
+        )
+
     def set_replay_current_time(self, current_time: datetime) -> None:
         """Set the current replay timestamp."""
         self._replay_current_time = current_time

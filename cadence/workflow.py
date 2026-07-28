@@ -199,6 +199,21 @@ def side_effect(
     return WorkflowContext.get().side_effect(fn, result_type)
 
 
+def mutable_side_effect(
+    id: str,
+    fn: Callable[[], ResultType],
+    result_type: Type[ResultType],
+    updated: Callable[[ResultType, ResultType], bool],
+) -> ResultType:
+    """Return a non-deterministic value, recording it only when it changes.
+
+    ``id`` must remain stable for the workflow execution. ``updated`` receives
+    the previously recorded value and the new value, and returns whether the new
+    value should be persisted. During replay, neither callback is invoked.
+    """
+    return WorkflowContext.get().mutable_side_effect(id, fn, result_type, updated)
+
+
 def is_cancel_requested() -> bool:
     return WorkflowContext.get().is_cancel_requested()
 
@@ -623,6 +638,15 @@ class WorkflowContext(ABC):
         self,
         fn: Callable[[], ResultType],
         result_type: Type[ResultType],
+    ) -> ResultType: ...
+
+    @abstractmethod
+    def mutable_side_effect(
+        self,
+        id: str,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+        updated: Callable[[ResultType, ResultType], bool],
     ) -> ResultType: ...
 
     @abstractmethod

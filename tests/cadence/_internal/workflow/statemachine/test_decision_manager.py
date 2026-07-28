@@ -13,6 +13,7 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     encode_marker_header,
     MARKER_HEADER_KEY,
+    mutable_side_effect_marker_info,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import NonDeterminismError
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
@@ -354,6 +355,72 @@ async def test_record_marker_requires_marker_name():
     assert decisions.collect_pending_decisions() == []
 
 
+async def test_mutable_side_effect_records_metadata_and_caches_value():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    access_count, stored, has_history_update = decisions.mutable_side_effect_value(
+        "config"
+    )
+
+    assert (access_count, stored, has_history_update) == (0, None, False)
+    decisions.record_mutable_side_effect("config", access_count, Payload(data=b"value"))
+
+    emitted = decisions.collect_pending_decisions()[0]
+    attrs = emitted.record_marker_decision_attributes
+    assert mutable_side_effect_marker_info(attrs) == ("config", 0)
+    assert attrs.details == Payload(data=b"value")
+
+    _, stored, has_history_update = decisions.mutable_side_effect_value("config")
+    assert stored == Payload(data=b"value")
+    assert has_history_update is False
+
+
+async def test_mutable_side_effect_does_not_shift_other_decision_ids_on_replay():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    recorded = marker_recorded(
+        1,
+        "MutableSideEffect",
+        Payload(data=b"history-value"),
+        context_id="mutable-side-effect:config:0",
+        mutable_side_effect_id="config",
+        mutable_side_effect_access_count=0,
+    )
+
+    with decisions.track_nondeterminism(True, [recorded, activity_scheduled(2, "0")]):
+        access_count, _, has_history_update = decisions.mutable_side_effect_value(
+            "config"
+        )
+        assert has_history_update is True
+        decisions.record_mutable_side_effect("config", access_count, Payload())
+        decisions.schedule_activity(decision.ScheduleActivityTaskDecisionAttributes())
+
+
+async def test_mutable_side_effect_replay_applies_marker_at_matching_access_count():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    recorded = marker_recorded(
+        1,
+        "MutableSideEffect",
+        Payload(data=b"history-value"),
+        context_id="0",
+        mutable_side_effect_id="config",
+        mutable_side_effect_access_count=1,
+    )
+
+    with decisions.track_nondeterminism(True, [recorded]):
+        first_access, first_value, first_update = decisions.mutable_side_effect_value(
+            "config"
+        )
+        second_access, second_value, second_update = (
+            decisions.mutable_side_effect_value("config")
+        )
+
+    assert (first_access, first_value, first_update) == (0, None, False)
+    assert (second_access, second_value, second_update) == (
+        1,
+        Payload(data=b"history-value"),
+        True,
+    )
+
+
 async def test_cancel_marker_is_not_logged_as_unknown_marker_name(caplog):
     # The immediate-cancellation marker (cancellation.py) is Python-specific and encodes
     # a JSON object in Details, not a [context_id, user_data] pair. It must not be mistaken
@@ -654,7 +721,13 @@ def activity_completed(
 
 
 def marker_recorded(
-    event_id: int, marker_name: str, details: Payload, context_id: str | None = None
+    event_id: int,
+    marker_name: str,
+    details: Payload,
+    context_id: str | None = None,
+    *,
+    mutable_side_effect_id: str | None = None,
+    mutable_side_effect_access_count: int | None = None,
 ) -> history.HistoryEvent:
     attrs = history.MarkerRecordedEventAttributes(
         marker_name=marker_name,
@@ -662,7 +735,11 @@ def marker_recorded(
     )
     if context_id is not None:
         attrs.header.fields[MARKER_HEADER_KEY].CopyFrom(
-            encode_marker_header(context_id)
+            encode_marker_header(
+                context_id,
+                mutable_side_effect_id=mutable_side_effect_id,
+                mutable_side_effect_access_count=mutable_side_effect_access_count,
+            )
         )
     return history.HistoryEvent(
         event_id=event_id,

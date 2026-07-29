@@ -11,12 +11,14 @@ from cadence import activity, Client
 from cadence._internal.activity import ActivityExecutor
 from cadence.activity import ActivityInfo, ActivityDefinition
 from cadence.api.v1.common_pb2 import (
+    Header,
     WorkflowExecution,
     ActivityType,
     Payload,
     Failure,
     WorkflowType,
 )
+from cadence.context import ContextVarPropagator
 from cadence.api.v1.service_worker_pb2 import (
     RespondActivityTaskCompletedResponse,
     PollForActivityTaskResponse,
@@ -150,6 +152,99 @@ async def test_activity_sync_success(client):
             identity="identity",
         )
     )
+
+
+@pytest.mark.parametrize("is_async", [True, False])
+async def test_activity_context_propagation_does_not_leak(client, is_async):
+    from contextvars import ContextVar
+
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCompleted = AsyncMock(
+        return_value=RespondActivityTaskCompletedResponse()
+    )
+    value: ContextVar[str] = ContextVar("activity-context")
+    propagator = ContextVarPropagator(
+        value, "context", lambda item: item.encode(), bytes.decode
+    )
+    reg = Registry()
+
+    if is_async:
+
+        @reg.activity(name="activity_type")
+        async def activity_fn():
+            return value.get()
+
+    else:
+
+        @reg.activity(name="activity_type")
+        def activity_fn():
+            return value.get()
+
+    executor = ActivityExecutor(
+        client,
+        "task_list",
+        "identity",
+        1,
+        reg.get_activity,
+        context_propagators=(propagator,),
+    )
+    task = fake_task("activity_type", "")
+    task.header.CopyFrom(Header(fields={"context": Payload(data=b"propagated")}))
+
+    await executor.execute(task)
+
+    assert (
+        worker_stub.RespondActivityTaskCompleted.call_args.args[0].result.data
+        == b'"propagated"'
+    )
+    with pytest.raises(LookupError):
+        value.get()
+
+
+@pytest.mark.parametrize("is_async", [True, False])
+async def test_activity_context_propagation_restores_after_exception(client, is_async):
+    from contextvars import ContextVar
+
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskFailed = AsyncMock(
+        return_value=RespondActivityTaskFailedResponse()
+    )
+    value: ContextVar[str] = ContextVar("activity-exception-context")
+    propagator = ContextVarPropagator(
+        value, "context", lambda item: item.encode(), bytes.decode
+    )
+    reg = Registry()
+
+    if is_async:
+
+        @reg.activity(name="activity_type")
+        async def activity_fn():
+            assert value.get() == "propagated"
+            raise RuntimeError("activity failed")
+
+    else:
+
+        @reg.activity(name="activity_type")
+        def activity_fn():
+            assert value.get() == "propagated"
+            raise RuntimeError("activity failed")
+
+    executor = ActivityExecutor(
+        client,
+        "task_list",
+        "identity",
+        1,
+        reg.get_activity,
+        context_propagators=(propagator,),
+    )
+    task = fake_task("activity_type", "")
+    task.header.CopyFrom(Header(fields={"context": Payload(data=b"propagated")}))
+
+    await executor.execute(task)
+
+    worker_stub.RespondActivityTaskFailed.assert_called_once()
+    with pytest.raises(LookupError):
+        value.get()
 
 
 async def test_activity_sync_failure(client):

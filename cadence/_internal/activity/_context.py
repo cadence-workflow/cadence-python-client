@@ -3,13 +3,15 @@ import threading
 from concurrent.futures import Future as ConcurrentFuture
 from concurrent.futures.thread import ThreadPoolExecutor
 from datetime import timedelta
-from typing import Any, Type
+from typing import Any, Mapping, Sequence, Type
 
 from cadence import Client
 from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.activity._heartbeat import _HeartbeatSender
+from cadence._internal.context import extract_headers
 from cadence.activity import ActivityInfo, ActivityContext
 from cadence.api.v1.common_pb2 import Payload
+from cadence.context import ContextPropagator
 
 
 class _Context(ActivityContext):
@@ -19,6 +21,8 @@ class _Context(ActivityContext):
         info: ActivityInfo,
         activity_def: BaseDefinition[[Any], Any],
         heartbeat_sender: _HeartbeatSender,
+        context_propagators: Sequence[ContextPropagator] = (),
+        headers: Mapping[str, bytes] | None = None,
     ):
         self._client = client
         self._info = info
@@ -28,6 +32,8 @@ class _Context(ActivityContext):
         self._heartbeat_tasks: set[asyncio.Future[Any]] = set()
         self._heartbeat_tasks_lock = threading.Lock()
         self._cancel_event = asyncio.Event()
+        self._context_propagators = tuple(context_propagators)
+        self._headers = dict(headers) if headers is not None else {}
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
@@ -46,7 +52,8 @@ class _Context(ActivityContext):
 
     async def _run_activity(self, params: list[Any]) -> Any:
         with self._activate():
-            return await self._activity_def.impl_fn(*params)
+            with extract_headers(self._context_propagators, self._headers):
+                return await self._activity_def.impl_fn(*params)
 
     async def _wait_pending_heartbeats(self) -> None:
         tasks = self._pending_heartbeat_tasks()
@@ -115,8 +122,17 @@ class _SyncContext(_Context):
         activity_def: BaseDefinition[[Any], Any],
         executor: ThreadPoolExecutor,
         heartbeat_sender: _HeartbeatSender,
+        context_propagators: Sequence[ContextPropagator] = (),
+        headers: Mapping[str, bytes] | None = None,
     ):
-        super().__init__(client, info, activity_def, heartbeat_sender)
+        super().__init__(
+            client,
+            info,
+            activity_def,
+            heartbeat_sender,
+            context_propagators,
+            headers,
+        )
         self._executor = executor
         self._sync_cancel_event = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -134,7 +150,8 @@ class _SyncContext(_Context):
 
     def _run(self, args: list[Any]) -> Any:
         with self._activate():
-            return self._activity_def.impl_fn(*args)
+            with extract_headers(self._context_propagators, self._headers):
+                return self._activity_def.impl_fn(*args)
 
     def client(self) -> Client:
         raise RuntimeError("client is only supported in async activities")

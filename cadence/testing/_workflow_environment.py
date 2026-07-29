@@ -50,6 +50,7 @@ from typing import (
     Any,
     Callable,
     Optional,
+    Sequence,
     Tuple,
     Type,
     Union,
@@ -58,12 +59,14 @@ from typing import (
 )
 
 from cadence._internal.activity._definition import BaseDefinition
+from cadence._internal.context import extract_headers, inject_headers
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.activity import ActivityContext, ActivityInfo
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
 from cadence.api.v1.query_pb2 import QueryRejectCondition
 from cadence.client import Client, ClientOptions, StartWorkflowOptions
+from cadence.context import ContextPropagator
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import NoOpMetricsEmitter
 from cadence.workflow import (
@@ -290,6 +293,7 @@ class _Execution:
         env: "TestWorkflowEnvironment",
         workflow_definition: WorkflowDefinition,
         info: WorkflowInfo,
+        headers: dict[str, bytes],
     ) -> None:
         self._env = env
         self.info = info
@@ -301,6 +305,7 @@ class _Execution:
         # at the boundary (mirroring the production WorkflowEngine).
         self._instance = WorkflowInstance(self._loop, workflow_definition)
         self._context = _InMemoryWorkflowContext(env, info)
+        self._headers = dict(headers)
         self.completed: bool = False
         self.result_payload: Optional[Payload] = None
         self.error: Optional[BaseException] = None
@@ -353,7 +358,8 @@ class _Execution:
         self._env._driving_execution = self
         try:
             with self._context._activate():
-                yield
+                with extract_headers(self._env._context_propagators, self._headers):
+                    yield
         finally:
             self._env._driving_execution = None
 
@@ -424,6 +430,7 @@ class _MockClient(Client):
             data_converter=env._data_converter,
             identity="test-workflow-environment",
             metrics_emitter=NoOpMetricsEmitter(),
+            context_propagators=env._context_propagators,
         )
 
     async def ready(self) -> None:
@@ -515,11 +522,13 @@ class TestWorkflowEnvironment:
         task_list: str = "test-task-list",
         data_converter: Optional[DataConverter] = None,
         start_time: Optional[datetime] = None,
+        context_propagators: Sequence[ContextPropagator] = (),
     ) -> None:
         self._registry = registry
         self._domain = domain
         self._default_task_list = task_list
         self._data_converter = data_converter or DefaultDataConverter()
+        self._context_propagators = tuple(context_propagators)
         self._activity_mocks: dict[str, Union[_ValueMock, _FnMock]] = {}
         self._executions: dict[str, _Execution] = {}
         self._last_execution: Optional[_Execution] = None
@@ -681,7 +690,12 @@ class TestWorkflowEnvironment:
             workflow_task_list=task_list,
             data_converter=self._data_converter,
         )
-        execution = _Execution(self, definition, info)
+        execution = _Execution(
+            self,
+            definition,
+            info,
+            inject_headers(self._client.context_propagators),
+        )
         self._executions[workflow_id] = execution
         self._last_execution = execution
 
@@ -763,15 +777,19 @@ class TestWorkflowEnvironment:
         else:
             call_args = list(args)
 
-        if isinstance(mock, _ValueMock):
-            result: Any = mock.value
-        elif isinstance(mock, _FnMock):
-            result = mock.fn(*call_args)
-            if inspect.iscoroutine(result):
-                result = await result
-        else:
-            assert definition is not None
-            result = await self._run_real_activity(definition, call_args, name, info)
+        headers = inject_headers(self._context_propagators)
+        with extract_headers(self._context_propagators, headers):
+            if isinstance(mock, _ValueMock):
+                result: Any = mock.value
+            elif isinstance(mock, _FnMock):
+                result = mock.fn(*call_args)
+                if inspect.iscoroutine(result):
+                    result = await result
+            else:
+                assert definition is not None
+                result = await self._run_real_activity(
+                    definition, call_args, name, info
+                )
 
         result_payload = dc.to_data([result])
         return cast(ResultType, dc.from_data(result_payload, [result_type])[0])
@@ -844,7 +862,11 @@ class TestWorkflowEnvironment:
         child_ctx = _InMemoryWorkflowContext(self, info)
         token = WorkflowContext._var.set(child_ctx)
         try:
-            result = await run_method(*run_args)
+            with extract_headers(
+                self._context_propagators,
+                inject_headers(self._context_propagators),
+            ):
+                result = await run_method(*run_args)
         finally:
             WorkflowContext._var.reset(token)
         return self._data_converter.to_data([result])

@@ -70,6 +70,8 @@ def _validate_and_copy_defaults(
 
     if "metrics_emitter" not in options:
         cast(dict, options)["metrics_emitter"] = client.metrics_emitter
+    if "context_propagators" not in options:
+        cast(dict, options)["context_propagators"] = client.context_propagators
 
     # TODO: More validation
 
@@ -77,3 +79,4 @@ def _validate_and_copy_defaults(
     for key, value in _DEFAULT_WORKER_OPTIONS.items():
         if key not in options:
             cast(dict, options)[key] = value
+    cast(dict, options)["context_propagators"] = tuple(options["context_propagators"])

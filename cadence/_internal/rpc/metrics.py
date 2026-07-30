@@ -1,3 +1,4 @@
+import asyncio
 import time
 from collections.abc import Callable, Generator
 from typing import Any, TypeVar
@@ -39,7 +40,7 @@ def _metric_name(operation: str, metric: str) -> str:
     return f"{CADENCE_METRICS_PREFIX}{operation}.{metric}"
 
 
-def _is_invalid_request(error: Exception) -> bool:
+def _is_invalid_request(error: BaseException) -> bool:
     return isinstance(error, _INVALID_REQUEST_ERRORS) or (
         isinstance(error, CadenceRpcError) and error.code == StatusCode.INVALID_ARGUMENT
     )
@@ -49,7 +50,7 @@ def _record_rpc_completion(
     emitter: MetricsEmitter,
     operation: str,
     start_ns: int,
-    error: Exception | None = None,
+    error: BaseException | None = None,
 ) -> None:
     elapsed = duration_from_nanoseconds(time.monotonic_ns() - start_ns)
     emitter.histogram(_metric_name(operation, CADENCE_LATENCY), elapsed)
@@ -79,8 +80,9 @@ class _MetricsUnaryUnaryCall(UnaryUnaryCallWrapper[RequestType, ResponseType]):
         self._start_ns = start_ns
         self._emitter = emitter
         self._recorded = False
+        self._emitter.counter(_metric_name(operation, CADENCE_REQUEST))
 
-    def _record_completion(self, error: Exception | None = None) -> None:
+    def _record_completion(self, error: BaseException | None = None) -> None:
         if self._recorded:
             return
         self._recorded = True
@@ -89,14 +91,14 @@ class _MetricsUnaryUnaryCall(UnaryUnaryCallWrapper[RequestType, ResponseType]):
         )
 
     def __await__(self) -> Generator[Any, None, ResponseType]:
-        error: Exception | None = None
         try:
-            return (yield from self._wrapped.__await__())
-        except Exception as e:
-            error = e
-            raise
-        finally:
+            response = yield from self._wrapped.__await__()  # type: ResponseType
+        except (CadenceRpcError, asyncio.CancelledError) as error:
             self._record_completion(error)
+            raise
+        else:
+            self._record_completion()
+            return response
 
 
 class MetricsInterceptor(UnaryUnaryClientInterceptor):
@@ -111,10 +113,5 @@ class MetricsInterceptor(UnaryUnaryClientInterceptor):
     ) -> Any:
         start_ns = time.monotonic_ns()
         operation = _extract_method_name(client_call_details.method)
-        self._emitter.counter(_metric_name(operation, CADENCE_REQUEST))
-        try:
-            rpc_call = await continuation(client_call_details, request)
-        except Exception as error:
-            _record_rpc_completion(self._emitter, operation, start_ns, error=error)
-            raise
+        rpc_call = await continuation(client_call_details, request)
         return _MetricsUnaryUnaryCall(rpc_call, operation, start_ns, self._emitter)

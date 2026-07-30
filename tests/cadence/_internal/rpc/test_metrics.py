@@ -1,3 +1,4 @@
+import asyncio
 from concurrent import futures
 from datetime import timedelta
 from typing import Any
@@ -184,7 +185,7 @@ async def test_metrics_emitted_once_per_retry_attempt(fake_wf_service):
 
 
 @pytest.mark.asyncio
-async def test_metrics_emitted_when_continuation_raises():
+async def test_no_metrics_emitted_when_continuation_raises():
     emitter = _make_mock_emitter()
     interceptor = MetricsInterceptor(emitter)
     details = MagicMock(method=b"/cadence.WorkflowAPI/StartWorkflowExecution")
@@ -195,11 +196,24 @@ async def test_metrics_emitted_when_continuation_raises():
     with pytest.raises(RuntimeError, match="channel setup failed"):
         await interceptor.intercept_unary_unary(continuation, details, object())
 
-    operation = "StartWorkflowExecution"
     emitter.with_tags.assert_not_called()
-    emitter.counter.assert_any_call(_operation_metric(operation, CADENCE_REQUEST))
-    emitter.counter.assert_any_call(_operation_metric(operation, CADENCE_ERROR))
-    emitter.histogram.assert_called_once()
+    emitter.counter.assert_not_called()
+    emitter.histogram.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_no_completion_metrics_emitted_on_non_rpc_error():
+    emitter = _make_mock_emitter()
+    rpc_call = await _intercept_fake_call(emitter, RuntimeError("application bug"))
+
+    with pytest.raises(RuntimeError, match="application bug"):
+        await rpc_call
+
+    operation = "DescribeWorkflowExecution"
+    emitter.counter.assert_called_once_with(
+        _operation_metric(operation, CADENCE_REQUEST)
+    )
+    emitter.histogram.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -224,6 +238,21 @@ async def test_invalid_request_emits_invalid_request_counter():
     emitter.counter.assert_any_call(
         _operation_metric(operation, CADENCE_INVALID_REQUEST)
     )
+    assert emitter.counter.call_count == 2
+    emitter.histogram.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_metrics_emitted_on_cancellation():
+    emitter = _make_mock_emitter()
+    rpc_call = await _intercept_fake_call(emitter, asyncio.CancelledError())
+
+    with pytest.raises(asyncio.CancelledError):
+        await rpc_call
+
+    operation = "DescribeWorkflowExecution"
+    emitter.counter.assert_any_call(_operation_metric(operation, CADENCE_REQUEST))
+    emitter.counter.assert_any_call(_operation_metric(operation, CADENCE_ERROR))
     assert emitter.counter.call_count == 2
     emitter.histogram.assert_called_once()
 

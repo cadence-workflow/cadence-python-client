@@ -18,6 +18,7 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     marker_context_id,
     marker_decision_id,
+    MUTABLE_SIDE_EFFECT_MARKER_NAME,
     VERSION_MARKER_NAME,
 )
 from cadence.api.v1 import decision, history
@@ -367,8 +368,9 @@ def _(
 # via the DecisionId alone; the Expectation body is empty since the DecisionId already
 # captures both the type and the identity.
 #
-# Version markers are exempt: adding/removing a version check is always safe, so both
-# handlers return None (no expectation on either side). This matches Go SDK behaviour.
+# Version and mutable side-effect markers are exempt from generic decision matching.
+# They have specialized replay caches, so adding/removing an invocation does not shift
+# ordinary decision matching. This matches Go SDK behaviour.
 #
 # Details are intentionally excluded from Expectation; DecisionManager stores recorded
 # values in _recorded_marker_details and returns the historical value on replay directly.
@@ -377,7 +379,7 @@ def _(attrs: decision.RecordMarkerDecisionAttributes) -> Expectation | None:
     context_id = marker_context_id(attrs)
     if context_id is None:
         return None
-    if attrs.marker_name == VERSION_MARKER_NAME:
+    if attrs.marker_name in {VERSION_MARKER_NAME, MUTABLE_SIDE_EFFECT_MARKER_NAME}:
         return None
     return Expectation(marker_decision_id(attrs.marker_name, context_id), {})
 
@@ -387,7 +389,7 @@ def _(attrs: history.MarkerRecordedEventAttributes) -> Expectation | None:
     context_id = marker_context_id(attrs)
     if context_id is None:
         return None
-    if attrs.marker_name == VERSION_MARKER_NAME:
+    if attrs.marker_name in {VERSION_MARKER_NAME, MUTABLE_SIDE_EFFECT_MARKER_NAME}:
         return None
     return Expectation(marker_decision_id(attrs.marker_name, context_id), {})
 

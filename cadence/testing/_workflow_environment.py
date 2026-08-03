@@ -164,6 +164,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
     def __init__(self, env: "TestWorkflowEnvironment", info: WorkflowInfo) -> None:
         self._env = env
         self._info = info
+        self._mutable_side_effect_values: dict[str, Any] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -223,6 +224,26 @@ class _InMemoryWorkflowContext(WorkflowContext):
         result_type: Type[ResultType],
     ) -> ResultType:
         return fn()
+
+    def mutable_side_effect(
+        self,
+        id: str,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+        updated: Callable[[ResultType, ResultType], bool],
+    ) -> ResultType:
+        if not id:
+            raise ValueError("id must not be empty")
+        value = fn()
+        if id not in self._mutable_side_effect_values:
+            self._mutable_side_effect_values[id] = value
+            return value
+
+        previous = cast(ResultType, self._mutable_side_effect_values[id])
+        if updated(previous, value):
+            self._mutable_side_effect_values[id] = value
+            return value
+        return previous
 
     async def signal_child_workflow(
         self,

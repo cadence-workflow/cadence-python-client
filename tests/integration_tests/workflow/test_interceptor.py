@@ -9,10 +9,12 @@ from cadence.api.v1.service_workflow_pb2 import (
 )
 from cadence.workflow import (
     ActivityOptions,
+    ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
     SearchAttributeType,
     WorkflowContext,
+    WorkflowFuture,
     WorkflowInterceptor,
 )
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
@@ -59,25 +61,25 @@ def _rewrite(args: tuple[Any, ...]) -> tuple[Any, ...]:
 
 
 class RewritingInterceptor(WorkflowInterceptor):
-    async def execute_activity(
+    def execute_activity(
         self,
         activity: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
-    ) -> ResultType:
-        return await super().execute_activity(
+    ) -> WorkflowFuture[ResultType]:
+        return super().execute_activity(
             activity, result_type, *_rewrite(args), **kwargs
         )
 
-    async def execute_child_workflow(
+    def execute_child_workflow(
         self,
         workflow_type: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ChildWorkflowOptions],
-    ) -> ResultType:
-        return await super().execute_child_workflow(
+    ) -> ChildWorkflowFuture[ResultType]:
+        return super().execute_child_workflow(
             workflow_type, result_type, *_rewrite(args), **kwargs
         )
 

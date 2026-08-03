@@ -1,4 +1,3 @@
-import asyncio
 from datetime import timedelta
 
 from cadence import Registry, workflow
@@ -31,9 +30,9 @@ class TimerWorkflow:
 class TimerCancelWorkflow:
     @workflow.run
     async def run(self) -> str:
-        task = asyncio.create_task(workflow.sleep(timedelta(seconds=1)))
+        timer = workflow.sleep(timedelta(seconds=1))
         await echo("hello")
-        task.cancel()
+        timer.cancel()
         return "hello"
 
 

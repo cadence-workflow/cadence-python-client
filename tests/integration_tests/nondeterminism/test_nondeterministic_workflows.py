@@ -55,29 +55,22 @@ class HappyWorkflow:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")  # event id 5
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )  # event id 11
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )  # event id 12
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )  # event id 20
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )  # event id 21
-
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),  # event id 11
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),  # event id 12
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),  # event id 20
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),  # event id 21
+        )
         return "hello world"
 
 
@@ -124,28 +117,22 @@ class NDActivityRemoved:
     @workflow.run
     async def run(self) -> str:
         # await first_activity.with_options(schedule_to_close_timeout=timedelta(seconds=10)).execute("1")
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),  # event id 11
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),  # event id 12
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),  # event id 20
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),  # event id 21
+        )
 
         return "hello world"
 
@@ -157,28 +144,22 @@ class NDActivityTypeChanged:
         await parallel_one.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")  # changed
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),
+        )
 
         return "hello world"
 
@@ -190,24 +171,20 @@ class NDParallelActivityRemoved:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")
-        async with asyncio.TaskGroup() as tg:
-            # tg.create_task(parallel_one.with_options(schedule_to_close_timeout=timedelta(seconds=10)).execute("2"))
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )
+        await asyncio.gather(
+            # parallel_one.with_options(schedule_to_close_timeout=timedelta(seconds=10)).execute("2"),
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),
+        )
 
         return "hello world"
 
@@ -219,33 +196,25 @@ class NDParallelActivityAdded:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )  # Changed
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),  # Changed
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),
+        )
 
         return "hello world"
 
@@ -257,29 +226,23 @@ class NDParallelActivityReordered:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")
-        async with asyncio.TaskGroup() as tg:
+        await asyncio.gather(
             # reordered
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),
+        )
 
         return "hello world"
 
@@ -291,24 +254,20 @@ class NDLastActivityRemoved:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            # tg.create_task(parallel_three.with_options(schedule_to_close_timeout=timedelta(seconds=10)).execute("5"))
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),
+            # parallel_three.with_options(schedule_to_close_timeout=timedelta(seconds=10)).execute("5"),
+        )
 
         return "hello world"
 
@@ -320,17 +279,14 @@ class NDEarlyReturn:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+        )
 
         # Skipping an entire decision task
 
@@ -353,28 +309,22 @@ class NDLateReturn:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),
+        )
 
         # Extra activity at the end
         await parallel_one.with_options(
@@ -391,28 +341,22 @@ class NDWrongOutcome:
         await first_activity.with_options(
             schedule_to_close_timeout=timedelta(seconds=10)
         ).execute("1")
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_one.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("2")
-            )
-            tg.create_task(
-                parallel_two.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("3")
-            )
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("4")
-            )
-            tg.create_task(
-                parallel_three.with_options(
-                    schedule_to_close_timeout=timedelta(seconds=10)
-                ).execute("5")
-            )
+        await asyncio.gather(
+            parallel_one.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("2"),
+            parallel_two.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("3"),
+        )
+        await asyncio.gather(
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("4"),
+            parallel_three.with_options(
+                schedule_to_close_timeout=timedelta(seconds=10)
+            ).execute("5"),
+        )
 
         raise ValueError("failure!")  # changed
 

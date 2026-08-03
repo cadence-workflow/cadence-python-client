@@ -17,6 +17,7 @@ from cadence.workflow._types import (
     ChildWorkflowOptions,
     ResultType,
     SearchAttributeType,
+    WorkflowFuture,
 )
 
 
@@ -51,55 +52,46 @@ class WorkflowContext(ABC):
     def data_converter(self) -> DataConverter: ...
 
     @abstractmethod
-    async def execute_activity(
+    def execute_activity(
         self,
         activity: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
-    ) -> ResultType: ...
+    ) -> WorkflowFuture[ResultType]: ...
 
     @abstractmethod
-    async def execute_child_workflow(
+    def execute_child_workflow(
         self,
         workflow_type: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ChildWorkflowOptions],
-    ) -> ResultType: ...
+    ) -> ChildWorkflowFuture[ResultType]: ...
 
     @abstractmethod
-    async def start_child_workflow(
-        self,
-        workflow_type: str,
-        result_type: Type[ResultType],
-        *args: Any,
-        **kwargs: Unpack[ChildWorkflowOptions],
-    ) -> "ChildWorkflowFuture[ResultType]": ...
-
-    @abstractmethod
-    async def signal_child_workflow(
+    def signal_child_workflow(
         self,
         child_workflow_id: str,
         signal_name: str,
         *args: Any,
-    ) -> None: ...
+    ) -> WorkflowFuture[None]: ...
 
     @abstractmethod
-    async def signal_external_workflow(
+    def signal_external_workflow(
         self,
         workflow_id: str,
         signal_name: str,
         *args: Any,
         run_id: str = "",
         domain: str = "",
-    ) -> None: ...
+    ) -> WorkflowFuture[None]: ...
 
     @abstractmethod
-    async def start_timer(self, duration: timedelta) -> None: ...
+    def start_timer(self, duration: timedelta) -> WorkflowFuture[None]: ...
 
     @abstractmethod
-    async def wait_condition(self, predicate: Callable[[], bool]) -> None: ...
+    def wait_condition(self, predicate: Callable[[], bool]) -> WorkflowFuture[None]: ...
 
     @abstractmethod
     def side_effect(

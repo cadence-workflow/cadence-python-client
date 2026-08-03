@@ -25,7 +25,7 @@ type-check:
 	@echo "Installing type-check dependencies..."
 	uv sync --extra dev --extra openai
 	@echo "Running mypy type checker..."
-	uv run mypy cadence/ tests/
+	uv run --all-extras mypy cadence/ tests/
 
 # Run unit tests
 test:

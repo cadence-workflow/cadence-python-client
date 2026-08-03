@@ -1,12 +1,17 @@
 from contextvars import ContextVar
 from datetime import timedelta
 
+from typing import cast
+
 import pytest
 
 from cadence import ContextVarPropagator, Registry, workflow
 from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.api.v1.history_pb2 import EventFilterType, HistoryEvent
-from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest
+from cadence.api.v1.service_workflow_pb2 import (
+    GetWorkflowExecutionHistoryRequest,
+    GetWorkflowExecutionHistoryResponse,
+)
 from cadence.worker import Worker
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
 
@@ -43,16 +48,18 @@ async def _await_close_event(
     worker: Worker, execution: WorkflowExecution
 ) -> HistoryEvent:
     """Block until the given run closes and return its final history event."""
-    response = await worker.client.workflow_stub.GetWorkflowExecutionHistory(
-        GetWorkflowExecutionHistoryRequest(
-            domain=DOMAIN_NAME,
-            workflow_execution=execution,
-            wait_for_new_event=True,
-            history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
-            skip_archival=True,
+    response: GetWorkflowExecutionHistoryResponse = (
+        await worker.client.workflow_stub.GetWorkflowExecutionHistory(
+            GetWorkflowExecutionHistoryRequest(
+                domain=DOMAIN_NAME,
+                workflow_execution=execution,
+                wait_for_new_event=True,
+                history_event_filter_type=EventFilterType.EVENT_FILTER_TYPE_CLOSE_EVENT,
+                skip_archival=True,
+            )
         )
     )
-    return response.history.events[-1]
+    return cast(HistoryEvent, response.history.events[-1])
 
 
 async def test_context_propagates_through_activity_and_continue_as_new(

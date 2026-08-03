@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
-from typing import ContextManager, Mapping
+from collections.abc import Iterator, Mapping
 from unittest.mock import AsyncMock
 
 import pytest
@@ -86,7 +86,7 @@ def test_header_conversion_and_ordered_injection() -> None:
             return self.result
 
         @contextmanager
-        def extract(self, headers: Mapping[str, bytes]) -> ContextManager[None]:
+        def extract(self, headers: Mapping[str, bytes]) -> Iterator[None]:
             yield
 
     assert inject_headers(
@@ -106,7 +106,7 @@ def test_extract_passes_full_headers_and_unwinds_partial_failure() -> None:
             return {}
 
         @contextmanager
-        def extract(self, headers: Mapping[str, bytes]) -> ContextManager[None]:
+        def extract(self, headers: Mapping[str, bytes]) -> Iterator[None]:
             assert headers == {"all": b"headers"}
             entered.append(f"enter:{self.name}")
             if self.fail:

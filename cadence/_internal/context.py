@@ -9,6 +9,7 @@ from typing import Protocol
 from cadence.api.v1.common_pb2 import Header, Payload
 from cadence.context import ContextPropagator
 
+
 class _HeaderCarrier(Protocol):
     """Proto message that carries a Cadence ``Header`` field."""
 

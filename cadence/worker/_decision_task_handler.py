@@ -359,11 +359,12 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         emitter = emitter if emitter is not None else self._metrics_emitter
         resp_start_ns = time.monotonic_ns()
         try:
+            should_return_new_decision_task = False  # TODO: add optimization to handle the returned decision task if this is set to True
             request = RespondDecisionTaskCompletedRequest(
                 task_token=task.task_token,
                 decisions=decision_result.decisions,
                 identity=self._identity,
-                return_new_decision_task=True,
+                return_new_decision_task=should_return_new_decision_task,  # TODO: add optimization to handle the returned decision task if this is set to True
             )
 
             await self._client.worker_stub.RespondDecisionTaskCompleted(request)
@@ -384,7 +385,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                     else "unknown",
                     "started_event_id": task.started_event_id,
                     "decisions_count": len(decision_result.decisions),
-                    "return_new_decision_task": True,
+                    "return_new_decision_task": should_return_new_decision_task,
                     "task_token": task.task_token[:16].hex()
                     if task.task_token
                     else None,

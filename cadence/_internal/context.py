@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from typing import Protocol
 
 from cadence.api.v1.common_pb2 import Header, Payload
 from cadence.context import ContextPropagator
-
-logger = logging.getLogger(__name__)
-
 
 class _HeaderCarrier(Protocol):
     """Proto message that carries a Cadence ``Header`` field."""
@@ -35,10 +31,7 @@ def inject_headers(propagators: Sequence[ContextPropagator]) -> dict[str, bytes]
     """Inject ordered propagators, with later propagators winning duplicate keys."""
     headers: dict[str, bytes] = {}
     for propagator in propagators:
-        try:
-            headers.update(propagator.inject())
-        except Exception:
-            logger.exception("Context propagator inject failed; skipping propagator")
+        headers.update(propagator.inject())
     return headers
 
 
@@ -74,10 +67,5 @@ def extract_headers(
     """Activate propagators in order and reliably unwind partial extraction."""
     with ExitStack() as stack:
         for propagator in propagators:
-            try:
-                stack.enter_context(propagator.extract(headers))
-            except Exception:
-                logger.exception(
-                    "Context propagator extract failed; skipping propagator"
-                )
+            stack.enter_context(propagator.extract(headers))
         yield

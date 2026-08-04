@@ -94,7 +94,7 @@ def test_header_conversion_and_ordered_injection() -> None:
     ) == {"first": b"1", "same": b"new"}
 
 
-def test_extract_skips_failed_propagator_and_unwinds_entered() -> None:
+def test_extract_failure_unwinds_entered_propagators() -> None:
     entered: list[str] = []
 
     class Propagator:
@@ -116,10 +116,11 @@ def test_extract_skips_failed_propagator_and_unwinds_entered() -> None:
             finally:
                 entered.append(f"exit:{self.name}")
 
-    with extract_headers(
-        (Propagator("one"), Propagator("two", fail=True)), {"all": b"headers"}
-    ):
-        pass
+    with pytest.raises(RuntimeError, match="extract failed"):
+        with extract_headers(
+            (Propagator("one"), Propagator("two", fail=True)), {"all": b"headers"}
+        ):
+            pass
     assert entered == ["enter:one", "enter:two", "exit:one"]
 
 
@@ -320,9 +321,7 @@ def test_production_workflow_continue_as_new_uses_workflow_context() -> None:
     assert header_to_dict(attrs.header) == {"context": b"updated-in-workflow"}
 
 
-def test_inject_skips_failed_propagator() -> None:
-    value: ContextVar[str] = ContextVar("inject-failure")
-
+def test_inject_failure_is_propagated() -> None:
     class GoodPropagator:
         def inject(self) -> Mapping[str, bytes]:
             return {"good": b"1"}
@@ -339,8 +338,8 @@ def test_inject_skips_failed_propagator() -> None:
         def extract(self, headers: Mapping[str, bytes]) -> Iterator[None]:
             yield
 
-    assert inject_headers((GoodPropagator(), BadPropagator())) == {"good": b"1"}
-    _ = value
+    with pytest.raises(RuntimeError, match="inject failed"):
+        inject_headers((GoodPropagator(), BadPropagator()))
 
 
 def test_replay_restores_context_each_decision_despite_header_drift() -> None:

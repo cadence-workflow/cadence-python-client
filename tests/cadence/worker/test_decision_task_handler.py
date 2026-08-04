@@ -399,7 +399,8 @@ class TestDecisionTaskHandler:
         assert isinstance(call_args, RespondDecisionTaskCompletedRequest)
         assert call_args.task_token == sample_decision_task.task_token
         assert call_args.identity == handler._identity
-        assert call_args.return_new_decision_task
+        # TODO: add optimization to handle the returned decision task if this is set to True
+        assert not call_args.return_new_decision_task
         assert len(call_args.decisions) == 2
 
     @pytest.mark.asyncio
@@ -417,7 +418,7 @@ class TestDecisionTaskHandler:
         call_args = handler._client.worker_stub.RespondDecisionTaskCompleted.call_args[
             0
         ][0]
-        assert call_args.return_new_decision_task
+        assert not call_args.return_new_decision_task
         assert len(call_args.decisions) == 0
 
     @pytest.mark.asyncio

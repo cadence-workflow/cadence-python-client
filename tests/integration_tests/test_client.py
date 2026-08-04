@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from datetime import timedelta
 
@@ -17,6 +19,16 @@ from cadence.api.v1.service_workflow_pb2 import (
     TerminateWorkflowExecutionRequest,
 )
 from cadence.api.v1.common_pb2 import WorkflowExecution
+
+
+def unique_workflow_id(prefix: str) -> str:
+    """Build a workflow id that cannot collide with earlier runs.
+
+    These tests start workflows that no worker polls, so each execution stays
+    running until its timeout expires. A fixed id would clash with the run left
+    behind by a previous invocation against the same Cadence instance.
+    """
+    return f"{prefix}-{uuid.uuid4()}"
 
 
 @pytest.mark.usefixtures("helper")
@@ -70,7 +82,7 @@ async def test_workflow_stub_start_and_describe(helper: CadenceHelper):
         # Define workflow parameters
         workflow_type = "test-workflow-type-describe"
         task_list_name = "test-task-list-describe"
-        workflow_id = "test-workflow-describe-456"
+        workflow_id = unique_workflow_id("test-workflow-describe")
         execution_timeout = timedelta(minutes=5)
         task_timeout = timedelta(seconds=10)  # Default value
 
@@ -157,7 +169,7 @@ async def test_signal_workflow(helper: CadenceHelper):
     async with helper.client() as client:
         workflow_type = "test-workflow-signal"
         task_list_name = "test-task-list-signal"
-        workflow_id = "test-workflow-signal-789"
+        workflow_id = unique_workflow_id("test-workflow-signal")
         execution_timeout = timedelta(minutes=5)
         signal_name = "test-signal"
         signal_arg = {"action": "update", "value": 42}
@@ -218,7 +230,7 @@ async def test_workflow_id_reuse_policy_reject_duplicate(helper: CadenceHelper):
     async with helper.client() as client:
         workflow_type = "test-workflow-reuse-reject"
         task_list_name = "test-task-list-reuse-reject"
-        workflow_id = "test-workflow-reuse-reject-id"
+        workflow_id = unique_workflow_id("test-workflow-reuse-reject")
         execution_timeout = timedelta(minutes=5)
 
         first_execution = await client.start_workflow(
@@ -258,7 +270,7 @@ async def test_workflow_id_reuse_policy_terminate_if_running(helper: CadenceHelp
     async with helper.client() as client:
         workflow_type = "test-workflow-reuse-terminate"
         task_list_name = "test-task-list-reuse-terminate"
-        workflow_id = "test-workflow-reuse-terminate-id"
+        workflow_id = unique_workflow_id("test-workflow-reuse-terminate")
         execution_timeout = timedelta(minutes=5)
 
         first_execution = await client.start_workflow(
@@ -293,7 +305,7 @@ async def test_signal_with_start_workflow(helper: CadenceHelper):
     async with helper.client() as client:
         workflow_type = "test-workflow-signal-with-start"
         task_list_name = "test-task-list-signal-with-start"
-        workflow_id = "test-workflow-signal-with-start-123"
+        workflow_id = unique_workflow_id("test-workflow-signal-with-start")
         execution_timeout = timedelta(minutes=5)
         signal_name = "test-signal"
         signal_arg = {"data": "test-signal-data"}

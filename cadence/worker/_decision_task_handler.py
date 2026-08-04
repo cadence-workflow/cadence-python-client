@@ -197,9 +197,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             info=workflow_info,
             workflow_definition=workflow_definition,
             context_propagators=self._context_propagators,
-            headers=header_to_dict(
-                started_attrs.header if started_attrs.HasField("header") else None
-            ),
+            headers=header_to_dict(started_attrs.header),
         )
 
         exec_start_ns = time.monotonic_ns()

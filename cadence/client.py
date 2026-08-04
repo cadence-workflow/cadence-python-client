@@ -17,7 +17,7 @@ from cadence._internal.workflow.active_cluster_selection_policy import (
 )
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
-from cadence._internal.context import set_header
+from cadence._internal.context import set_header, validate_propagators
 from cadence.api.v1 import schedule_pb2
 from cadence.api.v1.common_pb2 import (
     Memo,
@@ -768,7 +768,10 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     for key, value in _DEFAULT_OPTIONS.items():
         if key not in options:
             cast(dict, options)[key] = value
-    cast(dict, options)["context_propagators"] = tuple(options["context_propagators"])
+    cast(dict, options)["context_propagators"] = tuple(
+        options.get("context_propagators") or ()
+    )
+    validate_propagators(options["context_propagators"])
 
     return options
 

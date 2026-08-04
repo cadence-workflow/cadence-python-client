@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import singledispatchmethod
 from typing import List, Mapping, Optional, Sequence
 
-from cadence._internal.context import extract_headers, set_header
+from cadence._internal.context import extract_headers, set_header_from_dict
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.deterministic_event_loop import (
@@ -263,7 +263,8 @@ class WorkflowEngine:
                 attrs.task_start_to_close_timeout.FromTimedelta(
                     e.task_start_to_close_timeout
                 )
-            set_header(attrs, self._context_propagators)
+            if e.headers is not None:
+                set_header_from_dict(attrs, e.headers)
             return Decision(
                 continue_as_new_workflow_execution_decision_attributes=attrs,
             )

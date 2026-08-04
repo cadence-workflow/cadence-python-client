@@ -94,7 +94,7 @@ def test_header_conversion_and_ordered_injection() -> None:
     ) == {"first": b"1", "same": b"new"}
 
 
-def test_extract_passes_full_headers_and_unwinds_partial_failure() -> None:
+def test_extract_skips_failed_propagator_and_unwinds_entered() -> None:
     entered: list[str] = []
 
     class Propagator:
@@ -116,11 +116,10 @@ def test_extract_passes_full_headers_and_unwinds_partial_failure() -> None:
             finally:
                 entered.append(f"exit:{self.name}")
 
-    with pytest.raises(RuntimeError, match="extract failed"):
-        with extract_headers(
-            (Propagator("one"), Propagator("two", fail=True)), {"all": b"headers"}
-        ):
-            pass
+    with extract_headers(
+        (Propagator("one"), Propagator("two", fail=True)), {"all": b"headers"}
+    ):
+        pass
     assert entered == ["enter:one", "enter:two", "exit:one"]
 
 
@@ -300,6 +299,50 @@ def test_production_workflow_continue_as_new_injects_header() -> None:
         value.get()
 
 
+def test_production_workflow_continue_as_new_uses_workflow_context() -> None:
+    value: ContextVar[str] = ContextVar("production-continue-mutation")
+    propagator = _string_propagator(value)
+
+    class Workflow:
+        @workflow.run
+        async def run(self) -> None:
+            value.set("updated-in-workflow")
+            workflow.continue_as_new()
+
+    events = _started_events({"context": b"from-start"})
+    result = _production_engine(
+        Workflow,
+        propagator,
+        {"context": b"from-start"},
+    ).process_decision(events)
+
+    attrs = result.decisions[0].continue_as_new_workflow_execution_decision_attributes
+    assert header_to_dict(attrs.header) == {"context": b"updated-in-workflow"}
+
+
+def test_inject_skips_failed_propagator() -> None:
+    value: ContextVar[str] = ContextVar("inject-failure")
+
+    class GoodPropagator:
+        def inject(self) -> Mapping[str, bytes]:
+            return {"good": b"1"}
+
+        @contextmanager
+        def extract(self, headers: Mapping[str, bytes]) -> Iterator[None]:
+            yield
+
+    class BadPropagator:
+        def inject(self) -> Mapping[str, bytes]:
+            raise RuntimeError("inject failed")
+
+        @contextmanager
+        def extract(self, headers: Mapping[str, bytes]) -> Iterator[None]:
+            yield
+
+    assert inject_headers((GoodPropagator(), BadPropagator())) == {"good": b"1"}
+    _ = value
+
+
 def test_replay_restores_context_each_decision_despite_header_drift() -> None:
     value: ContextVar[str] = ContextVar("replay-context")
     propagator = _string_propagator(value)
@@ -386,6 +429,67 @@ async def test_test_environment_propagates_client_workflow_activity_and_child() 
         assert environment.get_workflow_result(str) == "client:client:client"
         with pytest.raises(LookupError):
             value.get()
+
+
+@pytest.mark.asyncio
+async def test_test_environment_query_sees_propagated_context() -> None:
+    value: ContextVar[str] = ContextVar("test-query-context")
+    propagator = _string_propagator(value)
+    registry = Registry()
+
+    @registry.workflow
+    class WaitingWorkflow:
+        @workflow.run
+        async def run(self) -> None:
+            await workflow.wait_condition(lambda: False)
+
+        @workflow.query(name="context")
+        def context(self) -> str:
+            return value.get()
+
+    with TestWorkflowEnvironment(
+        registry, context_propagators=(propagator,)
+    ) as environment:
+        token = value.set("from-start")
+        try:
+            execution = await environment.client.start_workflow(
+                "WaitingWorkflow", task_list="test"
+            )
+        finally:
+            value.reset(token)
+
+        assert (
+            await environment.client.query_workflow(
+                execution.workflow_id, "", "context", result_type=str
+            )
+            == "from-start"
+        )
+
+
+@pytest.mark.asyncio
+async def test_test_environment_activity_does_not_inherit_workflow_locals() -> None:
+    value: ContextVar[str] = ContextVar("local-only")
+    registry = Registry()
+
+    @registry.activity(name="read-local")
+    async def read_local() -> str:
+        return value.get()
+
+    @registry.workflow
+    class Parent:
+        @workflow.run
+        async def run(self) -> str:
+            value.set("workflow-local")
+            return await workflow.execute_activity(
+                "read-local",
+                str,
+                schedule_to_close_timeout=timedelta(seconds=1),
+            )
+
+    with TestWorkflowEnvironment(registry) as environment:
+        await environment.client.start_workflow("Parent", task_list="test")
+        with pytest.raises(LookupError):
+            environment.get_workflow_result(str)
 
 
 def _started_events(headers: Mapping[str, bytes]) -> list[HistoryEvent]:

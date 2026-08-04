@@ -8,6 +8,7 @@ from cadence.worker._registry import Registry
 from cadence.worker._activity import ActivityWorker
 from cadence.worker._decision import DecisionWorker
 from cadence.worker._types import WorkerOptions, _DEFAULT_WORKER_OPTIONS
+from cadence._internal.context import validate_propagators
 
 logger = logging.getLogger(__name__)
 
@@ -79,4 +80,7 @@ def _validate_and_copy_defaults(
     for key, value in _DEFAULT_WORKER_OPTIONS.items():
         if key not in options:
             cast(dict, options)[key] = value
-    cast(dict, options)["context_propagators"] = tuple(options["context_propagators"])
+    cast(dict, options)["context_propagators"] = tuple(
+        options.get("context_propagators") or ()
+    )
+    validate_propagators(options["context_propagators"])

@@ -13,7 +13,7 @@ from cadence._internal.workflow.statemachine.decision_manager import DecisionMan
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
 )
-from cadence._internal.context import set_header
+from cadence._internal.context import inject_headers, set_header
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.common_pb2 import (
     ActivityType,
@@ -362,6 +362,9 @@ class Context(WorkflowContext):
 
     def is_cancel_requested(self) -> bool:
         return self._cancellation_info is not None
+
+    def inject_propagated_headers(self) -> dict[str, bytes]:
+        return inject_headers(self._context_propagators)
 
     @contextmanager
     def _activate(self) -> Iterator["Context"]:

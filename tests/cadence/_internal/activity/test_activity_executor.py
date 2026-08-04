@@ -155,6 +155,51 @@ async def test_activity_sync_success(client):
 
 
 @pytest.mark.parametrize("is_async", [True, False])
+async def test_activity_without_header_does_not_inherit_worker_context(
+    client, is_async
+):
+    from contextvars import ContextVar
+
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskFailed = AsyncMock(
+        return_value=RespondActivityTaskFailedResponse()
+    )
+    value: ContextVar[str] = ContextVar("activity-ambient-context")
+    propagator = ContextVarPropagator(
+        value, "context", lambda item: item.encode(), bytes.decode
+    )
+    reg = Registry()
+
+    if is_async:
+
+        @reg.activity(name="activity_type")
+        async def activity_fn():
+            value.get()
+
+    else:
+
+        @reg.activity(name="activity_type")
+        def activity_fn():
+            value.get()
+
+    executor = ActivityExecutor(
+        client,
+        "task_list",
+        "identity",
+        1,
+        reg.get_activity,
+        context_propagators=(propagator,),
+    )
+    value.set("worker-boot-value")
+    task = fake_task("activity_type", "")
+
+    await executor.execute(task)
+
+    worker_stub.RespondActivityTaskFailed.assert_called_once()
+    assert value.get() == "worker-boot-value"
+
+
+@pytest.mark.parametrize("is_async", [True, False])
 async def test_activity_context_propagation_does_not_leak(client, is_async):
     from contextvars import ContextVar
 

@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import threading
 from concurrent.futures import Future as ConcurrentFuture
 from concurrent.futures.thread import ThreadPoolExecutor
@@ -37,7 +38,10 @@ class _Context(ActivityContext):
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
-        self._activity_task = asyncio.create_task(self._run_activity(params))
+        # Fresh context: activity vars come from task headers, not worker ambient state.
+        self._activity_task = asyncio.create_task(
+            self._run_activity(params), context=contextvars.Context()
+        )
         try:
             return await self._activity_task
         except asyncio.CancelledError as e:

@@ -148,7 +148,7 @@ class ActivityExecutor:
                 activity_def,
                 heartbeat_sender,
                 self._context_propagators,
-                header_to_dict(task.header if task.HasField("header") else None),
+                header_to_dict(task.header),
             )
         return _SyncContext(
             self._client,
@@ -157,7 +157,7 @@ class ActivityExecutor:
             self._thread_pool,
             heartbeat_sender,
             self._context_propagators,
-            header_to_dict(task.header if task.HasField("header") else None),
+            header_to_dict(task.header),
         )
 
     async def _report_failure(

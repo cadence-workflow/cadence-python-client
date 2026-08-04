@@ -359,7 +359,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         emitter = emitter if emitter is not None else self._metrics_emitter
         resp_start_ns = time.monotonic_ns()
         try:
-            should_return_new_decision_task = False # TODO: add optimization to handle the returned decision task if this is set to True
+            should_return_new_decision_task = False  # TODO: add optimization to handle the returned decision task if this is set to True
             request = RespondDecisionTaskCompletedRequest(
                 task_token=task.task_token,
                 decisions=decision_result.decisions,

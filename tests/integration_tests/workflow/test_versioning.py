@@ -116,8 +116,11 @@ async def test_version_marker_is_recorded_and_replayed_by_cadence(
             event.marker_recorded_event_attributes
             for event in history.history.events
             if event.HasField("marker_recorded_event_attributes")
-            and event.marker_recorded_event_attributes.marker_name == VERSION_MARKER_NAME
+            and event.marker_recorded_event_attributes.marker_name
+            == VERSION_MARKER_NAME
         ]
         assert len(version_markers) == 1
         assert marker_context_id(version_markers[0]) == _CHANGE_ID
-        assert DefaultDataConverter().from_data(version_markers[0].details, [int]) == [2]
+        assert DefaultDataConverter().from_data(version_markers[0].details, [int]) == [
+            2
+        ]

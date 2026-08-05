@@ -17,6 +17,7 @@ from cadence._internal.workflow.active_cluster_selection_policy import (
 )
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
+from cadence._internal.context import set_header, validate_propagators
 from cadence.api.v1 import schedule_pb2
 from cadence.api.v1.common_pb2 import (
     Memo,
@@ -62,6 +63,7 @@ from cadence.error import QueryFailedError
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
+from cadence.context import ContextPropagator
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 from cadence.workflow import (
     ActiveClusterSelectionPolicy,
@@ -164,6 +166,7 @@ class ClientOptions(TypedDict, total=False):
     compression: Compression
     metrics_emitter: MetricsEmitter
     interceptors: list[ClientInterceptor]
+    context_propagators: Sequence[ContextPropagator]
 
 
 _DEFAULT_OPTIONS: ClientOptions = {
@@ -176,6 +179,7 @@ _DEFAULT_OPTIONS: ClientOptions = {
     "compression": Compression.NoCompression,
     "metrics_emitter": NoOpMetricsEmitter(),
     "interceptors": [],
+    "context_propagators": (),
 }
 
 
@@ -219,6 +223,10 @@ class Client:
     @property
     def metrics_emitter(self) -> MetricsEmitter:
         return self._options["metrics_emitter"]
+
+    @property
+    def context_propagators(self) -> tuple[ContextPropagator, ...]:
+        return tuple(self._options["context_propagators"])
 
     async def ready(self) -> None:
         await self._channel.channel_ready()
@@ -315,6 +323,8 @@ class Client:
         memo_proto = memo_to_proto(self.data_converter, options.get("memo"))
         if memo_proto is not None:
             request.memo.CopyFrom(memo_proto)
+
+        set_header(request, self.context_propagators)
 
         return request
 
@@ -758,6 +768,10 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     for key, value in _DEFAULT_OPTIONS.items():
         if key not in options:
             cast(dict, options)[key] = value
+    cast(dict, options)["context_propagators"] = tuple(
+        options.get("context_propagators") or ()
+    )
+    validate_propagators(options["context_propagators"])
 
     return options
 

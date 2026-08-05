@@ -41,8 +41,10 @@ import heapq
 import inspect
 import logging
 import uuid
+import asyncio
+import contextvars
 from asyncio import Future, get_running_loop
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -50,6 +52,7 @@ from typing import (
     Any,
     Callable,
     Optional,
+    Sequence,
     Tuple,
     Type,
     Union,
@@ -58,12 +61,19 @@ from typing import (
 )
 
 from cadence._internal.activity._definition import BaseDefinition
+from cadence._internal.context import (
+    extract_headers,
+    header_from_dict,
+    header_to_dict,
+    inject_headers,
+)
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.activity import ActivityContext, ActivityInfo
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
 from cadence.api.v1.query_pb2 import QueryRejectCondition
 from cadence.client import Client, ClientOptions, StartWorkflowOptions
+from cadence.context import ContextPropagator
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import NoOpMetricsEmitter
 from cadence.workflow import (
@@ -78,6 +88,24 @@ from cadence.workflow import (
 from cadence.worker import Registry
 
 logger = logging.getLogger(__name__)
+
+
+def _headers_after_proto_roundtrip(headers: Mapping[str, bytes]) -> dict[str, bytes]:
+    """Round-trip headers through proto, matching production decision encoding."""
+    proto = header_from_dict(headers)
+    if proto is None:
+        return {}
+    return header_to_dict(proto)
+
+
+async def _run_in_fresh_context(awaitable_factory: Callable[[], Any]) -> Any:
+    """Run an awaitable in a new contextvars context, mirroring activity workers."""
+
+    async def _wrapper() -> Any:
+        return await awaitable_factory()
+
+    task = asyncio.create_task(_wrapper(), context=contextvars.Context())
+    return await task
 
 
 class _Unset:
@@ -179,7 +207,10 @@ class _InMemoryWorkflowContext(WorkflowContext):
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
     ) -> ResultType:
-        return await self._env._invoke_activity(activity, result_type, args, self._info)
+        outbound = self.inject_propagated_headers()
+        return await self._env._invoke_activity(
+            activity, result_type, args, self._info, outbound
+        )
 
     async def execute_child_workflow(
         self,
@@ -200,8 +231,14 @@ class _InMemoryWorkflowContext(WorkflowContext):
         *args: Any,
         **kwargs: Unpack[ChildWorkflowOptions],
     ) -> ChildWorkflowFuture[ResultType]:
+        outbound = self.inject_propagated_headers()
         return await self._env._start_child_workflow(
-            workflow_type, result_type, args, kwargs, self._info
+            workflow_type,
+            result_type,
+            args,
+            kwargs,
+            self._info,
+            headers=outbound,
         )
 
     async def start_timer(self, duration: timedelta) -> None:
@@ -281,6 +318,9 @@ class _InMemoryWorkflowContext(WorkflowContext):
     def is_cancel_requested(self) -> bool:
         return False
 
+    def inject_propagated_headers(self) -> dict[str, bytes]:
+        return inject_headers(self._env._context_propagators)
+
 
 class _Execution:
     """Holds the in-memory state machine for a single workflow execution."""
@@ -290,6 +330,7 @@ class _Execution:
         env: "TestWorkflowEnvironment",
         workflow_definition: WorkflowDefinition,
         info: WorkflowInfo,
+        headers: dict[str, bytes],
     ) -> None:
         self._env = env
         self.info = info
@@ -301,6 +342,7 @@ class _Execution:
         # at the boundary (mirroring the production WorkflowEngine).
         self._instance = WorkflowInstance(self._loop, workflow_definition)
         self._context = _InMemoryWorkflowContext(env, info)
+        self._headers = dict(headers)
         self.completed: bool = False
         self.result_payload: Optional[Payload] = None
         self.error: Optional[BaseException] = None
@@ -353,7 +395,8 @@ class _Execution:
         self._env._driving_execution = self
         try:
             with self._context._activate():
-                yield
+                with extract_headers(self._env._context_propagators, self._headers):
+                    yield
         finally:
             self._env._driving_execution = None
 
@@ -380,15 +423,16 @@ class _Execution:
 
     def run_query(self, query_type: str, args: Payload) -> Payload:
         with self._context._activate():
-            query_def = self._definition.queries.get(query_type)
-            if query_def is None:
-                raise ValueError(
-                    f"Unknown query type '{query_type}'. "
-                    f"Known types: {list(self._definition.queries.keys())}"
-                )
-            query_args = query_def.params_from_payload(self._data_converter, args)
-            result = self._instance.handle_query(query_def, query_args)
-            return self._data_converter.to_data([result])
+            with extract_headers(self._env._context_propagators, self._headers):
+                query_def = self._definition.queries.get(query_type)
+                if query_def is None:
+                    raise ValueError(
+                        f"Unknown query type '{query_type}'. "
+                        f"Known types: {list(self._definition.queries.keys())}"
+                    )
+                query_args = query_def.params_from_payload(self._data_converter, args)
+                result = self._instance.handle_query(query_def, query_args)
+                return self._data_converter.to_data([result])
 
     def _collect_outcome(self) -> None:
         signal_failure = self._instance.get_signal_failure()
@@ -424,6 +468,7 @@ class _MockClient(Client):
             data_converter=env._data_converter,
             identity="test-workflow-environment",
             metrics_emitter=NoOpMetricsEmitter(),
+            context_propagators=env._context_propagators,
         )
 
     async def ready(self) -> None:
@@ -515,11 +560,13 @@ class TestWorkflowEnvironment:
         task_list: str = "test-task-list",
         data_converter: Optional[DataConverter] = None,
         start_time: Optional[datetime] = None,
+        context_propagators: Sequence[ContextPropagator] = (),
     ) -> None:
         self._registry = registry
         self._domain = domain
         self._default_task_list = task_list
         self._data_converter = data_converter or DefaultDataConverter()
+        self._context_propagators = tuple(context_propagators)
         self._activity_mocks: dict[str, Union[_ValueMock, _FnMock]] = {}
         self._executions: dict[str, _Execution] = {}
         self._last_execution: Optional[_Execution] = None
@@ -681,7 +728,14 @@ class TestWorkflowEnvironment:
             workflow_task_list=task_list,
             data_converter=self._data_converter,
         )
-        execution = _Execution(self, definition, info)
+        execution = _Execution(
+            self,
+            definition,
+            info,
+            _headers_after_proto_roundtrip(
+                inject_headers(self._client.context_propagators)
+            ),
+        )
         self._executions[workflow_id] = execution
         self._last_execution = execution
 
@@ -737,6 +791,7 @@ class TestWorkflowEnvironment:
         result_type: Type[ResultType],
         args: Tuple[Any, ...],
         info: WorkflowInfo,
+        headers: Mapping[str, bytes],
     ) -> ResultType:
         name = activity if isinstance(activity, str) else getattr(activity, "name")
         dc = self._data_converter
@@ -763,15 +818,24 @@ class TestWorkflowEnvironment:
         else:
             call_args = list(args)
 
-        if isinstance(mock, _ValueMock):
-            result: Any = mock.value
-        elif isinstance(mock, _FnMock):
-            result = mock.fn(*call_args)
-            if inspect.iscoroutine(result):
-                result = await result
-        else:
-            assert definition is not None
-            result = await self._run_real_activity(definition, call_args, name, info)
+        activity_headers = _headers_after_proto_roundtrip(headers)
+
+        async def _body() -> Any:
+            with extract_headers(self._context_propagators, activity_headers):
+                if isinstance(mock, _ValueMock):
+                    result: Any = mock.value
+                elif isinstance(mock, _FnMock):
+                    result = mock.fn(*call_args)
+                    if inspect.iscoroutine(result):
+                        result = await result
+                else:
+                    assert definition is not None
+                    result = await self._run_real_activity(
+                        definition, call_args, name, info
+                    )
+            return result
+
+        result = await _run_in_fresh_context(_body)
 
         result_payload = dc.to_data([result])
         return cast(ResultType, dc.from_data(result_payload, [result_type])[0])
@@ -797,6 +861,8 @@ class TestWorkflowEnvironment:
         args: Tuple[Any, ...],
         kwargs: ChildWorkflowOptions,
         parent_info: WorkflowInfo,
+        *,
+        headers: Mapping[str, bytes],
     ) -> ChildWorkflowFuture[ResultType]:
         definition = self._resolve_workflow(workflow_type)
         child_id = kwargs.get("workflow_id") or (
@@ -816,7 +882,7 @@ class TestWorkflowEnvironment:
 
         input_payload = self._data_converter.to_data(list(args))
         result_payload = await self._run_workflow_coro(
-            definition, child_info, input_payload
+            definition, child_info, input_payload, headers
         )
 
         loop = cast(DeterministicEventLoop, get_running_loop())
@@ -835,16 +901,20 @@ class TestWorkflowEnvironment:
         definition: WorkflowDefinition,
         info: WorkflowInfo,
         input_payload: Payload,
+        headers: Mapping[str, bytes],
     ) -> Payload:
-        instance = definition.cls()
-        run_method = definition.get_run_method(instance)
+        child_headers = _headers_after_proto_roundtrip(headers)
         run_args = definition.run_signature.params_from_payload(
             self._data_converter, input_payload
         )
-        child_ctx = _InMemoryWorkflowContext(self, info)
-        token = WorkflowContext._var.set(child_ctx)
-        try:
-            result = await run_method(*run_args)
-        finally:
-            WorkflowContext._var.reset(token)
+
+        async def _body() -> Any:
+            instance = definition.cls()
+            run_method = definition.get_run_method(instance)
+            child_ctx = _InMemoryWorkflowContext(self, info)
+            with child_ctx._activate():
+                with extract_headers(self._context_propagators, child_headers):
+                    return await run_method(*run_args)
+
+        result = await _run_in_fresh_context(_body)
         return self._data_converter.to_data([result])

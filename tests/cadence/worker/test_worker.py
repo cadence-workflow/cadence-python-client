@@ -31,6 +31,7 @@ async def test_worker():
     client.worker_stub = worker_stub
     type(client).domain = PropertyMock(return_value="domain")
     type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
 
     async with Worker(
         client,

@@ -6,6 +6,7 @@ import logging
 from typing import Optional, Sequence
 
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
+from cadence._internal.context import header_to_dict
 from cadence._internal.workflow.memo import memo_from_proto
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.decision_pb2 import Decision
@@ -91,6 +92,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         super().__init__(client, task_list, identity, **options)
         self._registry = registry
         self._executor = executor
+        self._context_propagators = tuple(options.get("context_propagators", ()))
 
     async def _handle_task_implementation(
         self, task: PollForDecisionTaskResponse
@@ -194,6 +196,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         workflow_engine = WorkflowEngine(
             info=workflow_info,
             workflow_definition=workflow_definition,
+            context_propagators=self._context_propagators,
+            headers=header_to_dict(started_attrs.header),
         )
 
         exec_start_ns = time.monotonic_ns()

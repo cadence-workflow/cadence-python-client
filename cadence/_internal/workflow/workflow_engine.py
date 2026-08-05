@@ -190,8 +190,7 @@ class WorkflowEngine:
                             "replay_mode": decision_events.replay,
                         },
                     )
-                    # Process through state machines (DecisionsHelper now delegates to DecisionManager)
-                    self._decision_manager.handle_history_event(marker_event)
+                    self._decision_manager.preload_marker_event(marker_event)
 
                 # Phase 2: Apply input events in history order.
                 for event in decision_events.input:

@@ -32,7 +32,9 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     MUTABLE_SIDE_EFFECT_MARKER_NAME,
+    VERSION_MARKER_NAME,
     encode_marker_header,
+    has_marker_header,
     marker_context_id,
     marker_decision_id,
     KNOWN_MARKER_NAMES,
@@ -43,6 +45,7 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
 )
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.cancellation import is_immediate_cancel
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
     signal_external_events,
     SignalExternalWorkflowStateMachine,
@@ -122,6 +125,8 @@ class DecisionManager:
         self._determinism_tracker = DeterminismTracker()
         self._replaying = False
         self._recorded_marker_details: Dict[DecisionId, Payload] = {}
+        self._version_marker_event_ids: Dict[DecisionId, int] = {}
+        self._pending_version_marker_event_ids: Dict[DecisionId, int] = {}
         self._mutable_side_effects: dict[str, MutableSideEffectState] = {}
         self.state_machines: OrderedDict[DecisionId, DecisionStateMachine] = (
             OrderedDict()
@@ -282,6 +287,29 @@ class DecisionManager:
         state.value = result
         return result
 
+    def version_marker_details(self, change_id: str) -> Payload | None:
+        """Return a preloaded Python Version marker's details, if one exists."""
+        return self._recorded_marker_details.get(
+            marker_decision_id(VERSION_MARKER_NAME, change_id)
+        )
+
+    def has_pending_version_marker(self, change_id: str) -> bool:
+        """Whether a preloaded Version marker still awaits output-event routing."""
+        return (
+            marker_decision_id(VERSION_MARKER_NAME, change_id)
+            in self._pending_version_marker_event_ids
+        )
+
+    def record_version_marker(self, change_id: str, details: Payload) -> Payload:
+        """Record or replay a Version marker without consuming a sequence ID."""
+        return self._record_marker(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name=VERSION_MARKER_NAME,
+                details=details,
+            ),
+            context_id=change_id,
+        )
+
     # ----- Workflow API -----
     def complete_workflow(self, decision: decision.Decision) -> None:
         if self._replaying:
@@ -311,8 +339,17 @@ class DecisionManager:
 
     # ----- History routing -----
 
+    def preload_marker_event(self, event: history.HistoryEvent) -> None:
+        """Preload a marker before workflow code runs."""
+        self._handle_history_event(event, preloaded_marker=True)
+
     def handle_history_event(self, event: history.HistoryEvent) -> None:
         """Dispatch history event to typed handlers using the global transition map."""
+        self._handle_history_event(event, preloaded_marker=False)
+
+    def _handle_history_event(
+        self, event: history.HistoryEvent, *, preloaded_marker: bool
+    ) -> None:
         attr = event.WhichOneof("attributes")
         event_attributes = getattr(event, attr)
 
@@ -325,7 +362,10 @@ class DecisionManager:
             decision_type = event_action.decision_type
             action = event_action.action
             if decision_type is DecisionType.MARKER:
-                self._index_marker_details(event_attributes)
+                self._index_marker_details(event_attributes, event.event_id)
+                self._update_version_marker_preload_state(
+                    event_attributes, event.event_id, preloaded_marker
+                )
                 machine = self._state_machine_for_marker_event(event_attributes)
                 if machine is None:
                     return
@@ -340,6 +380,23 @@ class DecisionManager:
             # rather than using the client provided id
             if action.event_id_is_alias:
                 self.aliases[(decision_type, event.event_id)] = machine
+
+    def _update_version_marker_preload_state(
+        self,
+        attrs: history.MarkerRecordedEventAttributes,
+        event_id: int,
+        preloaded_marker: bool,
+    ) -> None:
+        if attrs.marker_name != VERSION_MARKER_NAME:
+            return
+        context_id = marker_context_id(attrs)
+        if context_id is None or not context_id:
+            return
+        marker_id = marker_decision_id(VERSION_MARKER_NAME, context_id)
+        if preloaded_marker:
+            self._pending_version_marker_event_ids[marker_id] = event_id
+        elif self._pending_version_marker_event_ids.get(marker_id) == event_id:
+            del self._pending_version_marker_event_ids[marker_id]
 
     def _state_machine_for_event(
         self,
@@ -401,7 +458,7 @@ class DecisionManager:
         return machine
 
     def _index_marker_details(
-        self, attrs: history.MarkerRecordedEventAttributes
+        self, attrs: history.MarkerRecordedEventAttributes, event_id: int
     ) -> None:
         """Store the user payload from a recorded marker event, keyed by its marker DecisionId.
 
@@ -413,8 +470,26 @@ class DecisionManager:
             return
         context_id = marker_context_id(attrs)
         if context_id is None:
+            if attrs.marker_name == VERSION_MARKER_NAME and has_marker_header(attrs):
+                raise FatalDecisionError(
+                    "Version marker contains an invalid Python MarkerHeader"
+                )
             return
+        if attrs.marker_name == VERSION_MARKER_NAME and not context_id:
+            raise FatalDecisionError(
+                "Version marker contains an invalid Python MarkerHeader"
+            )
         marker_id = marker_decision_id(attrs.marker_name, context_id)
+        if attrs.marker_name == VERSION_MARKER_NAME:
+            previous_event_id = self._version_marker_event_ids.get(marker_id)
+            if previous_event_id is None:
+                self._version_marker_event_ids[marker_id] = event_id
+            elif previous_event_id != event_id:
+                raise FatalDecisionError(
+                    f"Received duplicate Version marker for change_id {context_id!r}"
+                )
+            else:
+                return
         details = Payload(data=attrs.details.data)
         self._recorded_marker_details[marker_id] = details
         mutable_info = mutable_side_effect_marker_info(attrs)
@@ -439,7 +514,9 @@ class DecisionManager:
         for event in outcomes:
             self._determinism_tracker.add_expectation(event)
             if event.HasField("marker_recorded_event_attributes"):
-                self._index_marker_details(event.marker_recorded_event_attributes)
+                self._index_marker_details(
+                    event.marker_recorded_event_attributes, event.event_id
+                )
 
     def _end_execution(self) -> None:
         if self._replaying:

@@ -58,7 +58,10 @@ from typing import (
 )
 
 from cadence._internal.activity._definition import BaseDefinition
-from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.deterministic_event_loop import (
+    DeterministicEventLoop,
+    FatalDecisionError,
+)
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.activity import ActivityContext, ActivityInfo
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
@@ -71,6 +74,7 @@ from cadence.workflow import (
     ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
+    VersioningOption,
     WorkflowContext,
     WorkflowDefinition,
     WorkflowInfo,
@@ -165,6 +169,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         self._env = env
         self._info = info
         self._mutable_side_effect_values: dict[str, Any] = {}
+        self._versions: dict[str, int] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -244,6 +249,60 @@ class _InMemoryWorkflowContext(WorkflowContext):
             self._mutable_side_effect_values[id] = value
             return value
         return previous
+
+    def get_version(
+        self,
+        change_id: str,
+        min_supported: int,
+        max_supported: int,
+        *options: VersioningOption,
+    ) -> int:
+        if not isinstance(change_id, str) or not change_id:
+            raise ValueError("change_id must be a non-empty str")
+        for name, value in (
+            ("min_supported", min_supported),
+            ("max_supported", max_supported),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"{name} must be an int")
+        if min_supported > max_supported:
+            raise ValueError("min_supported must not be greater than max_supported")
+        if change_id in self._versions:
+            version = self._versions[change_id]
+            if version < min_supported or version > max_supported:
+                raise FatalDecisionError(
+                    f"cached version {version} for change_id {change_id!r} is outside "
+                    f"the supported range [{min_supported}, {max_supported}]"
+                )
+            return version
+        else:
+            custom_version: int | None = None
+            use_min_version = False
+            for option in options:
+                if not isinstance(option, VersioningOption):
+                    raise ValueError(
+                        "get_version options must be VersioningOption values"
+                    )
+                if option._kind == "version":
+                    custom_version = option._version
+                elif option._kind == "min":
+                    use_min_version = True
+                else:
+                    raise ValueError("invalid get_version option")
+            version = (
+                custom_version
+                if custom_version is not None
+                else min_supported
+                if use_min_version
+                else max_supported
+            )
+        if version < min_supported or version > max_supported:
+            raise ValueError(
+                f"selected version {version} for change_id {change_id!r} is outside "
+                f"the supported range [{min_supported}, {max_supported}]"
+            )
+        self._versions.setdefault(change_id, version)
+        return version
 
     async def signal_child_workflow(
         self,

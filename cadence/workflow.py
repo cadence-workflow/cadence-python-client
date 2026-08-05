@@ -15,6 +15,7 @@ from typing import (
     cast,
     Any,
     Optional,
+    Literal,
     Union,
     Unpack,
     Generic,
@@ -33,6 +34,7 @@ from cadence.signal import SignalDefinition, SignalDefinitionOptions
 _QUERY_TYPES_QUERY_NAME = "__query_types"
 
 ResultType = TypeVar("ResultType")
+DEFAULT_VERSION = -1
 
 
 class RetryPolicy(TypedDict, total=False):
@@ -212,6 +214,52 @@ def mutable_side_effect(
     value should be persisted. During replay, neither callback is invoked.
     """
     return WorkflowContext.get().mutable_side_effect(id, fn, result_type, updated)
+
+
+@dataclass(frozen=True)
+class VersioningOption:
+    """An opaque option value accepted by :func:`get_version`."""
+
+    _kind: Literal["min", "version"]
+    _version: int | None = None
+
+    def __post_init__(self) -> None:
+        if self._kind == "min":
+            if self._version is not None:
+                raise ValueError("min version option must not specify a version")
+            return
+        if self._kind != "version":
+            raise ValueError("invalid versioning option kind")
+        if isinstance(self._version, bool) or not isinstance(self._version, int):
+            raise ValueError("version option must specify an int version")
+
+
+def execute_with_version(version: int) -> VersioningOption:
+    """Select a particular version for a new ``get_version`` marker."""
+    if isinstance(version, bool) or not isinstance(version, int):
+        raise ValueError("version must be an int")
+    return VersioningOption("version", version)
+
+
+def execute_with_min_version() -> VersioningOption:
+    """Select the minimum supported version for a new ``get_version`` marker."""
+    return VersioningOption("min")
+
+
+def get_version(
+    change_id: str,
+    min_supported: int,
+    max_supported: int,
+    *options: VersioningOption,
+) -> int:
+    """Return the deterministic version selected for ``change_id``.
+
+    The first non-default value selected for a change is stored in a Version
+    marker. Replays return the recorded value and ignore selection options.
+    """
+    return WorkflowContext.get().get_version(
+        change_id, min_supported, max_supported, *options
+    )
 
 
 def is_cancel_requested() -> bool:
@@ -648,6 +696,15 @@ class WorkflowContext(ABC):
         result_type: Type[ResultType],
         updated: Callable[[ResultType, ResultType], bool],
     ) -> ResultType: ...
+
+    @abstractmethod
+    def get_version(
+        self,
+        change_id: str,
+        min_supported: int,
+        max_supported: int,
+        *options: VersioningOption,
+    ) -> int: ...
 
     @abstractmethod
     def is_cancel_requested(self) -> bool: ...

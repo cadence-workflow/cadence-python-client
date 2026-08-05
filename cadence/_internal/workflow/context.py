@@ -3,10 +3,12 @@ from __future__ import annotations
 from contextlib import contextmanager
 from asyncio import get_running_loop
 from datetime import datetime, timedelta
+from json import JSONDecoder
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
@@ -28,7 +30,7 @@ from cadence.api.v1.decision_pb2 import (
     StartTimerDecisionAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
-from cadence.data_converter import DataConverter
+from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
@@ -37,6 +39,8 @@ from cadence.workflow import (
     WorkflowCancellationInfo,
     WorkflowContext,
     WorkflowInfo,
+    VersioningOption,
+    DEFAULT_VERSION,
 )
 from cadence.api.v1.history_pb2 import WorkflowExecutionCancelRequestedEventAttributes
 
@@ -57,6 +61,9 @@ class Context(WorkflowContext):
         self._replay_current_time: Optional[datetime] = None
         self._decision_manager = decision_manager
         self._cancellation_info: WorkflowCancellationInfo | None = None
+        # None represents a provisional DEFAULT_VERSION returned while replaying
+        # history before a Version marker becomes available.
+        self._versions: dict[str, int | None] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -332,6 +339,174 @@ class Context(WorkflowContext):
             ResultType,
             self.data_converter().from_data(result_payload, [result_type])[0],
         )
+
+    def get_version(
+        self,
+        change_id: str,
+        min_supported: int,
+        max_supported: int,
+        *options: VersioningOption,
+    ) -> int:
+        self._validate_version_arguments(change_id, min_supported, max_supported)
+
+        if change_id in self._versions:
+            cached = self._versions[change_id]
+            if cached is None:
+                details = self._decision_manager.version_marker_details(change_id)
+                if details is not None:
+                    recorded = self._decode_recorded_version(change_id, details)
+                    self._validate_recorded_version(
+                        change_id, recorded, min_supported, max_supported, "recorded"
+                    )
+                    self._versions[change_id] = recorded
+                    if self._decision_manager.has_pending_version_marker(change_id):
+                        self._decision_manager.record_version_marker(change_id, details)
+                    return recorded
+                self._validate_recorded_version(
+                    change_id,
+                    DEFAULT_VERSION,
+                    min_supported,
+                    max_supported,
+                    "cached",
+                )
+                return DEFAULT_VERSION
+            self._validate_recorded_version(
+                change_id, cached, min_supported, max_supported, "cached"
+            )
+            return cached
+
+        details = self._decision_manager.version_marker_details(change_id)
+        if details is not None:
+            recorded = self._decode_recorded_version(change_id, details)
+            self._validate_recorded_version(
+                change_id, recorded, min_supported, max_supported, "recorded"
+            )
+            self._versions[change_id] = recorded
+            # Recreate the state machine so the preloaded marker is completed
+            # when its output event is replayed.
+            if self._decision_manager.has_pending_version_marker(change_id):
+                self._decision_manager.record_version_marker(change_id, details)
+            return recorded
+
+        # A version introduced while replaying old history must preserve the old
+        # code path. There is no marker to validate or state machine to create.
+        if self.is_replay_mode():
+            self._validate_recorded_version(
+                change_id,
+                DEFAULT_VERSION,
+                min_supported,
+                max_supported,
+                "markerless replay",
+            )
+            self._versions[change_id] = None
+            return DEFAULT_VERSION
+
+        selected = self._select_version(min_supported, max_supported, *options)
+        self._validate_selected_version(
+            change_id, selected, min_supported, max_supported
+        )
+        self._versions[change_id] = selected
+
+        # DEFAULT_VERSION is intentionally never written to history.
+        if selected == DEFAULT_VERSION:
+            return selected
+
+        self._decision_manager.record_version_marker(
+            change_id, self.data_converter().to_data([selected])
+        )
+        return selected
+
+    @staticmethod
+    def _validate_version_arguments(
+        change_id: str, min_supported: int, max_supported: int
+    ) -> None:
+        if not isinstance(change_id, str) or not change_id:
+            raise ValueError("change_id must be a non-empty str")
+        for name, value in (
+            ("min_supported", min_supported),
+            ("max_supported", max_supported),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"{name} must be an int")
+        if min_supported > max_supported:
+            raise ValueError("min_supported must not be greater than max_supported")
+
+    @staticmethod
+    def _select_version(
+        min_supported: int, max_supported: int, *options: VersioningOption
+    ) -> int:
+        custom_version: int | None = None
+        use_min_version = False
+        for option in options:
+            if not isinstance(option, VersioningOption):
+                raise ValueError("get_version options must be VersioningOption values")
+            if option._kind == "version":
+                custom_version = option._version
+            elif option._kind == "min":
+                use_min_version = True
+            else:
+                raise ValueError("invalid get_version option")
+        if custom_version is not None:
+            return custom_version
+        if use_min_version:
+            return min_supported
+        return max_supported
+
+    @staticmethod
+    def _validate_selected_version(
+        change_id: str, version: int, min_supported: int, max_supported: int
+    ) -> None:
+        if version < min_supported or version > max_supported:
+            raise ValueError(
+                f"selected version {version} for change_id {change_id!r} is outside "
+                f"the supported range [{min_supported}, {max_supported}]"
+            )
+
+    @staticmethod
+    def _validate_recorded_version(
+        change_id: str,
+        version: int,
+        min_supported: int,
+        max_supported: int,
+        source: str,
+    ) -> None:
+        if version < min_supported or version > max_supported:
+            raise FatalDecisionError(
+                f"{source} version {version} for change_id {change_id!r} is outside "
+                f"the supported range [{min_supported}, {max_supported}]"
+            )
+
+    def _decode_recorded_version(self, change_id: str, details: Payload) -> int:
+        if type(self.data_converter()) is DefaultDataConverter:
+            self._validate_default_version_details(change_id, details)
+        try:
+            version = self.data_converter().from_data(details, [int])[0]
+        except Exception as exc:
+            raise FatalDecisionError(
+                f"Unable to decode Version marker for change_id {change_id!r}"
+            ) from exc
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise FatalDecisionError(
+                f"Version marker for change_id {change_id!r} did not contain an int"
+            )
+        return cast(int, version)
+
+    @staticmethod
+    def _validate_default_version_details(change_id: str, details: Payload) -> None:
+        if not details.data:
+            raise FatalDecisionError(
+                f"Version marker for change_id {change_id!r} had empty details"
+            )
+        try:
+            _, end = JSONDecoder(strict=False).raw_decode(details.data.decode())
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise FatalDecisionError(
+                f"Version marker for change_id {change_id!r} had invalid details"
+            ) from exc
+        if end != len(details.data):
+            raise FatalDecisionError(
+                f"Version marker for change_id {change_id!r} had invalid details"
+            )
 
     def set_replay_current_time(self, current_time: datetime) -> None:
         """Set the current replay timestamp."""

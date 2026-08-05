@@ -76,6 +76,14 @@ def marker_header(
         return None
 
 
+def has_marker_header(
+    attrs: decision.RecordMarkerDecisionAttributes
+    | history.MarkerRecordedEventAttributes,
+) -> bool:
+    """Return whether this marker attempts to use the Python MarkerHeader format."""
+    return MARKER_HEADER_KEY in attrs.header.fields
+
+
 def marker_context_id(
     attrs: decision.RecordMarkerDecisionAttributes
     | history.MarkerRecordedEventAttributes,

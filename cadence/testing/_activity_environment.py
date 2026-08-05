@@ -47,7 +47,7 @@ from cadence.worker import Registry
 _TASK_TOKEN = b"test-task-token"
 
 
-class _FakeWorkerStub:
+class _SimulatedWorkerStub:
     """Stands in for the worker gRPC stub so heartbeats stay in-memory.
 
     Records every heartbeat's details and reports the environment's simulated
@@ -76,7 +76,7 @@ class _FakeClient:
     def __init__(
         self,
         data_converter: DataConverter,
-        worker_stub: _FakeWorkerStub,
+        worker_stub: _SimulatedWorkerStub,
         identity: str,
         domain: str,
     ) -> None:
@@ -154,14 +154,16 @@ class TestActivityEnvironment:
             if client is not None
             else (data_converter or DefaultDataConverter())
         )
-        self._worker_stub = _FakeWorkerStub(self)
+        self._worker_stub = _SimulatedWorkerStub(self)
         # Activity code that calls ``activity.client()`` gets the user-provided
         # client when available, otherwise a minimal in-memory stand-in.
-        self._client: Client = client if client is not None else cast(
-            Client,
-            _FakeClient(
-                self._data_converter, self._worker_stub, identity, domain
-            ),
+        self._client: Client = (
+            client
+            if client is not None
+            else cast(
+                Client,
+                _FakeClient(self._data_converter, self._worker_stub, identity, domain),
+            )
         )
 
         # Heartbeat details seeded for the *current* attempt (as if returned by

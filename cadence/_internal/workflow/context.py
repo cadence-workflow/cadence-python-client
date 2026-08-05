@@ -15,6 +15,11 @@ from cadence._internal.workflow.statemachine.decision_manager import DecisionMan
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
 )
+from cadence._internal.workflow.versioning import (
+    select_version,
+    validate_selected_version,
+    validate_version_arguments,
+)
 from cadence._internal.context import inject_headers, set_header
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.common_pb2 import (
@@ -352,7 +357,7 @@ class Context(WorkflowContext):
         max_supported: int,
         *options: VersioningOption,
     ) -> int:
-        self._validate_version_arguments(change_id, min_supported, max_supported)
+        validate_version_arguments(change_id, min_supported, max_supported)
 
         if change_id in self._versions:
             cached = self._versions[change_id]
@@ -406,10 +411,8 @@ class Context(WorkflowContext):
             self._versions[change_id] = None
             return DEFAULT_VERSION
 
-        selected = self._select_version(min_supported, max_supported, *options)
-        self._validate_selected_version(
-            change_id, selected, min_supported, max_supported
-        )
+        selected = select_version(min_supported, max_supported, *options)
+        validate_selected_version(change_id, selected, min_supported, max_supported)
         self._versions[change_id] = selected
 
         # DEFAULT_VERSION is intentionally never written to history.
@@ -420,52 +423,6 @@ class Context(WorkflowContext):
             change_id, self.data_converter().to_data([selected])
         )
         return selected
-
-    @staticmethod
-    def _validate_version_arguments(
-        change_id: str, min_supported: int, max_supported: int
-    ) -> None:
-        if not isinstance(change_id, str) or not change_id:
-            raise ValueError("change_id must be a non-empty str")
-        for name, value in (
-            ("min_supported", min_supported),
-            ("max_supported", max_supported),
-        ):
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise ValueError(f"{name} must be an int")
-        if min_supported > max_supported:
-            raise ValueError("min_supported must not be greater than max_supported")
-
-    @staticmethod
-    def _select_version(
-        min_supported: int, max_supported: int, *options: VersioningOption
-    ) -> int:
-        custom_version: int | None = None
-        use_min_version = False
-        for option in options:
-            if not isinstance(option, VersioningOption):
-                raise ValueError("get_version options must be VersioningOption values")
-            if option._kind == "version":
-                custom_version = option._version
-            elif option._kind == "min":
-                use_min_version = True
-            else:
-                raise ValueError("invalid get_version option")
-        if custom_version is not None:
-            return custom_version
-        if use_min_version:
-            return min_supported
-        return max_supported
-
-    @staticmethod
-    def _validate_selected_version(
-        change_id: str, version: int, min_supported: int, max_supported: int
-    ) -> None:
-        if version < min_supported or version > max_supported:
-            raise ValueError(
-                f"selected version {version} for change_id {change_id!r} is outside "
-                f"the supported range [{min_supported}, {max_supported}]"
-            )
 
     @staticmethod
     def _validate_recorded_version(
@@ -482,6 +439,8 @@ class Context(WorkflowContext):
             )
 
     def _decode_recorded_version(self, change_id: str, details: Payload) -> int:
+        # Subclasses may override serialization, so only the canonical converter
+        # is guaranteed to encode Version marker details as a single JSON value.
         if type(self.data_converter()) is DefaultDataConverter:
             self._validate_default_version_details(change_id, details)
         try:

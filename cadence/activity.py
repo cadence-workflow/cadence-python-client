@@ -170,8 +170,10 @@ class ActivityContext(ABC):
     @contextmanager
     def _activate(self) -> Iterator[None]:
         token = ActivityContext._var.set(self)
-        yield None
-        ActivityContext._var.reset(token)
+        try:
+            yield None
+        finally:
+            ActivityContext._var.reset(token)
 
     @staticmethod
     def is_set() -> bool:

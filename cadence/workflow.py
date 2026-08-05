@@ -294,6 +294,7 @@ def continue_as_new(
         task_list=task_list,
         execution_start_to_close_timeout=execution_start_to_close_timeout,
         task_start_to_close_timeout=task_start_to_close_timeout,
+        headers=WorkflowContext.get().inject_propagated_headers(),
     )
 
 
@@ -708,6 +709,10 @@ class WorkflowContext(ABC):
 
     @abstractmethod
     def is_cancel_requested(self) -> bool: ...
+
+    def inject_propagated_headers(self) -> dict[str, bytes]:
+        """Return headers to attach to outbound workflow decisions."""
+        return {}
 
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:

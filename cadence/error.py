@@ -12,6 +12,7 @@ class ContinueAsNewError(Exception):
         task_list: str | None = None,
         execution_start_to_close_timeout: timedelta | None = None,
         task_start_to_close_timeout: timedelta | None = None,
+        headers: dict[str, bytes] | None = None,
     ):
         super().__init__("ContinueAsNew")
         self.workflow_args = args
@@ -19,6 +20,7 @@ class ContinueAsNewError(Exception):
         self.task_list = task_list
         self.execution_start_to_close_timeout = execution_start_to_close_timeout
         self.task_start_to_close_timeout = task_start_to_close_timeout
+        self.headers = headers
 
 
 class ActivityFailure(Exception):

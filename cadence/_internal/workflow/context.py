@@ -15,6 +15,7 @@ from cadence._internal.workflow.statemachine.decision_manager import DecisionMan
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
 )
+from cadence._internal.context import inject_headers, set_header
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.common_pb2 import (
     ActivityType,
@@ -31,6 +32,7 @@ from cadence.api.v1.decision_pb2 import (
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter, DefaultDataConverter
+from cadence.context import ContextPropagator
 from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
@@ -55,11 +57,13 @@ class Context(WorkflowContext):
         self,
         info: WorkflowInfo,
         decision_manager: DecisionManager,
+        context_propagators: tuple[ContextPropagator, ...] = (),
     ):
         self._info = info
         self._replay_mode = True
         self._replay_current_time: Optional[datetime] = None
         self._decision_manager = decision_manager
+        self._context_propagators = context_propagators
         self._cancellation_info: WorkflowCancellationInfo | None = None
         # None represents a provisional DEFAULT_VERSION returned while replaying
         # history before a Version marker becomes available.
@@ -117,13 +121,13 @@ class Context(WorkflowContext):
             task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
             input=activity_input,
             retry_policy=retry_policy_to_proto(opts.get("retry_policy")),
-            header=None,
             request_local_dispatch=False,
             schedule_to_close_timeout=_round_to_nearest_second(schedule_to_close),
             schedule_to_start_timeout=_round_to_nearest_second(schedule_to_start),
             start_to_close_timeout=_round_to_nearest_second(start_to_close),
             heartbeat_timeout=_round_to_nearest_second(heartbeat),
         )
+        set_header(schedule_attributes, self._context_propagators)
 
         future = self._decision_manager.schedule_activity(schedule_attributes)
         result_payload = await future
@@ -220,6 +224,7 @@ class Context(WorkflowContext):
             ),
             task_start_to_close_timeout=_round_to_nearest_second(task_timeout),
         )
+        set_header(schedule_attributes, self._context_propagators)
 
         cron_schedule = kwargs.get("cron_schedule")
         if cron_schedule:
@@ -532,6 +537,9 @@ class Context(WorkflowContext):
 
     def is_cancel_requested(self) -> bool:
         return self._cancellation_info is not None
+
+    def inject_propagated_headers(self) -> dict[str, bytes]:
+        return inject_headers(self._context_propagators)
 
     @contextmanager
     def _activate(self) -> Iterator["Context"]:

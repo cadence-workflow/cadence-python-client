@@ -3,8 +3,9 @@ import traceback
 from asyncio import CancelledError, InvalidStateError
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import List, Optional
+from typing import List, Mapping, Optional, Sequence
 
+from cadence._internal.context import extract_headers, set_header_from_dict
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.deterministic_event_loop import (
@@ -34,6 +35,7 @@ from cadence.api.v1.query_pb2 import (
 )
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
+from cadence.context import ContextPropagator
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,13 @@ class DecisionResult:
 
 
 class WorkflowEngine:
-    def __init__(self, info: WorkflowInfo, workflow_definition: WorkflowDefinition):
+    def __init__(
+        self,
+        info: WorkflowInfo,
+        workflow_definition: WorkflowDefinition,
+        context_propagators: Sequence[ContextPropagator] = (),
+        headers: Mapping[str, bytes] | None = None,
+    ):
         self._event_loop = DeterministicEventLoop()
         self._decision_manager = DecisionManager(self._event_loop)
         self._data_converter = info.data_converter
@@ -55,7 +63,9 @@ class WorkflowEngine:
             self._event_loop,
             workflow_definition,
         )
-        self._context = Context(info, self._decision_manager)
+        self._context_propagators = tuple(context_propagators)
+        self._headers = dict(headers) if headers is not None else {}
+        self._context = Context(info, self._decision_manager, self._context_propagators)
 
     def process_decision(
         self,
@@ -77,30 +87,31 @@ class WorkflowEngine:
         try:
             # Activate workflow context for the entire decision processing
             with self._context._activate() as ctx:
-                # Log decision task processing start with full context (matches Java ReplayDecisionTaskHandler)
-                logger.info(
-                    "Processing decision task for workflow",
-                    extra={
-                        "workflow_type": ctx.info().workflow_type,
-                        "workflow_id": ctx.info().workflow_id,
-                        "run_id": ctx.info().workflow_run_id,
-                        "query": query.query_type if query else None,
-                    },
-                )
+                with extract_headers(self._context_propagators, self._headers):
+                    # Log decision task processing start with full context (matches Java ReplayDecisionTaskHandler)
+                    logger.info(
+                        "Processing decision task for workflow",
+                        extra={
+                            "workflow_type": ctx.info().workflow_type,
+                            "workflow_id": ctx.info().workflow_id,
+                            "run_id": ctx.info().workflow_run_id,
+                            "query": query.query_type if query else None,
+                        },
+                    )
 
-                # Create DecisionEventsIterator for structured event processing
-                events_iterator = DecisionEventsIterator(events)
+                    # Create DecisionEventsIterator for structured event processing
+                    events_iterator = DecisionEventsIterator(events)
 
-                # Process decision events using iterator-driven approach
-                self._process_decision_events(ctx, events_iterator)
+                    # Process decision events using iterator-driven approach
+                    self._process_decision_events(ctx, events_iterator)
 
-                if query:
-                    return self._execute_query(query)
+                    if query:
+                        return self._execute_query(query)
 
-                # Collect all pending decisions from state machines
-                decisions = self._decision_manager.collect_pending_decisions()
+                    # Collect all pending decisions from state machines
+                    decisions = self._decision_manager.collect_pending_decisions()
 
-                return DecisionResult(decisions=decisions, query_result=None)
+                    return DecisionResult(decisions=decisions, query_result=None)
 
         # TODO: reevaluate if this is needed to log error here or in the caller
         except Exception as e:
@@ -251,6 +262,8 @@ class WorkflowEngine:
                 attrs.task_start_to_close_timeout.FromTimedelta(
                     e.task_start_to_close_timeout
                 )
+            if e.headers is not None:
+                set_header_from_dict(attrs, e.headers)
             return Decision(
                 continue_as_new_workflow_execution_decision_attributes=attrs,
             )

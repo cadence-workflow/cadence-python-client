@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Sequence
 from unittest.mock import MagicMock
 
 import pytest
@@ -207,6 +208,37 @@ def test_get_version_accepts_noncanonical_custom_converter_details():
         data_converter=converter,
     )
     context = Context(info, manager)
+    context.set_replay_mode(True)
+
+    assert context.get_version("change", 1, 3) == 2
+    manager.record_version_marker.assert_called_once_with("change", details)
+
+
+def test_get_version_accepts_noncanonical_default_converter_subclass_details():
+    class CustomDefaultConverter(DefaultDataConverter):
+        def from_data(
+            self, payload: Payload, type_hints: Sequence[type | None]
+        ) -> list[int]:
+            return [int(payload.data.removeprefix(b"version:"))]
+
+        def to_data(self, values: list[int]) -> Payload:
+            return Payload(data=f"version:{values[0]}".encode())
+
+    manager = MagicMock()
+    details = Payload(data=b"version:2")
+    manager.version_marker_details.return_value = details
+    info = _info()
+    context = Context(
+        WorkflowInfo(
+            workflow_type=info.workflow_type,
+            workflow_domain=info.workflow_domain,
+            workflow_id=info.workflow_id,
+            workflow_run_id=info.workflow_run_id,
+            workflow_task_list=info.workflow_task_list,
+            data_converter=CustomDefaultConverter(),
+        ),
+        manager,
+    )
     context.set_replay_mode(True)
 
     assert context.get_version("change", 1, 3) == 2

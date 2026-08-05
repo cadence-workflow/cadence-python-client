@@ -65,6 +65,11 @@ from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
     FatalDecisionError,
 )
+from cadence._internal.workflow.versioning import (
+    select_version,
+    validate_selected_version,
+    validate_version_arguments,
+)
 from cadence._internal.context import (
     extract_headers,
     header_from_dict,
@@ -294,16 +299,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         max_supported: int,
         *options: VersioningOption,
     ) -> int:
-        if not isinstance(change_id, str) or not change_id:
-            raise ValueError("change_id must be a non-empty str")
-        for name, value in (
-            ("min_supported", min_supported),
-            ("max_supported", max_supported),
-        ):
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise ValueError(f"{name} must be an int")
-        if min_supported > max_supported:
-            raise ValueError("min_supported must not be greater than max_supported")
+        validate_version_arguments(change_id, min_supported, max_supported)
         if change_id in self._versions:
             version = self._versions[change_id]
             if version < min_supported or version > max_supported:
@@ -313,31 +309,8 @@ class _InMemoryWorkflowContext(WorkflowContext):
                 )
             return version
         else:
-            custom_version: int | None = None
-            use_min_version = False
-            for option in options:
-                if not isinstance(option, VersioningOption):
-                    raise ValueError(
-                        "get_version options must be VersioningOption values"
-                    )
-                if option._kind == "version":
-                    custom_version = option._version
-                elif option._kind == "min":
-                    use_min_version = True
-                else:
-                    raise ValueError("invalid get_version option")
-            version = (
-                custom_version
-                if custom_version is not None
-                else min_supported
-                if use_min_version
-                else max_supported
-            )
-        if version < min_supported or version > max_supported:
-            raise ValueError(
-                f"selected version {version} for change_id {change_id!r} is outside "
-                f"the supported range [{min_supported}, {max_supported}]"
-            )
+            version = select_version(min_supported, max_supported, *options)
+        validate_selected_version(change_id, version, min_supported, max_supported)
         self._versions.setdefault(change_id, version)
         return version
 

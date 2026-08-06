@@ -7,13 +7,13 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
     VERSION_MARKER_NAME,
     marker_context_id,
 )
+from cadence._internal.workflow.versioning import decode_version_marker_details
 from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
     GetWorkflowExecutionHistoryResponse,
 )
-from cadence.data_converter import DefaultDataConverter
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
 
 registry = Registry()
@@ -121,6 +121,4 @@ async def test_version_marker_is_recorded_and_replayed_by_cadence(
         ]
         assert len(version_markers) == 1
         assert marker_context_id(version_markers[0]) == _CHANGE_ID
-        assert DefaultDataConverter().from_data(version_markers[0].details, [int]) == [
-            2
-        ]
+        assert decode_version_marker_details(version_markers[0].details) == 2

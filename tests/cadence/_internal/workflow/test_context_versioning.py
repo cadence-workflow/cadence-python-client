@@ -1,5 +1,4 @@
 import asyncio
-from collections.abc import Sequence
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,6 +12,7 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
     encode_marker_header,
     marker_context_id,
 )
+from cadence._internal.workflow.versioning import encode_version_marker_details
 from cadence.testing._workflow_environment import _InMemoryWorkflowContext
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Header, Payload
@@ -52,7 +52,7 @@ def test_get_version_records_native_python_marker():
     assert context.get_version("change", 1, 2) == 2
 
     manager.record_version_marker.assert_called_once_with(
-        "change", _info().data_converter.to_data([2])
+        "change", encode_version_marker_details(2)
     )
 
 
@@ -180,26 +180,12 @@ def test_get_version_rejects_invalid_default_converter_marker_details(
         context.get_version("change", 1, 2)
 
 
-def test_get_version_accepts_noncanonical_custom_converter_details():
-    class RandomizedConverter:
-        def __init__(self) -> None:
-            self._sequence = 0
-
-        def from_data(
-            self, payload: Payload, type_hints: list[type | None]
-        ) -> list[int]:
-            return [int(payload.data.split(b":", maxsplit=1)[1])]
-
-        def to_data(self, values: list[int]) -> Payload:
-            self._sequence += 1
-            return Payload(data=f"{self._sequence}:{values[0]}".encode())
-
-    converter = RandomizedConverter()
-    manager = MagicMock()
-    details = Payload(data=b"99:2")
-    manager.version_marker_details.return_value = details
+def test_get_version_marker_codec_does_not_use_custom_data_converter():
+    converter = MagicMock()
+    converter.from_data.side_effect = AssertionError("must not decode marker details")
+    converter.to_data.side_effect = AssertionError("must not encode marker details")
     info = _info()
-    info = WorkflowInfo(
+    custom_info = WorkflowInfo(
         workflow_type=info.workflow_type,
         workflow_domain=info.workflow_domain,
         workflow_id=info.workflow_id,
@@ -207,74 +193,35 @@ def test_get_version_accepts_noncanonical_custom_converter_details():
         workflow_task_list=info.workflow_task_list,
         data_converter=converter,
     )
-    context = Context(info, manager)
-    context.set_replay_mode(True)
 
-    assert context.get_version("change", 1, 3) == 2
-    manager.record_version_marker.assert_called_once_with("change", details)
+    live_manager = MagicMock()
+    live_manager.version_marker_details.return_value = None
+    live_context = Context(custom_info, live_manager)
+    live_context.set_replay_mode(False)
 
+    assert live_context.get_version("change", 1, 3) == 3
+    details = encode_version_marker_details(3)
+    live_manager.record_version_marker.assert_called_once_with("change", details)
 
-def test_get_version_accepts_noncanonical_default_converter_subclass_details():
-    class CustomDefaultConverter(DefaultDataConverter):
-        def from_data(
-            self, payload: Payload, type_hints: Sequence[type | None]
-        ) -> list[int]:
-            return [int(payload.data.removeprefix(b"version:"))]
-
-        def to_data(self, values: list[int]) -> Payload:
-            return Payload(data=f"version:{values[0]}".encode())
-
-    manager = MagicMock()
-    details = Payload(data=b"version:2")
-    manager.version_marker_details.return_value = details
-    info = _info()
-    context = Context(
+    replay_manager = MagicMock()
+    replay_manager.version_marker_details.return_value = details
+    replay_context = Context(
         WorkflowInfo(
             workflow_type=info.workflow_type,
             workflow_domain=info.workflow_domain,
             workflow_id=info.workflow_id,
             workflow_run_id=info.workflow_run_id,
             workflow_task_list=info.workflow_task_list,
-            data_converter=CustomDefaultConverter(),
+            data_converter=converter,
         ),
-        manager,
+        replay_manager,
     )
-    context.set_replay_mode(True)
+    replay_context.set_replay_mode(True)
 
-    assert context.get_version("change", 1, 3) == 2
-    manager.record_version_marker.assert_called_once_with("change", details)
-
-
-def test_get_version_accepts_empty_details_from_a_custom_converter():
-    class EmptyIntConverter:
-        def from_data(
-            self, payload: Payload, type_hints: list[type | None]
-        ) -> list[int]:
-            assert payload == Payload()
-            return [2]
-
-        def to_data(self, values: list[int]) -> Payload:
-            return Payload()
-
-    manager = MagicMock()
-    details = Payload()
-    manager.version_marker_details.return_value = details
-    info = _info()
-    context = Context(
-        WorkflowInfo(
-            workflow_type=info.workflow_type,
-            workflow_domain=info.workflow_domain,
-            workflow_id=info.workflow_id,
-            workflow_run_id=info.workflow_run_id,
-            workflow_task_list=info.workflow_task_list,
-            data_converter=EmptyIntConverter(),
-        ),
-        manager,
-    )
-    context.set_replay_mode(True)
-
-    assert context.get_version("change", 1, 3) == 2
-    manager.record_version_marker.assert_called_once_with("change", details)
+    assert replay_context.get_version("change", 1, 3) == 3
+    replay_manager.record_version_marker.assert_called_once_with("change", details)
+    converter.to_data.assert_not_called()
+    converter.from_data.assert_not_called()
 
 
 def test_get_version_rejects_executable_options_without_running_them():

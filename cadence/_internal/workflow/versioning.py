@@ -1,4 +1,29 @@
+from typing import cast
+
+from msgspec import DecodeError, json
+
+from cadence.api.v1.common_pb2 import Payload
 from cadence.workflow import VersioningOption
+
+
+def encode_version_marker_details(version: int) -> Payload:
+    """Encode SDK-owned Version marker details as one canonical JSON integer."""
+    if isinstance(version, bool) or not isinstance(version, int):
+        raise ValueError("Version marker details must be an int")
+    return Payload(data=json.encode(version))
+
+
+def decode_version_marker_details(details: Payload) -> int:
+    """Decode the canonical SDK-owned Version marker details format."""
+    if not details.data:
+        raise ValueError("Version marker details are empty")
+    try:
+        version = json.decode(details.data)
+    except DecodeError as exc:
+        raise ValueError("Version marker details are invalid") from exc
+    if isinstance(version, bool) or not isinstance(version, int):
+        raise ValueError("Version marker details must encode a JSON integer")
+    return cast(int, version)
 
 
 def validate_version_arguments(

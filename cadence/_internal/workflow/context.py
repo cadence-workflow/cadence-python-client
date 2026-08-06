@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from asyncio import get_running_loop
 from datetime import datetime, timedelta
-from json import JSONDecoder
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
@@ -16,6 +15,8 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
 )
 from cadence._internal.workflow.versioning import (
+    decode_version_marker_details,
+    encode_version_marker_details,
     select_version,
     validate_selected_version,
     validate_version_arguments,
@@ -36,7 +37,7 @@ from cadence.api.v1.decision_pb2 import (
     StartTimerDecisionAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
-from cadence.data_converter import DataConverter, DefaultDataConverter
+from cadence.data_converter import DataConverter
 from cadence.context import ContextPropagator
 from cadence.workflow import (
     ActivityOptions,
@@ -420,7 +421,7 @@ class Context(WorkflowContext):
             return selected
 
         self._decision_manager.record_version_marker(
-            change_id, self.data_converter().to_data([selected])
+            change_id, encode_version_marker_details(selected)
         )
         return selected
 
@@ -439,38 +440,12 @@ class Context(WorkflowContext):
             )
 
     def _decode_recorded_version(self, change_id: str, details: Payload) -> int:
-        # Subclasses may override serialization, so only the canonical converter
-        # is guaranteed to encode Version marker details as a single JSON value.
-        if type(self.data_converter()) is DefaultDataConverter:
-            self._validate_default_version_details(change_id, details)
         try:
-            version = self.data_converter().from_data(details, [int])[0]
-        except Exception as exc:
+            return decode_version_marker_details(details)
+        except ValueError as exc:
             raise FatalDecisionError(
                 f"Unable to decode Version marker for change_id {change_id!r}"
             ) from exc
-        if isinstance(version, bool) or not isinstance(version, int):
-            raise FatalDecisionError(
-                f"Version marker for change_id {change_id!r} did not contain an int"
-            )
-        return cast(int, version)
-
-    @staticmethod
-    def _validate_default_version_details(change_id: str, details: Payload) -> None:
-        if not details.data:
-            raise FatalDecisionError(
-                f"Version marker for change_id {change_id!r} had empty details"
-            )
-        try:
-            _, end = JSONDecoder(strict=False).raw_decode(details.data.decode())
-        except (UnicodeDecodeError, ValueError) as exc:
-            raise FatalDecisionError(
-                f"Version marker for change_id {change_id!r} had invalid details"
-            ) from exc
-        if end != len(details.data):
-            raise FatalDecisionError(
-                f"Version marker for change_id {change_id!r} had invalid details"
-            )
 
     def set_replay_current_time(self, current_time: datetime) -> None:
         """Set the current replay timestamp."""

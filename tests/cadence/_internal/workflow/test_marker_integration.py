@@ -21,13 +21,11 @@ async def test_replay_marker_event_is_preloaded_before_marker_decision_exists():
     assert decision_events.replay is True
     assert len(decision_events.markers) == 1
 
-    for marker_event in decision_events.markers:
-        decisions.handle_history_event(marker_event)
-
-    decisions.record_marker(marker_attrs)
-    assert decisions.collect_pending_decisions() == [
-        decision.Decision(record_marker_decision_attributes=marker_attrs)
-    ]
+    with decisions.track_nondeterminism(decision_events.replay, decision_events.output):
+        decisions.record_marker(marker_attrs)
+        assert decisions.collect_pending_decisions() == [
+            decision.Decision(record_marker_decision_attributes=marker_attrs)
+        ]
 
     for event in decision_events.output:
         decisions.handle_history_event(event)
@@ -71,15 +69,13 @@ async def test_multiple_replayed_marker_outputs_complete_in_decision_order():
     assert decision_events.replay is True
     assert len(decision_events.markers) == 2
 
-    for marker_event in decision_events.markers:
-        decisions.handle_history_event(marker_event)
-
-    decisions.record_marker(first_attrs)
-    decisions.record_marker(second_attrs)
-    assert decisions.collect_pending_decisions() == [
-        decision.Decision(record_marker_decision_attributes=first_attrs),
-        decision.Decision(record_marker_decision_attributes=second_attrs),
-    ]
+    with decisions.track_nondeterminism(decision_events.replay, decision_events.output):
+        decisions.record_marker(first_attrs)
+        decisions.record_marker(second_attrs)
+        assert decisions.collect_pending_decisions() == [
+            decision.Decision(record_marker_decision_attributes=first_attrs),
+            decision.Decision(record_marker_decision_attributes=second_attrs),
+        ]
 
     for event in decision_events.output:
         decisions.handle_history_event(event)
@@ -97,17 +93,10 @@ async def test_version_marker_added_on_replay_is_not_nondeterministic():
 
     assert decision_events.replay is True
 
-    for marker_event in decision_events.markers:
-        decisions.handle_history_event(marker_event)
-
     with decisions.track_nondeterminism(decision_events.replay, decision_events.output):
-        # counter="0" → "Version_0": no expectation created or consumed.
-        decisions.record_marker(
-            decision.RecordMarkerDecisionAttributes(
-                marker_name="Version", details=Payload(data=b"v1")
-            )
-        )
-        # counter="1" → "SideEffect_1": expectation from history is consumed.
+        assert decisions.version_marker_result(
+            "0", Payload(data=b"default")
+        ) == Payload(data=b"v1")
         decisions.record_marker(
             decision.RecordMarkerDecisionAttributes(
                 marker_name="SideEffect", details=Payload(data=b"new")
@@ -122,7 +111,7 @@ def _history_with_version_and_side_effect() -> list[history.HistoryEvent]:
         _decision_task_started(3, scheduled_event_id=2),
         _decision_task_completed(4, scheduled_event_id=2, started_event_id=3),
         _marker_recorded(5, "Version", Payload(data=b"v1"), "0"),
-        _marker_recorded(6, "SideEffect", Payload(data=b"recorded"), "1"),
+        _marker_recorded(6, "SideEffect", Payload(data=b"recorded"), "0"),
         _decision_task_scheduled(7),
         _decision_task_started(8, scheduled_event_id=7),
     ]

@@ -445,22 +445,17 @@ async def test_version_marker_is_not_flagged_as_nondeterministic():
     # History that includes a Version marker must replay without error, and the
     # Version expectation is never added so complete_replay doesn't fail either.
     decisions = DecisionManager(asyncio.get_event_loop())
-    # History: Version_0 (exempt) then SideEffect_1 (tracked).
     version_recorded = marker_recorded(
         1, "Version", Payload(data=b"v1"), context_id="0"
     )
     side_effect_recorded = marker_recorded(
-        2, "SideEffect", Payload(data=b"side"), context_id="1"
+        2, "SideEffect", Payload(data=b"side"), context_id="0"
     )
 
     with decisions.track_nondeterminism(True, [version_recorded, side_effect_recorded]):
-        # counter="0" → key "Version_0"; no expectation created or consumed.
-        decisions.record_marker(
-            decision.RecordMarkerDecisionAttributes(
-                marker_name="Version", details=Payload(data=b"v1")
-            )
-        )
-        # counter="1" → key "SideEffect_1"; expectation from history is consumed.
+        assert decisions.version_marker_result(
+            "0", Payload(data=b"default")
+        ) == Payload(data=b"v1")
         decisions.record_marker(
             decision.RecordMarkerDecisionAttributes(
                 marker_name="SideEffect", details=Payload(data=b"new")

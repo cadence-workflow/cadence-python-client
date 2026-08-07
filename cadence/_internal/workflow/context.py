@@ -17,8 +17,7 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
 from cadence._internal.workflow.versioning import (
     decode_version_marker_details,
     encode_version_marker_details,
-    select_version,
-    validate_selected_version,
+    validate_resolved_version,
     validate_version_arguments,
 )
 from cadence._internal.context import inject_headers, set_header
@@ -47,7 +46,6 @@ from cadence.workflow import (
     WorkflowCancellationInfo,
     WorkflowContext,
     WorkflowInfo,
-    VersioningOption,
     DEFAULT_VERSION,
 )
 from cadence.api.v1.history_pb2 import WorkflowExecutionCancelRequestedEventAttributes
@@ -71,9 +69,6 @@ class Context(WorkflowContext):
         self._decision_manager = decision_manager
         self._context_propagators = context_propagators
         self._cancellation_info: WorkflowCancellationInfo | None = None
-        # None represents a provisional DEFAULT_VERSION returned while replaying
-        # history before a Version marker becomes available.
-        self._versions: dict[str, int | None] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -356,88 +351,14 @@ class Context(WorkflowContext):
         change_id: str,
         min_supported: int,
         max_supported: int,
-        *options: VersioningOption,
     ) -> int:
         validate_version_arguments(change_id, min_supported, max_supported)
-
-        if change_id in self._versions:
-            cached = self._versions[change_id]
-            if cached is None:
-                details = self._decision_manager.version_marker_details(change_id)
-                if details is not None:
-                    recorded = self._decode_recorded_version(change_id, details)
-                    self._validate_recorded_version(
-                        change_id, recorded, min_supported, max_supported, "recorded"
-                    )
-                    self._versions[change_id] = recorded
-                    if self._decision_manager.has_pending_version_marker(change_id):
-                        self._decision_manager.record_version_marker(change_id, details)
-                    return recorded
-                self._validate_recorded_version(
-                    change_id,
-                    DEFAULT_VERSION,
-                    min_supported,
-                    max_supported,
-                    "cached",
-                )
-                return DEFAULT_VERSION
-            self._validate_recorded_version(
-                change_id, cached, min_supported, max_supported, "cached"
-            )
-            return cached
-
-        details = self._decision_manager.version_marker_details(change_id)
-        if details is not None:
-            recorded = self._decode_recorded_version(change_id, details)
-            self._validate_recorded_version(
-                change_id, recorded, min_supported, max_supported, "recorded"
-            )
-            self._versions[change_id] = recorded
-            # Recreate the state machine so the preloaded marker is completed
-            # when its output event is replayed.
-            if self._decision_manager.has_pending_version_marker(change_id):
-                self._decision_manager.record_version_marker(change_id, details)
-            return recorded
-
-        # A version introduced while replaying old history must preserve the old
-        # code path. There is no marker to validate or state machine to create.
-        if self.is_replay_mode():
-            self._validate_recorded_version(
-                change_id,
-                DEFAULT_VERSION,
-                min_supported,
-                max_supported,
-                "markerless replay",
-            )
-            self._versions[change_id] = None
-            return DEFAULT_VERSION
-
-        selected = select_version(min_supported, max_supported, *options)
-        validate_selected_version(change_id, selected, min_supported, max_supported)
-        self._versions[change_id] = selected
-
-        # DEFAULT_VERSION is intentionally never written to history.
-        if selected == DEFAULT_VERSION:
-            return selected
-
-        self._decision_manager.record_version_marker(
-            change_id, encode_version_marker_details(selected)
+        details = self._decision_manager.version_marker_result(
+            change_id, encode_version_marker_details(DEFAULT_VERSION)
         )
-        return selected
-
-    @staticmethod
-    def _validate_recorded_version(
-        change_id: str,
-        version: int,
-        min_supported: int,
-        max_supported: int,
-        source: str,
-    ) -> None:
-        if version < min_supported or version > max_supported:
-            raise FatalDecisionError(
-                f"{source} version {version} for change_id {change_id!r} is outside "
-                f"the supported range [{min_supported}, {max_supported}]"
-            )
+        version = self._decode_recorded_version(change_id, details)
+        validate_resolved_version(change_id, version, min_supported, max_supported)
+        return version
 
     def _decode_recorded_version(self, change_id: str, details: Payload) -> int:
         try:

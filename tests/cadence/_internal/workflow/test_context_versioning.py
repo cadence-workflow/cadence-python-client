@@ -5,12 +5,15 @@ import pytest
 
 from cadence._internal.workflow.context import Context
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.statemachine.decision_state_machine import DecisionState
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     MARKER_HEADER_KEY,
+    MarkerStateMachine,
     VERSION_MARKER_NAME,
     encode_marker_header,
     marker_context_id,
+    marker_decision_id,
 )
 from cadence._internal.workflow.versioning import encode_version_marker_details
 from cadence.testing._workflow_environment import _InMemoryWorkflowContext
@@ -19,10 +22,7 @@ from cadence.api.v1.common_pb2 import Header, Payload
 from cadence.data_converter import DefaultDataConverter
 from cadence.workflow import (
     DEFAULT_VERSION,
-    VersioningOption,
     WorkflowInfo,
-    execute_with_min_version,
-    execute_with_version,
     get_version,
 )
 
@@ -38,124 +38,124 @@ def _info() -> WorkflowInfo:
     )
 
 
-def _context(*, replay: bool = False) -> tuple[Context, MagicMock]:
-    manager = MagicMock()
-    manager.version_marker_details.return_value = None
+def _context(*, replay: bool = False) -> tuple[Context, DecisionManager]:
+    manager = DecisionManager(MagicMock())
     context = Context(_info(), manager)
     context.set_replay_mode(replay)
     return context, manager
 
 
-def test_get_version_records_native_python_marker():
+def _version_machine(manager: DecisionManager, change_id: str) -> MarkerStateMachine:
+    machine = manager.state_machines[marker_decision_id(VERSION_MARKER_NAME, change_id)]
+    assert isinstance(machine, MarkerStateMachine)
+    return machine
+
+
+def _load_version_marker(
+    manager: DecisionManager, marker_event: history.HistoryEvent
+) -> None:
+    with manager.track_nondeterminism(True, [marker_event]):
+        pass
+
+
+def test_get_version_creates_completed_default_state_machine():
     context, manager = _context()
 
-    assert context.get_version("change", 1, 2) == 2
-
-    manager.record_version_marker.assert_called_once_with(
-        "change", encode_version_marker_details(2)
-    )
-
-
-def test_get_version_options_follow_go_precedence_and_cache():
-    context, manager = _context()
-
-    assert (
-        context.get_version(
-            "change",
-            1,
-            5,
-            execute_with_min_version(),
-            execute_with_version(2),
-            execute_with_version(3),
-        )
-        == 3
-    )
-    # Custom selection wins even when ExecuteWithMinVersion is applied last.
-    assert (
-        context.get_version(
-            "change", 1, 5, execute_with_min_version(), execute_with_version(1)
-        )
-        == 3
-    )
-    assert manager.record_version_marker.call_count == 1
-
-
-def test_get_version_execute_with_min_version_selects_minimum():
-    context, _ = _context()
-
-    assert context.get_version("change", 2, 5, execute_with_min_version()) == 2
+    assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
+    machine = _version_machine(manager, "change")
+    assert machine.state is DecisionState.COMPLETED
+    assert machine.get_result() == encode_version_marker_details(DEFAULT_VERSION)
+    assert manager.collect_pending_decisions() == []
 
 
 def test_get_version_default_version_does_not_record_a_marker():
     context, manager = _context()
 
-    assert (
-        context.get_version(
-            "change", DEFAULT_VERSION, 1, execute_with_version(DEFAULT_VERSION)
-        )
-        == DEFAULT_VERSION
-    )
-    manager.record_version_marker.assert_not_called()
+    assert context.get_version("change", DEFAULT_VERSION, 1) == DEFAULT_VERSION
+    assert manager.collect_pending_decisions() == []
+
+
+def test_repeated_get_version_reads_the_same_completed_state_machine():
+    context, manager = _context()
+
+    for _ in range(3):
+        assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
+
+    assert not hasattr(context, "_versions")
+    assert [decision_id.id for decision_id in manager.state_machines] == [
+        "Version_change"
+    ]
 
 
 def test_get_version_old_replay_without_marker_returns_default_and_emits_nothing():
     context, manager = _context(replay=True)
 
     assert context.get_version("change", DEFAULT_VERSION, 1) == DEFAULT_VERSION
-    manager.record_version_marker.assert_not_called()
+    assert manager.collect_pending_decisions() == []
 
 
 def test_get_version_markerless_replay_rejects_an_unsupported_default_version():
     context, manager = _context(replay=True)
 
-    with pytest.raises(FatalDecisionError, match="markerless replay version -1"):
+    with pytest.raises(FatalDecisionError, match="version -1"):
         context.get_version("change", 0, 1)
 
-    manager.record_version_marker.assert_not_called()
+    assert manager.collect_pending_decisions() == []
 
 
-def test_get_version_recorded_version_ignores_selection_options_and_is_revalidated():
+def test_get_version_recorded_version_is_revalidated():
     context, manager = _context(replay=True)
-    details = _info().data_converter.to_data([2])
-    manager.version_marker_details.return_value = details
+    _load_version_marker(
+        manager,
+        history.HistoryEvent(
+            event_id=1,
+            marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
+                marker_name=VERSION_MARKER_NAME,
+                details=encode_version_marker_details(2),
+                header=Header(
+                    fields={MARKER_HEADER_KEY: encode_marker_header("change")}
+                ),
+            ),
+        ),
+    )
 
-    assert context.get_version("change", 1, 3, execute_with_version(1)) == 2
-    manager.record_version_marker.assert_called_once_with("change", details)
+    assert context.get_version("change", 1, 3) == 2
 
-    with pytest.raises(FatalDecisionError, match="cached version 2"):
-        context.get_version("change", 3, 4, execute_with_version(3))
+    with pytest.raises(FatalDecisionError, match="version 2"):
+        context.get_version("change", 3, 4)
 
 
 @pytest.mark.parametrize(
-    ("change_id", "minimum", "maximum", "option"),
+    ("change_id", "minimum", "maximum"),
     [
-        ("", 1, 1, None),
-        ("change", True, 1, None),
-        ("change", 1, False, None),
-        ("change", 2, 1, None),
-        ("change", 1, 2, execute_with_version(3)),
+        ("", 1, 1),
+        ("change", True, 1),
+        ("change", 1, False),
+        ("change", 2, 1),
     ],
 )
-def test_get_version_validates_arguments(
-    change_id: str, minimum: int, maximum: int, option: object
-):
+def test_get_version_validates_arguments(change_id: str, minimum: int, maximum: int):
     context, _ = _context()
-    options = () if option is None else (option,)
 
     with pytest.raises(ValueError):
-        context.get_version(change_id, minimum, maximum, *options)
-
-
-def test_execute_with_version_rejects_bool_and_non_int():
-    with pytest.raises(ValueError):
-        execute_with_version(True)
-    with pytest.raises(ValueError):
-        execute_with_version("1")  # type: ignore[arg-type]
+        context.get_version(change_id, minimum, maximum)
 
 
 def test_get_version_malformed_recorded_marker_is_a_fatal_decision_error():
     context, manager = _context(replay=True)
-    manager.version_marker_details.return_value = Payload(data=b'"not an int"')
+    _load_version_marker(
+        manager,
+        history.HistoryEvent(
+            event_id=1,
+            marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
+                marker_name=VERSION_MARKER_NAME,
+                details=Payload(data=b'"not an int"'),
+                header=Header(
+                    fields={MARKER_HEADER_KEY: encode_marker_header("change")}
+                ),
+            ),
+        ),
+    )
 
     with pytest.raises(FatalDecisionError, match="Unable to decode Version marker"):
         context.get_version("change", 1, 2)
@@ -174,7 +174,19 @@ def test_get_version_rejects_invalid_default_converter_marker_details(
     details: Payload,
 ):
     context, manager = _context(replay=True)
-    manager.version_marker_details.return_value = details
+    _load_version_marker(
+        manager,
+        history.HistoryEvent(
+            event_id=1,
+            marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
+                marker_name=VERSION_MARKER_NAME,
+                details=details,
+                header=Header(
+                    fields={MARKER_HEADER_KEY: encode_marker_header("change")}
+                ),
+            ),
+        ),
+    )
 
     with pytest.raises(FatalDecisionError):
         context.get_version("change", 1, 2)
@@ -194,17 +206,27 @@ def test_get_version_marker_codec_does_not_use_custom_data_converter():
         data_converter=converter,
     )
 
-    live_manager = MagicMock()
-    live_manager.version_marker_details.return_value = None
+    live_manager = DecisionManager(MagicMock())
     live_context = Context(custom_info, live_manager)
     live_context.set_replay_mode(False)
 
-    assert live_context.get_version("change", 1, 3) == 3
-    details = encode_version_marker_details(3)
-    live_manager.record_version_marker.assert_called_once_with("change", details)
+    assert live_context.get_version("change", DEFAULT_VERSION, 3) == DEFAULT_VERSION
 
-    replay_manager = MagicMock()
-    replay_manager.version_marker_details.return_value = details
+    replay_manager = DecisionManager(MagicMock())
+    details = encode_version_marker_details(3)
+    _load_version_marker(
+        replay_manager,
+        history.HistoryEvent(
+            event_id=1,
+            marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
+                marker_name=VERSION_MARKER_NAME,
+                details=details,
+                header=Header(
+                    fields={MARKER_HEADER_KEY: encode_marker_header("change")}
+                ),
+            ),
+        ),
+    )
     replay_context = Context(
         WorkflowInfo(
             workflow_type=info.workflow_type,
@@ -219,58 +241,22 @@ def test_get_version_marker_codec_does_not_use_custom_data_converter():
     replay_context.set_replay_mode(True)
 
     assert replay_context.get_version("change", 1, 3) == 3
-    replay_manager.record_version_marker.assert_called_once_with("change", details)
     converter.to_data.assert_not_called()
     converter.from_data.assert_not_called()
 
 
-def test_get_version_rejects_executable_options_without_running_them():
-    context, manager = _context()
-    calls: list[None] = []
-
-    def executable_option(_: object) -> None:
-        calls.append(None)
-
-    with pytest.raises(ValueError, match="VersioningOption"):
-        context.get_version("change", 1, 2, executable_option)  # type: ignore[arg-type]
-
-    assert calls == []
-    assert context.get_version("change", 1, 2) == 2
-    manager.record_version_marker.assert_called_once()
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ("unknown", None),
-        ("min", 1),
-        ("version", None),
-        ("version", True),
-        ("version", "1"),
-    ],
-)
-def test_versioning_option_constructor_validates_invariants(
-    args: tuple[str, object],
-):
-    with pytest.raises(ValueError):
-        VersioningOption(*args)  # type: ignore[arg-type]
-
-
-def test_in_memory_context_does_not_cache_a_failed_version_selection():
+def test_in_memory_context_returns_default():
     context = _InMemoryWorkflowContext(MagicMock(), _info())
 
-    with pytest.raises(ValueError):
-        context.get_version("change", 1, 2, execute_with_version(3))
-
-    assert context.get_version("change", 1, 2) == 2
+    assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
 
 
-def test_in_memory_context_rejects_cached_version_range_with_fatal_error():
+def test_in_memory_context_rejects_unsupported_default_version():
     context = _InMemoryWorkflowContext(MagicMock(), _info())
-    assert context.get_version("change", 1, 2) == 2
+    assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
 
-    with pytest.raises(FatalDecisionError, match="cached version 2"):
-        context.get_version("change", 3, 4)
+    with pytest.raises(FatalDecisionError, match="version -1"):
+        context.get_version("change", 1, 2)
 
 
 @pytest.mark.parametrize("change_id", [None, True, 1, b"change"])
@@ -280,7 +266,7 @@ def test_production_context_requires_a_non_empty_string_change_id(change_id: obj
     with pytest.raises(ValueError, match="non-empty str"):
         context.get_version(change_id, 1, 2)  # type: ignore[arg-type]
 
-    manager.record_version_marker.assert_not_called()
+    assert manager.state_machines == {}
 
 
 @pytest.mark.parametrize("change_id", [None, True, 1, b"change"])
@@ -295,24 +281,25 @@ def test_public_get_version_dispatches_through_context():
     context, _ = _context()
 
     with context._activate():
-        assert get_version("change", 1, 2) == 2
+        assert get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
 
 
 async def test_version_marker_has_stable_id_header_and_does_not_consume_sequence():
     manager = DecisionManager(asyncio.get_event_loop())
-    details = DefaultDataConverter().to_data([7])
+    details = encode_version_marker_details(DEFAULT_VERSION)
 
-    manager.record_version_marker("change", details)
+    manager.version_marker_result("change", details)
+    machine = _version_machine(manager, "change")
     timer = decision.StartTimerDecisionAttributes()
     manager.start_timer(timer)
 
     pending = manager.collect_pending_decisions()
-    marker = pending[0].record_marker_decision_attributes
-    assert marker.marker_name == VERSION_MARKER_NAME
-    assert marker.details == details
-    assert marker_context_id(marker) == "change"
+    assert machine.get_result() == details
+    assert marker_context_id(machine.request) == "change"
     assert timer.timer_id == "0"
     assert [key.id for key in manager.state_machines] == ["Version_change", "0"]
+    assert len(pending) == 1
+    assert pending[0].HasField("start_timer_decision_attributes")
 
 
 async def test_replay_preloads_python_version_marker_and_completes_its_state_machine():
@@ -329,20 +316,9 @@ async def test_replay_preloads_python_version_marker_and_completes_its_state_mac
     context = Context(_info(), manager)
     context.set_replay_mode(True)
 
-    with manager.track_nondeterminism(True, []):
-        manager.preload_marker_event(marker_event)
-        assert context.get_version("change", 1, 3, execute_with_version(1)) == 2
-        assert manager.collect_pending_decisions() == [
-            decision.Decision(
-                record_marker_decision_attributes=decision.RecordMarkerDecisionAttributes(
-                    marker_name=VERSION_MARKER_NAME,
-                    details=details,
-                    header=Header(
-                        fields={MARKER_HEADER_KEY: encode_marker_header("change")}
-                    ),
-                )
-            )
-        ]
+    with manager.track_nondeterminism(True, [marker_event]):
+        assert context.get_version("change", 1, 3) == 2
+        assert manager.collect_pending_decisions() == []
         manager.handle_history_event(marker_event)
         assert manager.collect_pending_decisions() == []
 
@@ -361,10 +337,7 @@ async def test_replay_does_not_recreate_consumed_version_marker_in_later_batch()
     context = Context(_info(), manager)
     context.set_replay_mode(True)
 
-    # The original decision batch did not call get_version, so its marker is
-    # consumed without a state machine.
-    with manager.track_nondeterminism(True, []):
-        manager.preload_marker_event(marker_event)
+    with manager.track_nondeterminism(True, [marker_event]):
         manager.handle_history_event(marker_event)
         assert manager.collect_pending_decisions() == []
 
@@ -392,36 +365,27 @@ async def test_markerless_replay_default_is_replaced_by_later_version_marker():
     # First replay batch predates the Version marker.
     with manager.track_nondeterminism(True, []):
         assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
-        assert context._versions == {"change": None}
+        machine = _version_machine(manager, "change")
+        assert machine.get_result() == encode_version_marker_details(DEFAULT_VERSION)
 
-    # A later batch exposes the marker. The provisional default must not mask it.
-    with manager.track_nondeterminism(True, []):
-        manager.preload_marker_event(marker_event)
+    with manager.track_nondeterminism(True, [marker_event]):
         assert context.get_version("change", 1, 2) == 2
-        assert context._versions == {"change": 2}
-        assert manager.collect_pending_decisions() == [
-            decision.Decision(
-                record_marker_decision_attributes=decision.RecordMarkerDecisionAttributes(
-                    marker_name=VERSION_MARKER_NAME,
-                    details=details,
-                    header=Header(
-                        fields={MARKER_HEADER_KEY: encode_marker_header("change")}
-                    ),
-                )
-            )
-        ]
+        assert _version_machine(manager, "change") is machine
+        assert machine.get_result() == details
+        assert manager.collect_pending_decisions() == []
         manager.handle_history_event(marker_event)
         assert manager.collect_pending_decisions() == []
 
 
-async def test_replay_rejects_distinct_duplicate_version_markers():
+async def test_replay_rejects_conflicting_recorded_version_markers():
     manager = DecisionManager(asyncio.get_event_loop())
-    details = DefaultDataConverter().to_data([2])
+    first_details = encode_version_marker_details(2)
+    second_details = encode_version_marker_details(3)
     first_marker = history.HistoryEvent(
         event_id=1,
         marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
             marker_name=VERSION_MARKER_NAME,
-            details=details,
+            details=first_details,
             header=Header(fields={MARKER_HEADER_KEY: encode_marker_header("change")}),
         ),
     )
@@ -429,17 +393,22 @@ async def test_replay_rejects_distinct_duplicate_version_markers():
         event_id=2,
         marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
             marker_name=VERSION_MARKER_NAME,
-            details=details,
+            details=second_details,
             header=Header(fields={MARKER_HEADER_KEY: encode_marker_header("change")}),
         ),
     )
 
-    with manager.track_nondeterminism(True, []):
-        manager.preload_marker_event(first_marker)
-        # Marker preloading and output routing both process this same event.
+    with manager.track_nondeterminism(True, [first_marker]):
+        machine = _version_machine(manager, "change")
+        assert machine.get_result() == first_details
         manager.handle_history_event(first_marker)
-        with pytest.raises(FatalDecisionError, match="duplicate Version marker"):
-            manager.preload_marker_event(second_marker)
+
+    with pytest.raises(FatalDecisionError, match="conflicting Version marker"):
+        with manager.track_nondeterminism(True, [second_marker]):
+            pass
+    assert manager._replaying is False
+    with manager.track_nondeterminism(False, []):
+        pass
 
 
 async def test_version_markers_coexist_with_existing_markers_without_shifting_ids():
@@ -467,8 +436,7 @@ async def test_version_markers_coexist_with_existing_markers_without_shifting_id
         marker_name="SideEffect", details=Payload(data=b"new-value")
     )
 
-    with manager.track_nondeterminism(True, [side_effect_event]):
-        manager.preload_marker_event(version_event)
+    with manager.track_nondeterminism(True, [version_event, side_effect_event]):
         assert context.get_version("change", 1, 3) == 2
         manager.record_marker(side_effect)
         assert marker_context_id(side_effect) == "0"
@@ -492,8 +460,7 @@ async def test_replay_ignores_foreign_version_marker_format():
         ),
     )
 
-    with manager.track_nondeterminism(True, []):
-        manager.preload_marker_event(foreign_marker)
+    with manager.track_nondeterminism(True, [foreign_marker]):
         assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
         assert manager.collect_pending_decisions() == []
 
@@ -515,6 +482,6 @@ async def test_replay_rejects_malformed_python_version_marker_header(
         ),
     )
 
-    with manager.track_nondeterminism(True, []):
-        with pytest.raises(FatalDecisionError, match="invalid Python MarkerHeader"):
-            manager.preload_marker_event(malformed_marker)
+    with pytest.raises(FatalDecisionError, match="invalid Python MarkerHeader"):
+        with manager.track_nondeterminism(True, [malformed_marker]):
+            pass

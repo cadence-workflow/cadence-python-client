@@ -61,13 +61,9 @@ from typing import (
 )
 
 from cadence._internal.activity._definition import BaseDefinition
-from cadence._internal.workflow.deterministic_event_loop import (
-    DeterministicEventLoop,
-    FatalDecisionError,
-)
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.versioning import (
-    select_version,
-    validate_selected_version,
+    validate_resolved_version,
     validate_version_arguments,
 )
 from cadence._internal.context import (
@@ -88,8 +84,8 @@ from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
     ChildWorkflowOptions,
+    DEFAULT_VERSION,
     ResultType,
-    VersioningOption,
     WorkflowContext,
     WorkflowDefinition,
     WorkflowInfo,
@@ -202,7 +198,6 @@ class _InMemoryWorkflowContext(WorkflowContext):
         self._env = env
         self._info = info
         self._mutable_side_effect_values: dict[str, Any] = {}
-        self._versions: dict[str, int] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -297,22 +292,15 @@ class _InMemoryWorkflowContext(WorkflowContext):
         change_id: str,
         min_supported: int,
         max_supported: int,
-        *options: VersioningOption,
     ) -> int:
         validate_version_arguments(change_id, min_supported, max_supported)
-        if change_id in self._versions:
-            version = self._versions[change_id]
-            if version < min_supported or version > max_supported:
-                raise FatalDecisionError(
-                    f"cached version {version} for change_id {change_id!r} is outside "
-                    f"the supported range [{min_supported}, {max_supported}]"
-                )
-            return version
-        else:
-            version = select_version(min_supported, max_supported, *options)
-        validate_selected_version(change_id, version, min_supported, max_supported)
-        self._versions.setdefault(change_id, version)
-        return version
+        validate_resolved_version(
+            change_id,
+            DEFAULT_VERSION,
+            min_supported,
+            max_supported,
+        )
+        return DEFAULT_VERSION
 
     async def signal_child_workflow(
         self,

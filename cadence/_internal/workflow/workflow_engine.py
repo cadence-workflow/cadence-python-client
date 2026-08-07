@@ -158,12 +158,6 @@ class WorkflowEngine:
         """
         Process decision events using the iterator-driven approach similar to Java client.
 
-        This method implements the three-phase event processing pattern:
-        1. Process markers first (for deterministic replay)
-        2. Process regular events (trigger workflow state changes)
-        3. Execute workflow logic
-        4. Process decision events from previous decisions
-
         Args:
             events_iterator: The DecisionEventsIterator for structured event processing
             decision_task: The original decision task
@@ -188,27 +182,9 @@ class WorkflowEngine:
             with self._decision_manager.track_nondeterminism(
                 decision_events.replay, decision_events.output
             ):
-                # Phase 1: Process markers first
-                for marker_event in decision_events.markers:
-                    logger.debug(
-                        "Processing marker event",
-                        extra={
-                            "workflow_id": ctx.info().workflow_id,
-                            "marker_name": getattr(
-                                marker_event, "marker_name", "unknown"
-                            ),
-                            "event_id": getattr(marker_event, "event_id", None),
-                            "replay_mode": decision_events.replay,
-                        },
-                    )
-                    # Process through state machines (DecisionsHelper now delegates to DecisionManager)
-                    self._decision_manager.handle_history_event(marker_event)
-
-                # Phase 2: Apply input events in history order.
                 for event in decision_events.input:
                     self._apply_input_event(event)
 
-                # Phase 3: Execute workflow logic
                 self._workflow_instance.run_until_yield()
 
                 # Signal handler failures fail the decision task, not the workflow.
@@ -220,7 +196,6 @@ class WorkflowEngine:
                 if decision := self._maybe_complete_workflow():
                     self._decision_manager.complete_workflow(decision)
 
-            # Phase 4: update state machine with output events
             for event in decision_events.output:
                 self._decision_manager.handle_history_event(event)
 

@@ -7,11 +7,18 @@ from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
 
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
+)
+from cadence._internal.workflow.versioning import (
+    decode_version_marker_details,
+    encode_version_marker_details,
+    validate_resolved_version,
+    validate_version_arguments,
 )
 from cadence._internal.context import inject_headers, set_header
 from cadence.api.v1 import workflow_pb2
@@ -39,6 +46,7 @@ from cadence.workflow import (
     WorkflowCancellationInfo,
     WorkflowContext,
     WorkflowInfo,
+    DEFAULT_VERSION,
 )
 from cadence.api.v1.history_pb2 import WorkflowExecutionCancelRequestedEventAttributes
 
@@ -337,6 +345,28 @@ class Context(WorkflowContext):
             ResultType,
             self.data_converter().from_data(result_payload, [result_type])[0],
         )
+
+    def get_version(
+        self,
+        change_id: str,
+        min_supported: int,
+        max_supported: int,
+    ) -> int:
+        validate_version_arguments(change_id, min_supported, max_supported)
+        details = self._decision_manager.version_marker_result(
+            change_id, encode_version_marker_details(DEFAULT_VERSION)
+        )
+        version = self._decode_recorded_version(change_id, details)
+        validate_resolved_version(change_id, version, min_supported, max_supported)
+        return version
+
+    def _decode_recorded_version(self, change_id: str, details: Payload) -> int:
+        try:
+            return decode_version_marker_details(details)
+        except ValueError as exc:
+            raise FatalDecisionError(
+                f"Unable to decode Version marker for change_id {change_id!r}"
+            ) from exc
 
     def set_replay_current_time(self, current_time: datetime) -> None:
         """Set the current replay timestamp."""

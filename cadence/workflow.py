@@ -33,6 +33,7 @@ from cadence.signal import SignalDefinition, SignalDefinitionOptions
 _QUERY_TYPES_QUERY_NAME = "__query_types"
 
 ResultType = TypeVar("ResultType")
+DEFAULT_VERSION = -1
 
 
 class RetryPolicy(TypedDict, total=False):
@@ -212,6 +213,22 @@ def mutable_side_effect(
     value should be persisted. During replay, neither callback is invoked.
     """
     return WorkflowContext.get().mutable_side_effect(id, fn, result_type, updated)
+
+
+def get_version(
+    change_id: str,
+    min_supported: int,
+    max_supported: int,
+) -> int:
+    """Return the deterministic Version marker result for ``change_id``.
+
+    A recorded marker is loaded into its state machine and remains the source of
+    truth for subsequent calls. Without a marker, the state machine is completed
+    with ``DEFAULT_VERSION`` without recording a decision. A marker encountered
+    in a later history batch replaces that default result.
+
+    """
+    return WorkflowContext.get().get_version(change_id, min_supported, max_supported)
 
 
 def is_cancel_requested() -> bool:
@@ -649,6 +666,14 @@ class WorkflowContext(ABC):
         result_type: Type[ResultType],
         updated: Callable[[ResultType, ResultType], bool],
     ) -> ResultType: ...
+
+    @abstractmethod
+    def get_version(
+        self,
+        change_id: str,
+        min_supported: int,
+        max_supported: int,
+    ) -> int: ...
 
     @abstractmethod
     def is_cancel_requested(self) -> bool: ...

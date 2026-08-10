@@ -220,12 +220,13 @@ def get_version(
     min_supported: int,
     max_supported: int,
 ) -> int:
-    """Return the deterministic Version marker result for ``change_id``.
+    """Return the deterministic version for ``change_id``.
 
-    A recorded marker is loaded into its state machine and remains the source of
-    truth for subsequent calls. Without a marker, the state machine is completed
-    with ``DEFAULT_VERSION`` without recording a decision. A marker encountered
-    in a later history batch replaces that default result.
+    A new execution selects ``max_supported`` and records it when it is not
+    ``DEFAULT_VERSION``. A recorded marker is the source of truth for subsequent
+    calls. When replaying history from before this marker was introduced, the
+    result is ``DEFAULT_VERSION``; therefore ``min_supported`` must include
+    ``DEFAULT_VERSION`` until those executions have completed.
 
     """
     return WorkflowContext.get().get_version(change_id, min_supported, max_supported)

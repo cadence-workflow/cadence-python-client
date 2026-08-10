@@ -1,10 +1,13 @@
+import asyncio
 from datetime import timedelta
 from typing import cast
 
 from cadence import Registry, workflow
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     VERSION_MARKER_NAME,
+    marker_context_id,
 )
+from cadence._internal.workflow.versioning import decode_version_marker_details
 from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import (
@@ -51,7 +54,25 @@ async def _full_history(
         )
 
 
-async def test_default_version_is_stable_without_recording_a_marker(
+async def _wait_for_version_marker(
+    helper: CadenceHelper, execution: WorkflowExecution
+) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 10
+    while loop.time() < deadline:
+        history = await _full_history(helper, execution)
+        if any(
+            event.HasField("marker_recorded_event_attributes")
+            and event.marker_recorded_event_attributes.marker_name
+            == VERSION_MARKER_NAME
+            for event in history.history.events
+        ):
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("Version marker was not recorded before workflow release")
+
+
+async def test_version_marker_is_recorded_and_replayed_by_cadence(
     helper: CadenceHelper,
 ) -> None:
     async with helper.worker(registry) as worker:
@@ -60,6 +81,9 @@ async def test_default_version_is_stable_without_recording_a_marker(
             task_list=worker.task_list,
             execution_start_to_close_timeout=timedelta(seconds=10),
         )
+        # Ensure release is handled in a later decision task so the recorded
+        # marker is replayed before the second get_version call.
+        await _wait_for_version_marker(helper, execution)
 
         await worker.client.signal_workflow(
             execution.workflow_id,
@@ -83,7 +107,7 @@ async def test_default_version_is_stable_without_recording_a_marker(
             response.history.events[
                 -1
             ].workflow_execution_completed_event_attributes.result.data.decode()
-            == '"-1/-1"'
+            == '"2/2"'
         )
 
         history = await _full_history(helper, execution)
@@ -94,4 +118,6 @@ async def test_default_version_is_stable_without_recording_a_marker(
             and event.marker_recorded_event_attributes.marker_name
             == VERSION_MARKER_NAME
         ]
-        assert version_markers == []
+        assert len(version_markers) == 1
+        assert marker_context_id(version_markers[0]) == _CHANGE_ID
+        assert decode_version_marker_details(version_markers[0].details) == 2

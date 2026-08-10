@@ -353,8 +353,11 @@ class Context(WorkflowContext):
         max_supported: int,
     ) -> int:
         validate_version_arguments(change_id, min_supported, max_supported)
+        selected = DEFAULT_VERSION if self.is_replay_mode() else max_supported
         details = self._decision_manager.version_marker_result(
-            change_id, encode_version_marker_details(DEFAULT_VERSION)
+            change_id,
+            encode_version_marker_details(selected),
+            record=selected != DEFAULT_VERSION,
         )
         version = self._decode_recorded_version(change_id, details)
         validate_resolved_version(change_id, version, min_supported, max_supported)

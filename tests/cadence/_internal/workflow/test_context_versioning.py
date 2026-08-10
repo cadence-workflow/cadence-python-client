@@ -58,33 +58,44 @@ def _load_version_marker(
         pass
 
 
-def test_get_version_creates_completed_default_state_machine():
+def test_get_version_records_max_version_for_new_execution():
     context, manager = _context()
 
-    assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
+    assert context.get_version("change", 1, 2) == 2
+    machine = _version_machine(manager, "change")
+    assert machine.state is DecisionState.REQUESTED
+    assert machine.get_result() == encode_version_marker_details(2)
+    pending = manager.collect_pending_decisions()
+    assert len(pending) == 1
+    assert pending[0].record_marker_decision_attributes.details == (
+        encode_version_marker_details(2)
+    )
+
+
+def test_get_version_explicit_default_does_not_record_a_marker():
+    context, manager = _context()
+
+    assert context.get_version("change", DEFAULT_VERSION, DEFAULT_VERSION) == (
+        DEFAULT_VERSION
+    )
     machine = _version_machine(manager, "change")
     assert machine.state is DecisionState.COMPLETED
-    assert machine.get_result() == encode_version_marker_details(DEFAULT_VERSION)
     assert manager.collect_pending_decisions() == []
 
 
-def test_get_version_default_version_does_not_record_a_marker():
-    context, manager = _context()
-
-    assert context.get_version("change", DEFAULT_VERSION, 1) == DEFAULT_VERSION
-    assert manager.collect_pending_decisions() == []
-
-
-def test_repeated_get_version_reads_the_same_completed_state_machine():
+def test_repeated_get_version_reads_the_same_state_machine():
     context, manager = _context()
 
     for _ in range(3):
-        assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
+        assert context.get_version("change", DEFAULT_VERSION, 2) == 2
 
     assert not hasattr(context, "_versions")
     assert [decision_id.id for decision_id in manager.state_machines] == [
         "Version_change"
     ]
+    assert manager.collect_pending_decisions()[0].record_marker_decision_attributes.details == (
+        encode_version_marker_details(2)
+    )
 
 
 def test_get_version_old_replay_without_marker_returns_default_and_emits_nothing():
@@ -210,7 +221,7 @@ def test_get_version_marker_codec_does_not_use_custom_data_converter():
     live_context = Context(custom_info, live_manager)
     live_context.set_replay_mode(False)
 
-    assert live_context.get_version("change", DEFAULT_VERSION, 3) == DEFAULT_VERSION
+    assert live_context.get_version("change", DEFAULT_VERSION, 3) == 3
 
     replay_manager = DecisionManager(MagicMock())
     details = encode_version_marker_details(3)
@@ -245,18 +256,18 @@ def test_get_version_marker_codec_does_not_use_custom_data_converter():
     converter.from_data.assert_not_called()
 
 
-def test_in_memory_context_returns_default():
+def test_in_memory_context_selects_max_version():
     context = _InMemoryWorkflowContext(MagicMock(), _info())
 
-    assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
+    assert context.get_version("change", DEFAULT_VERSION, 2) == 2
 
 
-def test_in_memory_context_rejects_unsupported_default_version():
+def test_in_memory_context_revalidates_cached_version():
     context = _InMemoryWorkflowContext(MagicMock(), _info())
-    assert context.get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
+    assert context.get_version("change", DEFAULT_VERSION, 2) == 2
 
-    with pytest.raises(FatalDecisionError, match="version -1"):
-        context.get_version("change", 1, 2)
+    with pytest.raises(FatalDecisionError, match="version 2"):
+        context.get_version("change", 3, 4)
 
 
 @pytest.mark.parametrize("change_id", [None, True, 1, b"change"])
@@ -281,7 +292,7 @@ def test_public_get_version_dispatches_through_context():
     context, _ = _context()
 
     with context._activate():
-        assert get_version("change", DEFAULT_VERSION, 2) == DEFAULT_VERSION
+        assert get_version("change", DEFAULT_VERSION, 2) == 2
 
 
 async def test_version_marker_has_stable_id_header_and_does_not_consume_sequence():

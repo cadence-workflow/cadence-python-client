@@ -84,7 +84,6 @@ from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
     ChildWorkflowOptions,
-    DEFAULT_VERSION,
     ResultType,
     WorkflowContext,
     WorkflowDefinition,
@@ -198,6 +197,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         self._env = env
         self._info = info
         self._mutable_side_effect_values: dict[str, Any] = {}
+        self._versions: dict[str, int] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -294,13 +294,14 @@ class _InMemoryWorkflowContext(WorkflowContext):
         max_supported: int,
     ) -> int:
         validate_version_arguments(change_id, min_supported, max_supported)
+        version = self._versions.setdefault(change_id, max_supported)
         validate_resolved_version(
             change_id,
-            DEFAULT_VERSION,
+            version,
             min_supported,
             max_supported,
         )
-        return DEFAULT_VERSION
+        return version
 
     async def signal_child_workflow(
         self,

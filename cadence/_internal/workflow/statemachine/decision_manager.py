@@ -286,14 +286,14 @@ class DecisionManager:
         return result
 
     def version_marker_result(
-        self, change_id: str, default_details: Payload
+        self, change_id: str, details: Payload, *, record: bool = False
     ) -> Payload:
         return self._get_or_create_version_marker(
-            change_id, default_details
+            change_id, details, record=record
         ).get_result()
 
     def _get_or_create_version_marker(
-        self, change_id: str, default_details: Payload
+        self, change_id: str, details: Payload, *, record: bool = False
     ) -> MarkerStateMachine:
         marker_id = marker_decision_id(VERSION_MARKER_NAME, change_id)
         existing = self.state_machines.get(marker_id)
@@ -306,10 +306,14 @@ class DecisionManager:
 
         attrs = decision.RecordMarkerDecisionAttributes(
             marker_name=VERSION_MARKER_NAME,
-            details=default_details,
+            details=details,
         )
         attrs.header.fields[MARKER_HEADER_KEY].CopyFrom(encode_marker_header(change_id))
-        machine = MarkerStateMachine.completed(attrs, VERSION_MARKER_NAME, change_id)
+        machine = (
+            MarkerStateMachine(attrs, VERSION_MARKER_NAME, change_id)
+            if record
+            else MarkerStateMachine.completed(attrs, VERSION_MARKER_NAME, change_id)
+        )
         self._add_state_machine(machine)
         return machine
 

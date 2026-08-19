@@ -11,7 +11,7 @@ import datetime
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class CreateScheduleRequest(_message.Message):
-    __slots__ = ("domain", "schedule_id", "spec", "action", "policies", "memo", "search_attributes")
+    __slots__ = ("domain", "schedule_id", "spec", "action", "policies", "memo", "search_attributes", "state")
     DOMAIN_FIELD_NUMBER: _ClassVar[int]
     SCHEDULE_ID_FIELD_NUMBER: _ClassVar[int]
     SPEC_FIELD_NUMBER: _ClassVar[int]
@@ -19,6 +19,7 @@ class CreateScheduleRequest(_message.Message):
     POLICIES_FIELD_NUMBER: _ClassVar[int]
     MEMO_FIELD_NUMBER: _ClassVar[int]
     SEARCH_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
     domain: str
     schedule_id: str
     spec: _schedule_pb2.ScheduleSpec
@@ -26,7 +27,8 @@ class CreateScheduleRequest(_message.Message):
     policies: _schedule_pb2.SchedulePolicies
     memo: _common_pb2.Memo
     search_attributes: _common_pb2.SearchAttributes
-    def __init__(self, domain: _Optional[str] = ..., schedule_id: _Optional[str] = ..., spec: _Optional[_Union[_schedule_pb2.ScheduleSpec, _Mapping]] = ..., action: _Optional[_Union[_schedule_pb2.ScheduleAction, _Mapping]] = ..., policies: _Optional[_Union[_schedule_pb2.SchedulePolicies, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ...) -> None: ...
+    state: _schedule_pb2.ScheduleState
+    def __init__(self, domain: _Optional[str] = ..., schedule_id: _Optional[str] = ..., spec: _Optional[_Union[_schedule_pb2.ScheduleSpec, _Mapping]] = ..., action: _Optional[_Union[_schedule_pb2.ScheduleAction, _Mapping]] = ..., policies: _Optional[_Union[_schedule_pb2.SchedulePolicies, _Mapping]] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ..., state: _Optional[_Union[_schedule_pb2.ScheduleState, _Mapping]] = ...) -> None: ...
 
 class CreateScheduleResponse(_message.Message):
     __slots__ = ("schedule_id",)

@@ -27,7 +27,7 @@ from cadence.api.v1 import schedule_pb2 as cadence_dot_api_dot_v1_dot_schedule__
 from cadence.api.v1 import common_pb2 as cadence_dot_api_dot_v1_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n%cadence/api/v1/service_schedule.proto\x12\x13uber.cadence.api.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1d\x63\x61\x64\x65nce/api/v1/schedule.proto\x1a\x1b\x63\x61\x64\x65nce/api/v1/common.proto\"\xc6\x02\n\x15\x43reateScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12/\n\x04spec\x18\x03 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleSpec\x12\x33\n\x06\x61\x63tion\x18\x04 \x01(\x0b\x32#.uber.cadence.api.v1.ScheduleAction\x12\x37\n\x08policies\x18\x05 \x01(\x0b\x32%.uber.cadence.api.v1.SchedulePolicies\x12\'\n\x04memo\x18\x06 \x01(\x0b\x32\x19.uber.cadence.api.v1.Memo\x12@\n\x11search_attributes\x18\x07 \x01(\x0b\x32%.uber.cadence.api.v1.SearchAttributes\"-\n\x16\x43reateScheduleResponse\x12\x13\n\x0bschedule_id\x18\x01 \x01(\t\">\n\x17\x44\x65scribeScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\"\x88\x03\n\x18\x44\x65scribeScheduleResponse\x12/\n\x04spec\x18\x01 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleSpec\x12\x33\n\x06\x61\x63tion\x18\x02 \x01(\x0b\x32#.uber.cadence.api.v1.ScheduleAction\x12\x37\n\x08policies\x18\x03 \x01(\x0b\x32%.uber.cadence.api.v1.SchedulePolicies\x12\x31\n\x05state\x18\x04 \x01(\x0b\x32\".uber.cadence.api.v1.ScheduleState\x12/\n\x04info\x18\x05 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleInfo\x12\'\n\x04memo\x18\x06 \x01(\x0b\x32\x19.uber.cadence.api.v1.Memo\x12@\n\x11search_attributes\x18\x07 \x01(\x0b\x32%.uber.cadence.api.v1.SearchAttributes\"R\n\x14ListSchedulesRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x17\n\x0fnext_page_token\x18\x03 \x01(\x0c\"k\n\x15ListSchedulesResponse\x12\x39\n\tschedules\x18\x01 \x03(\x0b\x32&.uber.cadence.api.v1.ScheduleListEntry\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\x0c\"<\n\x15\x44\x65leteScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\"\x18\n\x16\x44\x65leteScheduleResponse\"]\n\x14PauseScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12\x0e\n\x06reason\x18\x03 \x01(\t\x12\x10\n\x08identity\x18\x04 \x01(\t\"\x17\n\x15PauseScheduleResponse\"\x92\x01\n\x16UnpauseScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12\x0e\n\x06reason\x18\x03 \x01(\t\x12\x43\n\x0f\x63\x61tch_up_policy\x18\x04 \x01(\x0e\x32*.uber.cadence.api.v1.ScheduleCatchUpPolicy\"\x19\n\x17UnpauseScheduleResponse\"\xf5\x01\n\x17\x42\x61\x63kfillScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12.\n\nstart_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12,\n\x08\x65nd_time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x42\n\x0eoverlap_policy\x18\x05 \x01(\x0e\x32*.uber.cadence.api.v1.ScheduleOverlapPolicy\x12\x13\n\x0b\x62\x61\x63kfill_id\x18\x06 \x01(\t\"\x1a\n\x18\x42\x61\x63kfillScheduleResponse\"\x9d\x02\n\x15UpdateScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12/\n\x04spec\x18\x03 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleSpec\x12\x33\n\x06\x61\x63tion\x18\x04 \x01(\x0b\x32#.uber.cadence.api.v1.ScheduleAction\x12\x37\n\x08policies\x18\x05 \x01(\x0b\x32%.uber.cadence.api.v1.SchedulePolicies\x12@\n\x11search_attributes\x18\x06 \x01(\x0b\x32%.uber.cadence.api.v1.SearchAttributes\"\x18\n\x16UpdateScheduleResponse2\xee\x06\n\x0bScheduleAPI\x12i\n\x0e\x43reateSchedule\x12*.uber.cadence.api.v1.CreateScheduleRequest\x1a+.uber.cadence.api.v1.CreateScheduleResponse\x12o\n\x10\x44\x65scribeSchedule\x12,.uber.cadence.api.v1.DescribeScheduleRequest\x1a-.uber.cadence.api.v1.DescribeScheduleResponse\x12\x66\n\rListSchedules\x12).uber.cadence.api.v1.ListSchedulesRequest\x1a*.uber.cadence.api.v1.ListSchedulesResponse\x12i\n\x0e\x44\x65leteSchedule\x12*.uber.cadence.api.v1.DeleteScheduleRequest\x1a+.uber.cadence.api.v1.DeleteScheduleResponse\x12\x66\n\rPauseSchedule\x12).uber.cadence.api.v1.PauseScheduleRequest\x1a*.uber.cadence.api.v1.PauseScheduleResponse\x12l\n\x0fUnpauseSchedule\x12+.uber.cadence.api.v1.UnpauseScheduleRequest\x1a,.uber.cadence.api.v1.UnpauseScheduleResponse\x12o\n\x10\x42\x61\x63kfillSchedule\x12,.uber.cadence.api.v1.BackfillScheduleRequest\x1a-.uber.cadence.api.v1.BackfillScheduleResponse\x12i\n\x0eUpdateSchedule\x12*.uber.cadence.api.v1.UpdateScheduleRequest\x1a+.uber.cadence.api.v1.UpdateScheduleResponseBd\n\x17\x63om.uber.cadence.api.v1B\x14ScheduleServiceProtoP\x01Z1github.com/uber/cadence-idl/go/proto/api/v1;apiv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n%cadence/api/v1/service_schedule.proto\x12\x13uber.cadence.api.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1d\x63\x61\x64\x65nce/api/v1/schedule.proto\x1a\x1b\x63\x61\x64\x65nce/api/v1/common.proto\"\xf9\x02\n\x15\x43reateScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12/\n\x04spec\x18\x03 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleSpec\x12\x33\n\x06\x61\x63tion\x18\x04 \x01(\x0b\x32#.uber.cadence.api.v1.ScheduleAction\x12\x37\n\x08policies\x18\x05 \x01(\x0b\x32%.uber.cadence.api.v1.SchedulePolicies\x12\'\n\x04memo\x18\x06 \x01(\x0b\x32\x19.uber.cadence.api.v1.Memo\x12@\n\x11search_attributes\x18\x07 \x01(\x0b\x32%.uber.cadence.api.v1.SearchAttributes\x12\x31\n\x05state\x18\x08 \x01(\x0b\x32\".uber.cadence.api.v1.ScheduleState\"-\n\x16\x43reateScheduleResponse\x12\x13\n\x0bschedule_id\x18\x01 \x01(\t\">\n\x17\x44\x65scribeScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\"\x88\x03\n\x18\x44\x65scribeScheduleResponse\x12/\n\x04spec\x18\x01 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleSpec\x12\x33\n\x06\x61\x63tion\x18\x02 \x01(\x0b\x32#.uber.cadence.api.v1.ScheduleAction\x12\x37\n\x08policies\x18\x03 \x01(\x0b\x32%.uber.cadence.api.v1.SchedulePolicies\x12\x31\n\x05state\x18\x04 \x01(\x0b\x32\".uber.cadence.api.v1.ScheduleState\x12/\n\x04info\x18\x05 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleInfo\x12\'\n\x04memo\x18\x06 \x01(\x0b\x32\x19.uber.cadence.api.v1.Memo\x12@\n\x11search_attributes\x18\x07 \x01(\x0b\x32%.uber.cadence.api.v1.SearchAttributes\"R\n\x14ListSchedulesRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x17\n\x0fnext_page_token\x18\x03 \x01(\x0c\"k\n\x15ListSchedulesResponse\x12\x39\n\tschedules\x18\x01 \x03(\x0b\x32&.uber.cadence.api.v1.ScheduleListEntry\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\x0c\"<\n\x15\x44\x65leteScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\"\x18\n\x16\x44\x65leteScheduleResponse\"]\n\x14PauseScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12\x0e\n\x06reason\x18\x03 \x01(\t\x12\x10\n\x08identity\x18\x04 \x01(\t\"\x17\n\x15PauseScheduleResponse\"\x92\x01\n\x16UnpauseScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12\x0e\n\x06reason\x18\x03 \x01(\t\x12\x43\n\x0f\x63\x61tch_up_policy\x18\x04 \x01(\x0e\x32*.uber.cadence.api.v1.ScheduleCatchUpPolicy\"\x19\n\x17UnpauseScheduleResponse\"\xf5\x01\n\x17\x42\x61\x63kfillScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12.\n\nstart_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12,\n\x08\x65nd_time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x42\n\x0eoverlap_policy\x18\x05 \x01(\x0e\x32*.uber.cadence.api.v1.ScheduleOverlapPolicy\x12\x13\n\x0b\x62\x61\x63kfill_id\x18\x06 \x01(\t\"\x1a\n\x18\x42\x61\x63kfillScheduleResponse\"\x9d\x02\n\x15UpdateScheduleRequest\x12\x0e\n\x06\x64omain\x18\x01 \x01(\t\x12\x13\n\x0bschedule_id\x18\x02 \x01(\t\x12/\n\x04spec\x18\x03 \x01(\x0b\x32!.uber.cadence.api.v1.ScheduleSpec\x12\x33\n\x06\x61\x63tion\x18\x04 \x01(\x0b\x32#.uber.cadence.api.v1.ScheduleAction\x12\x37\n\x08policies\x18\x05 \x01(\x0b\x32%.uber.cadence.api.v1.SchedulePolicies\x12@\n\x11search_attributes\x18\x06 \x01(\x0b\x32%.uber.cadence.api.v1.SearchAttributes\"\x18\n\x16UpdateScheduleResponse2\xee\x06\n\x0bScheduleAPI\x12i\n\x0e\x43reateSchedule\x12*.uber.cadence.api.v1.CreateScheduleRequest\x1a+.uber.cadence.api.v1.CreateScheduleResponse\x12o\n\x10\x44\x65scribeSchedule\x12,.uber.cadence.api.v1.DescribeScheduleRequest\x1a-.uber.cadence.api.v1.DescribeScheduleResponse\x12\x66\n\rListSchedules\x12).uber.cadence.api.v1.ListSchedulesRequest\x1a*.uber.cadence.api.v1.ListSchedulesResponse\x12i\n\x0e\x44\x65leteSchedule\x12*.uber.cadence.api.v1.DeleteScheduleRequest\x1a+.uber.cadence.api.v1.DeleteScheduleResponse\x12\x66\n\rPauseSchedule\x12).uber.cadence.api.v1.PauseScheduleRequest\x1a*.uber.cadence.api.v1.PauseScheduleResponse\x12l\n\x0fUnpauseSchedule\x12+.uber.cadence.api.v1.UnpauseScheduleRequest\x1a,.uber.cadence.api.v1.UnpauseScheduleResponse\x12o\n\x10\x42\x61\x63kfillSchedule\x12,.uber.cadence.api.v1.BackfillScheduleRequest\x1a-.uber.cadence.api.v1.BackfillScheduleResponse\x12i\n\x0eUpdateSchedule\x12*.uber.cadence.api.v1.UpdateScheduleRequest\x1a+.uber.cadence.api.v1.UpdateScheduleResponseBd\n\x17\x63om.uber.cadence.api.v1B\x14ScheduleServiceProtoP\x01Z1github.com/uber/cadence-idl/go/proto/api/v1;apiv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,37 +36,37 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\027com.uber.cadence.api.v1B\024ScheduleServiceProtoP\001Z1github.com/uber/cadence-idl/go/proto/api/v1;apiv1'
   _globals['_CREATESCHEDULEREQUEST']._serialized_start=156
-  _globals['_CREATESCHEDULEREQUEST']._serialized_end=482
-  _globals['_CREATESCHEDULERESPONSE']._serialized_start=484
-  _globals['_CREATESCHEDULERESPONSE']._serialized_end=529
-  _globals['_DESCRIBESCHEDULEREQUEST']._serialized_start=531
-  _globals['_DESCRIBESCHEDULEREQUEST']._serialized_end=593
-  _globals['_DESCRIBESCHEDULERESPONSE']._serialized_start=596
-  _globals['_DESCRIBESCHEDULERESPONSE']._serialized_end=988
-  _globals['_LISTSCHEDULESREQUEST']._serialized_start=990
-  _globals['_LISTSCHEDULESREQUEST']._serialized_end=1072
-  _globals['_LISTSCHEDULESRESPONSE']._serialized_start=1074
-  _globals['_LISTSCHEDULESRESPONSE']._serialized_end=1181
-  _globals['_DELETESCHEDULEREQUEST']._serialized_start=1183
-  _globals['_DELETESCHEDULEREQUEST']._serialized_end=1243
-  _globals['_DELETESCHEDULERESPONSE']._serialized_start=1245
-  _globals['_DELETESCHEDULERESPONSE']._serialized_end=1269
-  _globals['_PAUSESCHEDULEREQUEST']._serialized_start=1271
-  _globals['_PAUSESCHEDULEREQUEST']._serialized_end=1364
-  _globals['_PAUSESCHEDULERESPONSE']._serialized_start=1366
-  _globals['_PAUSESCHEDULERESPONSE']._serialized_end=1389
-  _globals['_UNPAUSESCHEDULEREQUEST']._serialized_start=1392
-  _globals['_UNPAUSESCHEDULEREQUEST']._serialized_end=1538
-  _globals['_UNPAUSESCHEDULERESPONSE']._serialized_start=1540
-  _globals['_UNPAUSESCHEDULERESPONSE']._serialized_end=1565
-  _globals['_BACKFILLSCHEDULEREQUEST']._serialized_start=1568
-  _globals['_BACKFILLSCHEDULEREQUEST']._serialized_end=1813
-  _globals['_BACKFILLSCHEDULERESPONSE']._serialized_start=1815
-  _globals['_BACKFILLSCHEDULERESPONSE']._serialized_end=1841
-  _globals['_UPDATESCHEDULEREQUEST']._serialized_start=1844
-  _globals['_UPDATESCHEDULEREQUEST']._serialized_end=2129
-  _globals['_UPDATESCHEDULERESPONSE']._serialized_start=2131
-  _globals['_UPDATESCHEDULERESPONSE']._serialized_end=2155
-  _globals['_SCHEDULEAPI']._serialized_start=2158
-  _globals['_SCHEDULEAPI']._serialized_end=3036
+  _globals['_CREATESCHEDULEREQUEST']._serialized_end=533
+  _globals['_CREATESCHEDULERESPONSE']._serialized_start=535
+  _globals['_CREATESCHEDULERESPONSE']._serialized_end=580
+  _globals['_DESCRIBESCHEDULEREQUEST']._serialized_start=582
+  _globals['_DESCRIBESCHEDULEREQUEST']._serialized_end=644
+  _globals['_DESCRIBESCHEDULERESPONSE']._serialized_start=647
+  _globals['_DESCRIBESCHEDULERESPONSE']._serialized_end=1039
+  _globals['_LISTSCHEDULESREQUEST']._serialized_start=1041
+  _globals['_LISTSCHEDULESREQUEST']._serialized_end=1123
+  _globals['_LISTSCHEDULESRESPONSE']._serialized_start=1125
+  _globals['_LISTSCHEDULESRESPONSE']._serialized_end=1232
+  _globals['_DELETESCHEDULEREQUEST']._serialized_start=1234
+  _globals['_DELETESCHEDULEREQUEST']._serialized_end=1294
+  _globals['_DELETESCHEDULERESPONSE']._serialized_start=1296
+  _globals['_DELETESCHEDULERESPONSE']._serialized_end=1320
+  _globals['_PAUSESCHEDULEREQUEST']._serialized_start=1322
+  _globals['_PAUSESCHEDULEREQUEST']._serialized_end=1415
+  _globals['_PAUSESCHEDULERESPONSE']._serialized_start=1417
+  _globals['_PAUSESCHEDULERESPONSE']._serialized_end=1440
+  _globals['_UNPAUSESCHEDULEREQUEST']._serialized_start=1443
+  _globals['_UNPAUSESCHEDULEREQUEST']._serialized_end=1589
+  _globals['_UNPAUSESCHEDULERESPONSE']._serialized_start=1591
+  _globals['_UNPAUSESCHEDULERESPONSE']._serialized_end=1616
+  _globals['_BACKFILLSCHEDULEREQUEST']._serialized_start=1619
+  _globals['_BACKFILLSCHEDULEREQUEST']._serialized_end=1864
+  _globals['_BACKFILLSCHEDULERESPONSE']._serialized_start=1866
+  _globals['_BACKFILLSCHEDULERESPONSE']._serialized_end=1892
+  _globals['_UPDATESCHEDULEREQUEST']._serialized_start=1895
+  _globals['_UPDATESCHEDULEREQUEST']._serialized_end=2180
+  _globals['_UPDATESCHEDULERESPONSE']._serialized_start=2182
+  _globals['_UPDATESCHEDULERESPONSE']._serialized_end=2206
+  _globals['_SCHEDULEAPI']._serialized_start=2209
+  _globals['_SCHEDULEAPI']._serialized_end=3087
 # @@protoc_insertion_point(module_scope)

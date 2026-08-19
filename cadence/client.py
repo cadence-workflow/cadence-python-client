@@ -595,8 +595,21 @@ class Client:
         policies: schedule_pb2.SchedulePolicies | None = None,
         memo: Memo | None = None,
         search_attributes: SearchAttributes | None = None,
+        state: schedule_pb2.ScheduleState | None = None,
     ) -> CreateScheduleResponse:
-        """Create a new schedule and return the server response."""
+        """Create a new schedule and return the server response.
+
+        Args:
+            schedule_id: Unique identifier for the schedule within the domain.
+            spec: Defines when the schedule fires (cron expression, intervals, etc.).
+            action: The workflow to start on each fire.
+            policies: Overlap, catch-up, and pause-on-failure policies.
+            memo: Arbitrary key-value metadata attached to the schedule.
+            search_attributes: Indexed attributes for schedule visibility queries.
+            state: Optional initial state. Set ``state.paused = True`` to create
+                the schedule in a paused state without a subsequent PauseSchedule
+                call. ``state.pause_info.reason`` may carry a human-readable reason.
+        """
         req = CreateScheduleRequest(
             domain=self.domain,
             schedule_id=schedule_id,
@@ -611,6 +624,8 @@ class Client:
             req.memo.CopyFrom(memo)
         if search_attributes is not None:
             req.search_attributes.CopyFrom(search_attributes)
+        if state is not None:
+            req.state.CopyFrom(state)
         return cast(
             CreateScheduleResponse,
             await self._schedule_stub.CreateSchedule(req),

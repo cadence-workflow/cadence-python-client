@@ -218,32 +218,36 @@ class RespondActivityTaskCompletedByIDResponse(_message.Message):
     def __init__(self) -> None: ...
 
 class RespondActivityTaskFailedRequest(_message.Message):
-    __slots__ = ("task_token", "failure", "identity")
+    __slots__ = ("task_token", "failure", "identity", "heartbeat_details")
     TASK_TOKEN_FIELD_NUMBER: _ClassVar[int]
     FAILURE_FIELD_NUMBER: _ClassVar[int]
     IDENTITY_FIELD_NUMBER: _ClassVar[int]
+    HEARTBEAT_DETAILS_FIELD_NUMBER: _ClassVar[int]
     task_token: bytes
     failure: _common_pb2.Failure
     identity: str
-    def __init__(self, task_token: _Optional[bytes] = ..., failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., identity: _Optional[str] = ...) -> None: ...
+    heartbeat_details: _common_pb2.Payload
+    def __init__(self, task_token: _Optional[bytes] = ..., failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., identity: _Optional[str] = ..., heartbeat_details: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ...) -> None: ...
 
 class RespondActivityTaskFailedResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
 class RespondActivityTaskFailedByIDRequest(_message.Message):
-    __slots__ = ("domain", "workflow_execution", "activity_id", "failure", "identity")
+    __slots__ = ("domain", "workflow_execution", "activity_id", "failure", "identity", "heartbeat_details")
     DOMAIN_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_EXECUTION_FIELD_NUMBER: _ClassVar[int]
     ACTIVITY_ID_FIELD_NUMBER: _ClassVar[int]
     FAILURE_FIELD_NUMBER: _ClassVar[int]
     IDENTITY_FIELD_NUMBER: _ClassVar[int]
+    HEARTBEAT_DETAILS_FIELD_NUMBER: _ClassVar[int]
     domain: str
     workflow_execution: _common_pb2.WorkflowExecution
     activity_id: str
     failure: _common_pb2.Failure
     identity: str
-    def __init__(self, domain: _Optional[str] = ..., workflow_execution: _Optional[_Union[_common_pb2.WorkflowExecution, _Mapping]] = ..., activity_id: _Optional[str] = ..., failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., identity: _Optional[str] = ...) -> None: ...
+    heartbeat_details: _common_pb2.Payload
+    def __init__(self, domain: _Optional[str] = ..., workflow_execution: _Optional[_Union[_common_pb2.WorkflowExecution, _Mapping]] = ..., activity_id: _Optional[str] = ..., failure: _Optional[_Union[_common_pb2.Failure, _Mapping]] = ..., identity: _Optional[str] = ..., heartbeat_details: _Optional[_Union[_common_pb2.Payload, _Mapping]] = ...) -> None: ...
 
 class RespondActivityTaskFailedByIDResponse(_message.Message):
     __slots__ = ()

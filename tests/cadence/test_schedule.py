@@ -147,7 +147,9 @@ class TestCreateSchedule:
     async def test_create_with_initial_paused_state(self, client, servicer):
         state = schedule_pb2.ScheduleState(
             paused=True,
-            pause_info=schedule_pb2.SchedulePauseInfo(reason="deploying", paused_by="ci"),
+            pause_info=schedule_pb2.SchedulePauseInfo(
+                reason="deploying", paused_by="ci"
+            ),
         )
         await client.create_schedule("sched-3", state=state)
         req = servicer.last_create

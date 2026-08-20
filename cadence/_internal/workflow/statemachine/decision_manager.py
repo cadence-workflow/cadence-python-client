@@ -32,7 +32,9 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     MUTABLE_SIDE_EFFECT_MARKER_NAME,
+    VERSION_MARKER_NAME,
     encode_marker_header,
+    has_marker_header,
     marker_context_id,
     marker_decision_id,
     KNOWN_MARKER_NAMES,
@@ -43,6 +45,7 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
 )
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.cancellation import is_immediate_cancel
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
     signal_external_events,
     SignalExternalWorkflowStateMachine,
@@ -282,6 +285,38 @@ class DecisionManager:
         state.value = result
         return result
 
+    def version_marker_result(
+        self, change_id: str, details: Payload, *, record: bool = False
+    ) -> Payload:
+        return self._get_or_create_version_marker(
+            change_id, details, record=record
+        ).get_result()
+
+    def _get_or_create_version_marker(
+        self, change_id: str, details: Payload, *, record: bool = False
+    ) -> MarkerStateMachine:
+        marker_id = marker_decision_id(VERSION_MARKER_NAME, change_id)
+        existing = self.state_machines.get(marker_id)
+        if existing is not None:
+            if not isinstance(existing, MarkerStateMachine):
+                raise FatalDecisionError(
+                    f"Unexpected state machine for Version marker {change_id!r}"
+                )
+            return existing
+
+        attrs = decision.RecordMarkerDecisionAttributes(
+            marker_name=VERSION_MARKER_NAME,
+            details=details,
+        )
+        attrs.header.fields[MARKER_HEADER_KEY].CopyFrom(encode_marker_header(change_id))
+        machine = (
+            MarkerStateMachine(attrs, VERSION_MARKER_NAME, change_id)
+            if record
+            else MarkerStateMachine.completed(attrs, VERSION_MARKER_NAME, change_id)
+        )
+        self._add_state_machine(machine)
+        return machine
+
     # ----- Workflow API -----
     def complete_workflow(self, decision: decision.Decision) -> None:
         if self._replaying:
@@ -313,6 +348,9 @@ class DecisionManager:
 
     def handle_history_event(self, event: history.HistoryEvent) -> None:
         """Dispatch history event to typed handlers using the global transition map."""
+        self._handle_history_event(event)
+
+    def _handle_history_event(self, event: history.HistoryEvent) -> None:
         attr = event.WhichOneof("attributes")
         event_attributes = getattr(event, attr)
 
@@ -383,8 +421,27 @@ class DecisionManager:
             return None
         marker_id = marker_decision_id(event_attributes.marker_name, context_id)
         machine = self.aliases.get((marker_id.decision_type, marker_id.id), None)
+        if (
+            event_attributes.marker_name == VERSION_MARKER_NAME
+            and isinstance(machine, MarkerStateMachine)
+            and machine.was_recorded
+            and machine.get_result().data != event_attributes.details.data
+        ):
+            raise FatalDecisionError(
+                f"Received conflicting Version marker for change_id {context_id!r}"
+            )
         if machine is None:
-            if event_attributes.marker_name not in KNOWN_MARKER_NAMES:
+            if event_attributes.marker_name == VERSION_MARKER_NAME:
+                attrs = decision.RecordMarkerDecisionAttributes(
+                    marker_name=event_attributes.marker_name,
+                    details=event_attributes.details,
+                    header=event_attributes.header,
+                )
+                machine = MarkerStateMachine.completed(
+                    attrs, event_attributes.marker_name, context_id
+                )
+                self._add_state_machine(machine)
+            elif event_attributes.marker_name not in KNOWN_MARKER_NAMES:
                 logger.warning(
                     "Marker event with unknown marker_name '%s' (key='%s') has no "
                     "matching state machine and will be dropped",
@@ -403,16 +460,20 @@ class DecisionManager:
     def _index_marker_details(
         self, attrs: history.MarkerRecordedEventAttributes
     ) -> None:
-        """Store the user payload from a recorded marker event, keyed by its marker DecisionId.
-
-        Called for every MarkerRecordedEvent (both during preload and output replay) so
-        that record_marker can return the historical value on replay without routing
-        through Expectation.properties.
-        """
         if is_immediate_cancel(attrs):
             return
         context_id = marker_context_id(attrs)
         if context_id is None:
+            if attrs.marker_name == VERSION_MARKER_NAME and has_marker_header(attrs):
+                raise FatalDecisionError(
+                    "Version marker contains an invalid Python MarkerHeader"
+                )
+            return
+        if attrs.marker_name == VERSION_MARKER_NAME and not context_id:
+            raise FatalDecisionError(
+                "Version marker contains an invalid Python MarkerHeader"
+            )
+        if attrs.marker_name == VERSION_MARKER_NAME:
             return
         marker_id = marker_decision_id(attrs.marker_name, context_id)
         details = Payload(data=attrs.details.data)
@@ -430,8 +491,12 @@ class DecisionManager:
     def track_nondeterminism(
         self, replaying: bool, outcomes: List[history.HistoryEvent]
     ) -> Iterator[None]:
-        self._start_execution(replaying, outcomes)
-        yield
+        try:
+            self._start_execution(replaying, outcomes)
+            yield
+        except BaseException:
+            self._replaying = False
+            raise
         self._end_execution()
 
     def _start_execution(self, replaying: bool, outcomes: List[history.HistoryEvent]):
@@ -439,12 +504,14 @@ class DecisionManager:
         for event in outcomes:
             self._determinism_tracker.add_expectation(event)
             if event.HasField("marker_recorded_event_attributes"):
-                self._index_marker_details(event.marker_recorded_event_attributes)
+                self.handle_history_event(event)
 
     def _end_execution(self) -> None:
-        if self._replaying:
-            self._determinism_tracker.complete_replay()
-        self._replaying = False
+        try:
+            if self._replaying:
+                self._determinism_tracker.complete_replay()
+        finally:
+            self._replaying = False
 
     # ----- Decision aggregation -----
 

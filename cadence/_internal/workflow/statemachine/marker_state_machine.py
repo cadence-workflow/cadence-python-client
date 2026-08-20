@@ -76,6 +76,14 @@ def marker_header(
         return None
 
 
+def has_marker_header(
+    attrs: decision.RecordMarkerDecisionAttributes
+    | history.MarkerRecordedEventAttributes,
+) -> bool:
+    """Return whether this marker attempts to use the Python MarkerHeader format."""
+    return MARKER_HEADER_KEY in attrs.header.fields
+
+
 def marker_context_id(
     attrs: decision.RecordMarkerDecisionAttributes
     | history.MarkerRecordedEventAttributes,
@@ -125,6 +133,7 @@ class MarkerStateMachine(BaseDecisionStateMachine):
     request: decision.RecordMarkerDecisionAttributes
     _marker_name: str
     _context_id: str
+    _recorded: bool
 
     def __init__(
         self,
@@ -136,9 +145,28 @@ class MarkerStateMachine(BaseDecisionStateMachine):
         self.request = request
         self._marker_name = marker_name
         self._context_id = context_id
+        self._recorded = False
+
+    @classmethod
+    def completed(
+        cls,
+        request: decision.RecordMarkerDecisionAttributes,
+        marker_name: str,
+        context_id: str,
+    ) -> "MarkerStateMachine":
+        machine = cls(request, marker_name, context_id)
+        machine._transition(DecisionState.COMPLETED)
+        return machine
 
     def get_id(self) -> DecisionId:
         return marker_decision_id(self._marker_name, self._context_id)
+
+    def get_result(self) -> Payload:
+        return Payload(data=self.request.details.data)
+
+    @property
+    def was_recorded(self) -> bool:
+        return self._recorded
 
     def get_decision(self) -> decision.Decision | None:
         if self.state is DecisionState.REQUESTED:
@@ -149,5 +177,7 @@ class MarkerStateMachine(BaseDecisionStateMachine):
         return False
 
     @marker_events.event()
-    def handle_recorded(self, _: history.MarkerRecordedEventAttributes) -> None:
+    def handle_recorded(self, attrs: history.MarkerRecordedEventAttributes) -> None:
+        self.request.details.CopyFrom(attrs.details)
+        self._recorded = True
         self._transition(DecisionState.COMPLETED)

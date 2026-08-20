@@ -61,13 +61,17 @@ from typing import (
 )
 
 from cadence._internal.activity._definition import BaseDefinition
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.versioning import (
+    validate_resolved_version,
+    validate_version_arguments,
+)
 from cadence._internal.context import (
     extract_headers,
     header_from_dict,
     header_to_dict,
     inject_headers,
 )
-from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.activity import ActivityContext, ActivityInfo
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
@@ -193,6 +197,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         self._env = env
         self._info = info
         self._mutable_side_effect_values: dict[str, Any] = {}
+        self._versions: dict[str, int] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -281,6 +286,22 @@ class _InMemoryWorkflowContext(WorkflowContext):
             self._mutable_side_effect_values[id] = value
             return value
         return previous
+
+    def get_version(
+        self,
+        change_id: str,
+        min_supported: int,
+        max_supported: int,
+    ) -> int:
+        validate_version_arguments(change_id, min_supported, max_supported)
+        version = self._versions.setdefault(change_id, max_supported)
+        validate_resolved_version(
+            change_id,
+            version,
+            min_supported,
+            max_supported,
+        )
+        return version
 
     async def signal_child_workflow(
         self,

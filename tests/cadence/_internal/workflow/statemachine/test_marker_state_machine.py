@@ -1,5 +1,6 @@
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionId,
+    DecisionState,
     DecisionType,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
@@ -35,6 +36,40 @@ async def test_marker_state_machine_recorded():
     )
 
     assert machine.get_decision() is None
+
+
+async def test_completed_marker_state_machine_owns_result_without_decision():
+    attrs = decision.RecordMarkerDecisionAttributes(
+        marker_name=SIDE_EFFECT_MARKER_NAME,
+        details=Payload(data=b"default"),
+    )
+
+    machine = MarkerStateMachine.completed(attrs, SIDE_EFFECT_MARKER_NAME, "0")
+
+    assert machine.state is DecisionState.COMPLETED
+    assert machine.get_result() == Payload(data=b"default")
+    assert machine.get_decision() is None
+
+
+async def test_recorded_event_replaces_completed_marker_result():
+    machine = MarkerStateMachine.completed(
+        decision.RecordMarkerDecisionAttributes(
+            marker_name=SIDE_EFFECT_MARKER_NAME,
+            details=Payload(data=b"default"),
+        ),
+        SIDE_EFFECT_MARKER_NAME,
+        "0",
+    )
+
+    machine.handle_recorded(
+        history.MarkerRecordedEventAttributes(
+            marker_name=SIDE_EFFECT_MARKER_NAME,
+            details=Payload(data=b"recorded"),
+        )
+    )
+
+    assert machine.state is DecisionState.COMPLETED
+    assert machine.get_result() == Payload(data=b"recorded")
 
 
 async def test_marker_state_machine_not_cancellable():

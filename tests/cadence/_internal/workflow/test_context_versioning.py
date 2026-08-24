@@ -93,9 +93,9 @@ def test_repeated_get_version_reads_the_same_state_machine():
     assert [decision_id.id for decision_id in manager.state_machines] == [
         "Version_change"
     ]
-    assert manager.collect_pending_decisions()[0].record_marker_decision_attributes.details == (
-        encode_version_marker_details(2)
-    )
+    assert manager.collect_pending_decisions()[
+        0
+    ].record_marker_decision_attributes.details == (encode_version_marker_details(2))
 
 
 def test_get_version_old_replay_without_marker_returns_default_and_emits_nothing():

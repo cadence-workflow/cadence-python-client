@@ -13,6 +13,7 @@ from cadence._internal.workflow.statemachine.decision_manager import DecisionMan
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
 )
+from cadence._internal.context import inject_headers, set_header
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.common_pb2 import (
     ActivityType,
@@ -29,6 +30,7 @@ from cadence.api.v1.decision_pb2 import (
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
+from cadence.context import ContextPropagator
 from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
@@ -51,11 +53,13 @@ class Context(WorkflowContext):
         self,
         info: WorkflowInfo,
         decision_manager: DecisionManager,
+        context_propagators: tuple[ContextPropagator, ...] = (),
     ):
         self._info = info
         self._replay_mode = True
         self._replay_current_time: Optional[datetime] = None
         self._decision_manager = decision_manager
+        self._context_propagators = context_propagators
         self._cancellation_info: WorkflowCancellationInfo | None = None
 
     def info(self) -> WorkflowInfo:
@@ -110,13 +114,13 @@ class Context(WorkflowContext):
             task_list=TaskList(kind=TaskListKind.TASK_LIST_KIND_NORMAL, name=task_list),
             input=activity_input,
             retry_policy=retry_policy_to_proto(opts.get("retry_policy")),
-            header=None,
             request_local_dispatch=False,
             schedule_to_close_timeout=_round_to_nearest_second(schedule_to_close),
             schedule_to_start_timeout=_round_to_nearest_second(schedule_to_start),
             start_to_close_timeout=_round_to_nearest_second(start_to_close),
             heartbeat_timeout=_round_to_nearest_second(heartbeat),
         )
+        set_header(schedule_attributes, self._context_propagators)
 
         future = self._decision_manager.schedule_activity(schedule_attributes)
         result_payload = await future
@@ -213,6 +217,7 @@ class Context(WorkflowContext):
             ),
             task_start_to_close_timeout=_round_to_nearest_second(task_timeout),
         )
+        set_header(schedule_attributes, self._context_propagators)
 
         cron_schedule = kwargs.get("cron_schedule")
         if cron_schedule:
@@ -285,6 +290,54 @@ class Context(WorkflowContext):
             self.data_converter().from_data(result_payload, [result_type])[0],
         )
 
+    def mutable_side_effect(
+        self,
+        id: str,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+        updated: Callable[[ResultType, ResultType], bool],
+    ) -> ResultType:
+        """Return a non-deterministic value, recording it only when it changes."""
+        if not id:
+            raise ValueError("id must not be empty")
+
+        access_count, stored_payload, has_history_update = (
+            self._decision_manager.mutable_side_effect_value(id)
+        )
+        if self.is_replay_mode():
+            if stored_payload is None:
+                raise ValueError(
+                    "No recorded value for mutable_side_effect "
+                    f"id={id!r} at access count {access_count}"
+                )
+            if has_history_update:
+                stored_payload = self._decision_manager.record_mutable_side_effect(
+                    id, access_count, Payload()
+                )
+            return cast(
+                ResultType,
+                self.data_converter().from_data(stored_payload, [result_type])[0],
+            )
+
+        value = fn()
+        if stored_payload is not None:
+            stored_value = cast(
+                ResultType,
+                self.data_converter().from_data(stored_payload, [result_type])[0],
+            )
+            if not updated(stored_value, value):
+                return stored_value
+
+        result_payload = self._decision_manager.record_mutable_side_effect(
+            id,
+            access_count,
+            self.data_converter().to_data([value]),
+        )
+        return cast(
+            ResultType,
+            self.data_converter().from_data(result_payload, [result_type])[0],
+        )
+
     def set_replay_current_time(self, current_time: datetime) -> None:
         """Set the current replay timestamp."""
         self._replay_current_time = current_time
@@ -309,6 +362,9 @@ class Context(WorkflowContext):
 
     def is_cancel_requested(self) -> bool:
         return self._cancellation_info is not None
+
+    def inject_propagated_headers(self) -> dict[str, bytes]:
+        return inject_headers(self._context_propagators)
 
     @contextmanager
     def _activate(self) -> Iterator["Context"]:

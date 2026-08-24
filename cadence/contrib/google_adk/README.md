@@ -4,6 +4,85 @@
 
 This module integrates with [Google Agent Development Kit (ADK)](https://github.com/google/adk-python) so ADK agents run as Cadence workflows. Every LLM call becomes a Cadence activity. Tools must be Cadence activities too if they perform side effects or need durable retries; ordinary ADK Python tools are not automatically converted into Cadence activities. ADK owns the agent loop, request construction, sessions, and events; Cadence owns durability, retries, and replay.
 
+## Why Cadence
+
+Cadence is a durable execution engine for long-running work. It gives ADK agents production-oriented execution semantics without moving agent behavior out of ADK:
+
+- If a worker process crashes mid-run, Cadence can recover workflow state by replaying workflow history instead of restarting the agent from the beginning.
+- Each activity, such as an LLM call, book flight, payment, or email, is a separate retried, timed, and observable unit in workflow history.
+- Workflows can use timers, signals, queries, and versioning for runs that last hours or days, wait on humans, or coordinate with external systems.
+- Cadence provides an operational model around task lists, workers, Cadence Web, and domain isolation for running orchestration in production.
+
+ADK and Cadence operate at different layers: ADK defines the application and agent logic; Cadence provides durable infrastructure for executing that logic when processes fail, workloads scale, deployments happen, or auditability matters.
+
+## What You Write
+
+```python
+# 1. Register the LLM activity once per worker.
+registry.register_activities(GoogleADKActivities())
+
+# 2. Register your tool as a normal Cadence activity.
+@registry.activity(name="book_flight")
+async def book_flight(from_city: str, to_city: str, ...) -> Flight: ...
+
+# 3. Inside a @workflow.run method, create and run the ADK agent.
+agent = LlmAgent(model="gemini-2.5-flash", tools=[book_flight], ...)
+runner = CadenceAgentRunner(app_name="...", agent=agent, session_service=...)
+async for event in runner.run_async(user_id=..., session_id=..., new_message=...):
+    ...
+```
+
+`book_flight` keeps its normal Python signature. ADK uses the signature to build the tool schema, and the Cadence activity wrapper schedules the durable activity call when the tool is invoked from workflow code.
+
+## How the Integration Works
+
+`CadenceAgentRunner` is a thin wrapper around Google ADK's `Runner`. When it is created, it walks the ADK agent tree and replaces each `LlmAgent.model` string with a `CadenceModel`.
+
+`CadenceModel` implements ADK's `BaseLlm` interface, so ADK continues to drive the normal agent loop. The difference is that `CadenceModel.generate_content_async` does not call the model provider directly. It schedules `GoogleADKActivities.generate_content_async` as a Cadence activity.
+
+The activity runs outside workflow replay, reconstructs the real ADK model with `LLMRegistry.new_llm(model_name)`, performs the provider call, collects the non-streaming responses, and returns them to the workflow.
+
+This keeps ADK responsible for agent behavior, sessions, tool planning, and events, while Cadence records each LLM call in workflow history and applies activity timeouts, retries, and durable execution.
+
+Tools are not automatically converted into Cadence activities. If an ADK tool performs I/O, has side effects, or should be retried durably, register that tool function as a Cadence activity and pass the same callable to `LlmAgent.tools`.
+
+Use `PydanticDataConverter` on the Cadence client because ADK request and response objects are Pydantic models that must cross the Cadence activity boundary.
+
+## End-to-End Flow
+
+This is the flow for one user message that causes one tool call and then a final model response:
+
+```mermaid
+sequenceDiagram
+    participant WF as Workflow
+    participant ADK as ADK Runner
+    participant CM as CadenceModel
+    participant Act as GoogleADKActivities
+    participant LLM as Gemini
+    participant Tool as book_flight activity
+
+    WF->>ADK: Run with user message
+    ADK->>CM: Generate content request
+    CM->>Act: Schedule LLM activity
+    Note over Act: history event 1
+    Act->>LLM: Call model provider
+    LLM-->>Act: Response with function call
+    Act-->>CM: LLM responses
+    CM-->>ADK: Yield responses
+    ADK->>Tool: Invoke book_flight tool
+    Note over Tool: Registered Cadence activity
+    Note over Tool: history event 2
+    Tool-->>ADK: Flight result
+    ADK->>CM: Generate content request
+    CM->>Act: Schedule LLM activity
+    Note over Act: history event 3
+    Act->>LLM: Call model provider
+    LLM-->>Act: Final text
+    Act-->>CM: LLM responses
+    CM-->>ADK: Yield responses
+    ADK-->>WF: Final event
+```
+
 ## Example: Booking Flight Agent
 
 A single agent with one tool. The tool is registered as a Cadence activity, then passed through to `LlmAgent` as a regular callable.

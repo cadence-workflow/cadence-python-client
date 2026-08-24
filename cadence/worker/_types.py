@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Sequence, TypedDict
 
 if TYPE_CHECKING:
+    from cadence.context import ContextPropagator
     from cadence.metrics import MetricsEmitter
 
 
@@ -18,6 +19,7 @@ class WorkerOptions(TypedDict, total=False):
     disable_activity_worker: bool
     identity: str
     metrics_emitter: MetricsEmitter
+    context_propagators: Sequence[ContextPropagator]
 
 
 _DEFAULT_WORKER_OPTIONS: WorkerOptions = {
@@ -28,6 +30,7 @@ _DEFAULT_WORKER_OPTIONS: WorkerOptions = {
     "decision_task_pollers": 2,
     "disable_workflow_worker": False,
     "disable_activity_worker": False,
+    "context_propagators": (),
 }
 
 _LONG_POLL_TIMEOUT = timedelta(seconds=60)

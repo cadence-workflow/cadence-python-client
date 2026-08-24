@@ -9,6 +9,13 @@ import datetime
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class FailureCategory(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    FAILURE_CATEGORY_INVALID: _ClassVar[FailureCategory]
+    FAILURE_CATEGORY_POLL: _ClassVar[FailureCategory]
+    FAILURE_CATEGORY_STANDARD: _ClassVar[FailureCategory]
+    FAILURE_CATEGORY_FATAL: _ClassVar[FailureCategory]
+
 class EncodingType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     ENCODING_TYPE_INVALID: _ClassVar[EncodingType]
@@ -27,6 +34,10 @@ class FailoverType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     FAILOVER_TYPE_INVALID: _ClassVar[FailoverType]
     FAILOVER_TYPE_FORCE: _ClassVar[FailoverType]
     FAILOVER_TYPE_GRACEFUL: _ClassVar[FailoverType]
+FAILURE_CATEGORY_INVALID: FailureCategory
+FAILURE_CATEGORY_POLL: FailureCategory
+FAILURE_CATEGORY_STANDARD: FailureCategory
+FAILURE_CATEGORY_FATAL: FailureCategory
 ENCODING_TYPE_INVALID: EncodingType
 ENCODING_TYPE_THRIFTRW: EncodingType
 ENCODING_TYPE_JSON: EncodingType
@@ -65,12 +76,22 @@ class Payload(_message.Message):
     def __init__(self, data: _Optional[bytes] = ...) -> None: ...
 
 class Failure(_message.Message):
-    __slots__ = ("reason", "details")
+    __slots__ = ("reason", "details", "options")
     REASON_FIELD_NUMBER: _ClassVar[int]
     DETAILS_FIELD_NUMBER: _ClassVar[int]
+    OPTIONS_FIELD_NUMBER: _ClassVar[int]
     reason: str
     details: bytes
-    def __init__(self, reason: _Optional[str] = ..., details: _Optional[bytes] = ...) -> None: ...
+    options: FailureOptions
+    def __init__(self, reason: _Optional[str] = ..., details: _Optional[bytes] = ..., options: _Optional[_Union[FailureOptions, _Mapping]] = ...) -> None: ...
+
+class FailureOptions(_message.Message):
+    __slots__ = ("failure_category", "next_retry_interval")
+    FAILURE_CATEGORY_FIELD_NUMBER: _ClassVar[int]
+    NEXT_RETRY_INTERVAL_FIELD_NUMBER: _ClassVar[int]
+    failure_category: FailureCategory
+    next_retry_interval: _duration_pb2.Duration
+    def __init__(self, failure_category: _Optional[_Union[FailureCategory, str]] = ..., next_retry_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
 
 class Memo(_message.Message):
     __slots__ = ("fields",)

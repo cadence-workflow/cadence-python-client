@@ -49,12 +49,9 @@ jobs:
           python-version: "3.13"
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
-      - name: Install dependencies
-        run: |
-          uv sync --extra dev --extra openai
       - name: Run mypy type checker
         run: |
-          uv run mypy cadence/ tests/
+          uv run --all-extras mypy cadence/ tests/
 
   test:
     name: Unit Tests

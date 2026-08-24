@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections import OrderedDict
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Type, ClassVar, List, Iterator
 
 from cadence._internal.workflow.statemachine.activity_state_machine import (
@@ -31,6 +31,7 @@ from cadence._internal.workflow.statemachine.event_dispatcher import (
     resolve_id_attr,
 )
 from cadence._internal.workflow.statemachine.marker_state_machine import (
+    MUTABLE_SIDE_EFFECT_MARKER_NAME,
     encode_marker_header,
     marker_context_id,
     marker_decision_id,
@@ -38,6 +39,7 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
     MARKER_HEADER_KEY,
     marker_events,
     MarkerStateMachine,
+    mutable_side_effect_marker_info,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.cancellation import is_immediate_cancel
@@ -66,6 +68,18 @@ def _consume_future_exception(future: asyncio.Future[Any]) -> None:
 class EventDispatch:
     decision_type: DecisionType
     action: Action
+
+
+@dataclass
+class MutableSideEffectState:
+    access_count: int = 0
+    value: Payload | None = None
+    updates: dict[int, Payload] = field(default_factory=dict)
+
+
+def _mutable_side_effect_context_id(side_effect_id: str, access_count: int) -> str:
+    """Return a stable marker context ID without consuming a decision ID."""
+    return f"mutable-side-effect:{side_effect_id}:{access_count}"
 
 
 def _create_dispatch_map(
@@ -108,6 +122,7 @@ class DecisionManager:
         self._determinism_tracker = DeterminismTracker()
         self._replaying = False
         self._recorded_marker_details: Dict[DecisionId, Payload] = {}
+        self._mutable_side_effects: dict[str, MutableSideEffectState] = {}
         self.state_machines: OrderedDict[DecisionId, DecisionStateMachine] = (
             OrderedDict()
         )
@@ -185,14 +200,29 @@ class DecisionManager:
         self,
         attrs: decision.RecordMarkerDecisionAttributes,
     ) -> Payload:
+        return self._record_marker(attrs)
+
+    def _record_marker(
+        self,
+        attrs: decision.RecordMarkerDecisionAttributes,
+        *,
+        context_id: str | None = None,
+        mutable_side_effect_id: str | None = None,
+        mutable_side_effect_access_count: int | None = None,
+    ) -> Payload:
         if not attrs.marker_name:
             raise ValueError("marker_name is required")
-        context_id = self._next_id()
+        if context_id is None:
+            context_id = self._next_id()
 
         # Metadata (the context_id) goes in the Header; Details stays the raw user payload.
         # The header is set in-place so the state machine carries it on the wire.
         attrs.header.fields[MARKER_HEADER_KEY].CopyFrom(
-            encode_marker_header(context_id)
+            encode_marker_header(
+                context_id,
+                mutable_side_effect_id=mutable_side_effect_id,
+                mutable_side_effect_access_count=mutable_side_effect_access_count,
+            )
         )
 
         marker_id = marker_decision_id(attrs.marker_name, context_id)
@@ -206,6 +236,50 @@ class DecisionManager:
 
         machine = MarkerStateMachine(attrs, attrs.marker_name, context_id)
         self._add_state_machine(machine)
+        return result
+
+    def mutable_side_effect_value(
+        self, side_effect_id: str
+    ) -> tuple[int, Payload | None, bool]:
+        """Return the recorded value for this mutable-side-effect invocation.
+
+        During replay, a preloaded marker update is applied only at its original
+        per-ID invocation count. Calls without an update reuse the latest value.
+        """
+        state = self._mutable_side_effects.setdefault(
+            side_effect_id, MutableSideEffectState()
+        )
+        access_count = state.access_count
+        state.access_count += 1
+        update = state.updates.get(access_count)
+        if self._replaying and update is not None:
+            state.value = update
+        return (
+            access_count,
+            state.value,
+            update is not None,
+        )
+
+    def record_mutable_side_effect(
+        self,
+        side_effect_id: str,
+        access_count: int,
+        details: Payload,
+    ) -> Payload:
+        """Record a changed mutable-side-effect value and update its cache."""
+        result = self._record_marker(
+            decision.RecordMarkerDecisionAttributes(
+                marker_name=MUTABLE_SIDE_EFFECT_MARKER_NAME,
+                details=details,
+            ),
+            context_id=_mutable_side_effect_context_id(side_effect_id, access_count),
+            mutable_side_effect_id=side_effect_id,
+            mutable_side_effect_access_count=access_count,
+        )
+        state = self._mutable_side_effects.setdefault(
+            side_effect_id, MutableSideEffectState()
+        )
+        state.value = result
         return result
 
     # ----- Workflow API -----
@@ -341,7 +415,15 @@ class DecisionManager:
         if context_id is None:
             return
         marker_id = marker_decision_id(attrs.marker_name, context_id)
-        self._recorded_marker_details[marker_id] = Payload(data=attrs.details.data)
+        details = Payload(data=attrs.details.data)
+        self._recorded_marker_details[marker_id] = details
+        mutable_info = mutable_side_effect_marker_info(attrs)
+        if mutable_info is not None:
+            side_effect_id, access_count = mutable_info
+            state = self._mutable_side_effects.setdefault(
+                side_effect_id, MutableSideEffectState()
+            )
+            state.updates[access_count] = details
 
     # ---- Non-determinism ----
     @contextmanager

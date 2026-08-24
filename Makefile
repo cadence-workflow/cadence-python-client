@@ -23,7 +23,7 @@ lint:
 # Run type checker
 type-check:
 	@echo "Running mypy type checker..."
-	uv run mypy cadence/ tests/
+	uv run --all-extras mypy cadence/ tests/
 
 # Run unit tests
 test:

@@ -41,6 +41,24 @@ class ActivityWorkflow:
 
 
 @registry.workflow
+class MutableSideEffectWorkflow:
+    @workflow.run
+    async def run(self) -> tuple[int, int, int]:
+        values = iter((1, 1, 2))
+        return (
+            workflow.mutable_side_effect(
+                "config", lambda: next(values), int, lambda old, new: old != new
+            ),
+            workflow.mutable_side_effect(
+                "config", lambda: next(values), int, lambda old, new: old != new
+            ),
+            workflow.mutable_side_effect(
+                "config", lambda: next(values), int, lambda old, new: old != new
+            ),
+        )
+
+
+@registry.workflow
 class SignalWorkflow:
     def __init__(self) -> None:
         self._approved = False
@@ -159,6 +177,19 @@ async def test_start_simple_workflow(env: TestWorkflowEnvironment):
     assert execution.run_id
     assert env.is_workflow_completed(execution.workflow_id)
     assert env.get_workflow_result(str, execution.workflow_id) == "echo: world"
+
+
+@pytest.mark.asyncio
+async def test_mutable_side_effect_reuses_unchanged_value(env: TestWorkflowEnvironment):
+    execution = await env.client.start_workflow(
+        "MutableSideEffectWorkflow", task_list="tl"
+    )
+
+    assert env.get_workflow_result(tuple[int, int, int], execution.workflow_id) == (
+        1,
+        1,
+        2,
+    )
 
 
 @pytest.mark.asyncio

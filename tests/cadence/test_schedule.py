@@ -141,6 +141,31 @@ class TestCreateSchedule:
         assert not req.HasField("spec")
         assert not req.HasField("action")
         assert not req.HasField("policies")
+        assert not req.HasField("state")
+
+    @pytest.mark.asyncio
+    async def test_create_with_initial_paused_state(self, client, servicer):
+        state = schedule_pb2.ScheduleState(
+            paused=True,
+            pause_info=schedule_pb2.SchedulePauseInfo(
+                reason="deploying", paused_by="ci"
+            ),
+        )
+        await client.create_schedule("sched-3", state=state)
+        req = servicer.last_create
+        assert req.HasField("state")
+        assert req.state.paused is True
+        assert req.state.pause_info.reason == "deploying"
+        assert req.state.pause_info.paused_by == "ci"
+
+    @pytest.mark.asyncio
+    async def test_create_paused_no_pause_info(self, client, servicer):
+        state = schedule_pb2.ScheduleState(paused=True)
+        await client.create_schedule("sched-4", state=state)
+        req = servicer.last_create
+        assert req.HasField("state")
+        assert req.state.paused is True
+        assert not req.state.HasField("pause_info")
 
 
 # ---------------------------------------------------------------------------

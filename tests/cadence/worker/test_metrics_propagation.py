@@ -17,6 +17,7 @@ def _mock_client(metrics_emitter=None):
     type(client).domain = PropertyMock(return_value="test-domain")
     type(client).identity = PropertyMock(return_value="test-identity")
     client.metrics_emitter = metrics_emitter or NoOpMetricsEmitter()
+    client.context_propagators = ()
     worker_stub = Mock()
     worker_stub.PollForDecisionTask = AsyncMock(return_value=Mock(task_token=b""))
     worker_stub.PollForActivityTask = AsyncMock(return_value=Mock(task_token=b""))

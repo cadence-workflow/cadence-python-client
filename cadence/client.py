@@ -9,6 +9,7 @@ from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 from grpc import ChannelCredentials, Compression
 
 from cadence._internal.rpc.error import CadenceErrorInterceptor
+from cadence._internal.rpc.metrics import MetricsInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
 from cadence._internal.workflow.active_cluster_selection_policy import (
@@ -16,6 +17,7 @@ from cadence._internal.workflow.active_cluster_selection_policy import (
 )
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
+from cadence._internal.context import set_header, validate_propagators
 from cadence.api.v1 import schedule_pb2
 from cadence.api.v1.common_pb2 import (
     Memo,
@@ -61,6 +63,7 @@ from cadence.error import QueryFailedError
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
+from cadence.context import ContextPropagator
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 from cadence.workflow import (
     ActiveClusterSelectionPolicy,
@@ -163,6 +166,7 @@ class ClientOptions(TypedDict, total=False):
     compression: Compression
     metrics_emitter: MetricsEmitter
     interceptors: list[ClientInterceptor]
+    context_propagators: Sequence[ContextPropagator]
 
 
 _DEFAULT_OPTIONS: ClientOptions = {
@@ -175,6 +179,7 @@ _DEFAULT_OPTIONS: ClientOptions = {
     "compression": Compression.NoCompression,
     "metrics_emitter": NoOpMetricsEmitter(),
     "interceptors": [],
+    "context_propagators": (),
 }
 
 
@@ -218,6 +223,10 @@ class Client:
     @property
     def metrics_emitter(self) -> MetricsEmitter:
         return self._options["metrics_emitter"]
+
+    @property
+    def context_propagators(self) -> tuple[ContextPropagator, ...]:
+        return tuple(self._options["context_propagators"])
 
     async def ready(self) -> None:
         await self._channel.channel_ready()
@@ -314,6 +323,8 @@ class Client:
         memo_proto = memo_to_proto(self.data_converter, options.get("memo"))
         if memo_proto is not None:
             request.memo.CopyFrom(memo_proto)
+
+        set_header(request, self.context_propagators)
 
         return request
 
@@ -584,8 +595,21 @@ class Client:
         policies: schedule_pb2.SchedulePolicies | None = None,
         memo: Memo | None = None,
         search_attributes: SearchAttributes | None = None,
+        state: schedule_pb2.ScheduleState | None = None,
     ) -> CreateScheduleResponse:
-        """Create a new schedule and return the server response."""
+        """Create a new schedule and return the server response.
+
+        Args:
+            schedule_id: Unique identifier for the schedule within the domain.
+            spec: Defines when the schedule fires (cron expression, intervals, etc.).
+            action: The workflow to start on each fire.
+            policies: Overlap, catch-up, and pause-on-failure policies.
+            memo: Arbitrary key-value metadata attached to the schedule.
+            search_attributes: Indexed attributes for schedule visibility queries.
+            state: Optional initial state. Set ``state.paused = True`` to create
+                the schedule in a paused state without a subsequent PauseSchedule
+                call. ``state.pause_info.reason`` may carry a human-readable reason.
+        """
         req = CreateScheduleRequest(
             domain=self.domain,
             schedule_id=schedule_id,
@@ -600,6 +624,8 @@ class Client:
             req.memo.CopyFrom(memo)
         if search_attributes is not None:
             req.search_attributes.CopyFrom(search_attributes)
+        if state is not None:
+            req.state.CopyFrom(state)
         return cast(
             CreateScheduleResponse,
             await self._schedule_stub.CreateSchedule(req),
@@ -757,6 +783,10 @@ def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:
     for key, value in _DEFAULT_OPTIONS.items():
         if key not in options:
             cast(dict, options)[key] = value
+    cast(dict, options)["context_propagators"] = tuple(
+        options.get("context_propagators") or ()
+    )
+    validate_propagators(options["context_propagators"])
 
     return options
 
@@ -767,6 +797,7 @@ def _create_channel(options: ClientOptions) -> Channel:
         YarpcMetadataInterceptor(options["service_name"], options["caller_name"])
     )
     interceptors.append(RetryInterceptor())
+    interceptors.append(MetricsInterceptor(options["metrics_emitter"]))
     interceptors.append(CadenceErrorInterceptor())
 
     channel_arguments = options.get("channel_arguments") or {}

@@ -37,13 +37,43 @@ MARKER_HEADER_KEY = "MarkerHeader"
 marker_events = EventDispatcher()
 
 
-class MarkerHeader(Struct):
+class MarkerHeader(Struct, omit_defaults=True):
     context_id: str
+    mutable_side_effect_id: str | None = None
+    mutable_side_effect_access_count: int | None = None
 
 
-def encode_marker_header(context_id: str) -> Payload:
+def encode_marker_header(
+    context_id: str,
+    *,
+    mutable_side_effect_id: str | None = None,
+    mutable_side_effect_access_count: int | None = None,
+) -> Payload:
     """Serialize marker metadata for storage under MARKER_HEADER_KEY."""
-    return Payload(data=json.encode(MarkerHeader(context_id=context_id)))
+    return Payload(
+        data=json.encode(
+            MarkerHeader(
+                context_id=context_id,
+                mutable_side_effect_id=mutable_side_effect_id,
+                mutable_side_effect_access_count=mutable_side_effect_access_count,
+            )
+        )
+    )
+
+
+def marker_header(
+    attrs: decision.RecordMarkerDecisionAttributes
+    | history.MarkerRecordedEventAttributes,
+) -> MarkerHeader | None:
+    """Decode the marker header, returning None for foreign markers."""
+    if MARKER_HEADER_KEY not in attrs.header.fields:
+        return None
+    try:
+        return json.decode(
+            attrs.header.fields[MARKER_HEADER_KEY].data, type=MarkerHeader
+        )
+    except DecodeError:
+        return None
 
 
 def marker_context_id(
@@ -56,14 +86,28 @@ def marker_context_id(
     marker upstream, so None is a defensive fallback for a missing/malformed header, not
     a case hit in normal replay.
     """
-    if MARKER_HEADER_KEY not in attrs.header.fields:
+    header = marker_header(attrs)
+    return header.context_id if header is not None else None
+
+
+def mutable_side_effect_marker_info(
+    attrs: decision.RecordMarkerDecisionAttributes
+    | history.MarkerRecordedEventAttributes,
+) -> tuple[str, int] | None:
+    """Return a mutable side effect marker's stable ID and invocation count."""
+    if attrs.marker_name != MUTABLE_SIDE_EFFECT_MARKER_NAME:
         return None
-    try:
-        return json.decode(
-            attrs.header.fields[MARKER_HEADER_KEY].data, type=MarkerHeader
-        ).context_id
-    except DecodeError:
+    header = marker_header(attrs)
+    if (
+        header is None
+        or header.mutable_side_effect_id is None
+        or header.mutable_side_effect_access_count is None
+    ):
         return None
+    return (
+        header.mutable_side_effect_id,
+        header.mutable_side_effect_access_count,
+    )
 
 
 def marker_decision_id(marker_name: str, context_id: str) -> DecisionId:

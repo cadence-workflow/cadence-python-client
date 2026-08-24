@@ -1,70 +1,34 @@
-from typing import Callable, Any, Optional, Generator, TypeVar, cast
+from collections.abc import Callable, Generator
+from typing import Any, TypeVar, cast
 
 import grpc
 from google.rpc.status_pb2 import Status
 from grpc.aio import (
-    UnaryUnaryClientInterceptor,
-    ClientCallDetails,
     AioRpcError,
-    UnaryUnaryCall,
-    Metadata,
+    ClientCallDetails,
+    UnaryUnaryClientInterceptor,
 )
 from grpc_status.rpc_status import from_call
 
-from cadence.api.v1 import error_pb2
 from cadence import error
-
+from cadence._internal.rpc.call import UnaryUnaryCallWrapper
+from cadence.api.v1 import error_pb2
 
 RequestType = TypeVar("RequestType")
 ResponseType = TypeVar("ResponseType")
-DoneCallbackType = Callable[[Any], None]
 
 
 # A UnaryUnaryCall is an awaitable type returned by GRPC's aio support.
 # We need to take the UnaryUnaryCall we receive and return one that remaps the exception.
 # It doesn't have any functions to compose operations together, so our only option is to wrap it.
 # If the interceptor directly throws an exception other than AioRpcError it breaks GRPC
-class CadenceErrorUnaryUnaryCall(UnaryUnaryCall[RequestType, ResponseType]):
-    def __init__(self, wrapped: UnaryUnaryCall[RequestType, ResponseType]):
-        super().__init__()
-        self._wrapped = wrapped
-
+class CadenceErrorUnaryUnaryCall(UnaryUnaryCallWrapper[RequestType, ResponseType]):
     def __await__(self) -> Generator[Any, None, ResponseType]:
         try:
             response = yield from self._wrapped.__await__()  # type: ResponseType
             return response
         except AioRpcError as e:
             raise map_error(e)
-
-    async def initial_metadata(self) -> Metadata:
-        return await self._wrapped.initial_metadata()
-
-    async def trailing_metadata(self) -> Metadata:
-        return await self._wrapped.trailing_metadata()
-
-    async def code(self) -> grpc.StatusCode:
-        return await self._wrapped.code()
-
-    async def details(self) -> str:
-        return await self._wrapped.details()
-
-    async def wait_for_connection(self) -> None:
-        await self._wrapped.wait_for_connection()
-
-    def cancelled(self) -> bool:
-        return self._wrapped.cancelled()
-
-    def done(self) -> bool:
-        return self._wrapped.done()
-
-    def time_remaining(self) -> Optional[float]:
-        return self._wrapped.time_remaining()
-
-    def cancel(self) -> bool:
-        return self._wrapped.cancel()
-
-    def add_done_callback(self, callback: DoneCallbackType) -> None:
-        self._wrapped.add_done_callback(callback)
 
 
 class CadenceErrorInterceptor(UnaryUnaryClientInterceptor):

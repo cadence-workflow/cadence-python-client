@@ -199,6 +199,21 @@ def side_effect(
     return WorkflowContext.get().side_effect(fn, result_type)
 
 
+def mutable_side_effect(
+    id: str,
+    fn: Callable[[], ResultType],
+    result_type: Type[ResultType],
+    updated: Callable[[ResultType, ResultType], bool],
+) -> ResultType:
+    """Return a non-deterministic value, recording it only when it changes.
+
+    ``id`` must remain stable for the workflow execution. ``updated`` receives
+    the previously recorded value and the new value, and returns whether the new
+    value should be persisted. During replay, neither callback is invoked.
+    """
+    return WorkflowContext.get().mutable_side_effect(id, fn, result_type, updated)
+
+
 def is_cancel_requested() -> bool:
     return WorkflowContext.get().is_cancel_requested()
 
@@ -231,6 +246,7 @@ def continue_as_new(
         task_list=task_list,
         execution_start_to_close_timeout=execution_start_to_close_timeout,
         task_start_to_close_timeout=task_start_to_close_timeout,
+        headers=WorkflowContext.get().inject_propagated_headers(),
     )
 
 
@@ -626,7 +642,20 @@ class WorkflowContext(ABC):
     ) -> ResultType: ...
 
     @abstractmethod
+    def mutable_side_effect(
+        self,
+        id: str,
+        fn: Callable[[], ResultType],
+        result_type: Type[ResultType],
+        updated: Callable[[ResultType, ResultType], bool],
+    ) -> ResultType: ...
+
+    @abstractmethod
     def is_cancel_requested(self) -> bool: ...
+
+    def inject_propagated_headers(self) -> dict[str, bytes]:
+        """Return headers to attach to outbound workflow decisions."""
+        return {}
 
     @contextmanager
     def _activate(self) -> Iterator["WorkflowContext"]:

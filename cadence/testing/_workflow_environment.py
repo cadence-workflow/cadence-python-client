@@ -47,6 +47,7 @@ from asyncio import Future, get_running_loop
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import (
     Any,
@@ -62,6 +63,7 @@ from typing import (
 
 from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.search_attributes import search_attributes_to_proto
 from cadence._internal.workflow.versioning import (
     validate_resolved_version,
     validate_version_arguments,
@@ -85,6 +87,7 @@ from cadence.workflow import (
     ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
+    SearchAttributeType,
     WorkflowContext,
     WorkflowDefinition,
     WorkflowInfo,
@@ -302,6 +305,16 @@ class _InMemoryWorkflowContext(WorkflowContext):
             max_supported,
         )
         return version
+
+    def upsert_search_attributes(
+        self, attributes: Mapping[str, SearchAttributeType | list[SearchAttributeType]]
+    ) -> None:
+        proto = search_attributes_to_proto(attributes)
+        if proto is None:
+            raise ValueError("search attributes must not be empty")
+        merged = dict(self._info.search_attributes or {})
+        merged.update(attributes)
+        self._info = replace(self._info, search_attributes=merged)
 
     async def signal_child_workflow(
         self,

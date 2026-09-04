@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import (
     Awaitable,
     Iterator,
@@ -19,6 +19,7 @@ from typing import (
     Unpack,
     Generic,
     NoReturn,
+    Mapping,
 )
 import inspect
 
@@ -33,6 +34,7 @@ from cadence.signal import SignalDefinition, SignalDefinitionOptions
 _QUERY_TYPES_QUERY_NAME = "__query_types"
 
 ResultType = TypeVar("ResultType")
+SearchAttributeType = str | int | float | bool | datetime
 DEFAULT_VERSION = -1
 
 
@@ -230,6 +232,20 @@ def get_version(
 
     """
     return WorkflowContext.get().get_version(change_id, min_supported, max_supported)
+
+
+def upsert_search_attributes(
+    attributes: Mapping[str, SearchAttributeType | list[SearchAttributeType]],
+) -> None:
+    """Add or update indexed search attributes for this workflow execution.
+
+    Keys and value types must be registered on the Cadence server (see
+    GetSearchAttributes). Values may be a scalar (str, int, float, bool,
+    datetime) or a list of that scalar type. Values are merged into the
+    existing map; there is no API to remove a key. During replay this is a
+    no-op aside from updating :attr:`WorkflowInfo.search_attributes`.
+    """
+    WorkflowContext.get().upsert_search_attributes(attributes)
 
 
 def is_cancel_requested() -> bool:
@@ -590,6 +606,9 @@ class WorkflowInfo:
     workflow_task_list: str
     data_converter: DataConverter
     memo: dict[str, Any] | None = None
+    search_attributes: (
+        dict[str, SearchAttributeType | list[SearchAttributeType]] | None
+    ) = None
 
 
 class WorkflowContext(ABC):
@@ -675,6 +694,11 @@ class WorkflowContext(ABC):
         min_supported: int,
         max_supported: int,
     ) -> int: ...
+
+    @abstractmethod
+    def upsert_search_attributes(
+        self, attributes: Mapping[str, SearchAttributeType | list[SearchAttributeType]]
+    ) -> None: ...
 
     @abstractmethod
     def is_cancel_requested(self) -> bool: ...

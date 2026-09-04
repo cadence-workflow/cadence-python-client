@@ -480,6 +480,7 @@ class TestDecisionTaskHandler:
                         "workflow_task_list": "test_task_list",
                         "data_converter": handler._client.data_converter,
                         "memo": {"env": "prod"},
+                        "search_attributes": None,
                     }
 
                 # Verify WorkflowEngine was created with correct parameters

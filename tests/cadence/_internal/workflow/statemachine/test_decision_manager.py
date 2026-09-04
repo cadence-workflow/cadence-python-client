@@ -873,3 +873,86 @@ def signal_failed(event_id: int, initiated_event_id: int) -> history.HistoryEven
             initiated_event_id=initiated_event_id,
         ),
     )
+
+
+def _upsert_attrs(
+    fields: dict[str, bytes],
+) -> decision.UpsertWorkflowSearchAttributesDecisionAttributes:
+    attrs = decision.UpsertWorkflowSearchAttributesDecisionAttributes()
+    for key, value in fields.items():
+        attrs.search_attributes.indexed_fields[key].CopyFrom(Payload(data=value))
+    return attrs
+
+
+def _upsert_recorded(event_id: int, fields: dict[str, bytes]) -> history.HistoryEvent:
+    event = history.HistoryEvent(event_id=event_id)
+    for key, value in fields.items():
+        event.upsert_workflow_search_attributes_event_attributes.search_attributes.indexed_fields[
+            key
+        ].CopyFrom(Payload(data=value))
+    return event
+
+
+async def test_upsert_search_attributes_collects_decision():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    attrs = _upsert_attrs({"CustomIntField": b"1"})
+
+    decisions.upsert_search_attributes(attrs)
+
+    pending = decisions.collect_pending_decisions()
+    assert pending == [
+        decision.Decision(upsert_workflow_search_attributes_decision_attributes=attrs)
+    ]
+
+
+async def test_upsert_search_attributes_history_clears_pending_decision():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    attrs = _upsert_attrs({"CustomIntField": b"1"})
+
+    decisions.upsert_search_attributes(attrs)
+    decisions.handle_history_event(_upsert_recorded(1, {"CustomIntField": b"1"}))
+
+    assert decisions.collect_pending_decisions() == []
+
+
+async def test_upsert_search_attributes_multiple_match_in_order():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    first = _upsert_attrs({"CustomIntField": b"1"})
+    second = _upsert_attrs({"CustomKeywordField": b'"seattle"'})
+
+    decisions.upsert_search_attributes(first)
+    decisions.upsert_search_attributes(second)
+    decisions.handle_history_event(_upsert_recorded(1, {"CustomIntField": b"1"}))
+
+    pending = decisions.collect_pending_decisions()
+    assert len(pending) == 1
+    assert pending[0].upsert_workflow_search_attributes_decision_attributes == second
+
+    decisions.handle_history_event(
+        _upsert_recorded(2, {"CustomKeywordField": b'"seattle"'})
+    )
+    assert decisions.collect_pending_decisions() == []
+
+
+async def test_replayed_upsert_matches_history():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    recorded = _upsert_recorded(1, {"CustomIntField": b"1"})
+
+    with decisions.track_nondeterminism(True, [recorded]):
+        decisions.upsert_search_attributes(_upsert_attrs({"CustomIntField": b"1"}))
+
+
+async def test_replayed_upsert_is_not_checked_for_nondeterminism():
+    decisions = DecisionManager(asyncio.get_event_loop())
+    recorded = _upsert_recorded(1, {"CustomIntField": b"1"})
+
+    with decisions.track_nondeterminism(True, [recorded]):
+        pass
+
+
+async def test_upsert_history_without_requested_machine_is_ignored():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    decisions.handle_history_event(_upsert_recorded(1, {"CustomIntField": b"1"}))
+
+    assert decisions.collect_pending_decisions() == []

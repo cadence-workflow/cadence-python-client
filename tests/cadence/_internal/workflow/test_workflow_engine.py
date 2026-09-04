@@ -14,6 +14,7 @@ from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     StartChildWorkflowExecutionInitiatedEventAttributes,
     TimerStartedEventAttributes,
+    UpsertWorkflowSearchAttributesEventAttributes,
     WorkflowExecutionCancelRequestedEventAttributes,
     WorkflowExecutionCompletedEventAttributes,
     WorkflowExecutionStartedEventAttributes,
@@ -117,6 +118,14 @@ class PendingChildWorkflowCancellationWorkflow:
             )
         except asyncio.CancelledError:
             return "child-cancelled"
+        return "unreachable"
+
+
+class UpsertThenWaitWorkflow:
+    @workflow.run
+    async def run(self):
+        workflow.upsert_search_attributes({"CustomIntField": 1})
+        await workflow.wait_condition(lambda: False)
         return "unreachable"
 
 
@@ -425,6 +434,93 @@ class TestWorkflowEngine:
                 details=DefaultDataConverter().to_data(["self-cancelled"])
             )
         )
+
+    def test_upsert_search_attributes_emits_decision(self):
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                UpsertThenWaitWorkflow,
+                WorkflowDefinitionOptions(name="upsert_then_wait"),
+            )
+        )
+        decision_result = workflow_engine.process_decision(
+            [
+                _event(
+                    1,
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(),
+                ),
+                _event(
+                    2,
+                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+                ),
+                _event(
+                    3,
+                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                        scheduled_event_id=2
+                    ),
+                ),
+            ]
+        )
+
+        assert len(decision_result.decisions) == 1
+        indexed = decision_result.decisions[
+            0
+        ].upsert_workflow_search_attributes_decision_attributes.search_attributes.indexed_fields
+        assert indexed["CustomIntField"].data == b"1"
+        assert workflow_engine._context.info().search_attributes == {
+            "CustomIntField": 1
+        }
+
+    def test_upsert_search_attributes_replay_does_not_reemit(self):
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                UpsertThenWaitWorkflow,
+                WorkflowDefinitionOptions(name="upsert_then_wait"),
+            )
+        )
+        upsert_attrs = UpsertWorkflowSearchAttributesEventAttributes()
+        upsert_attrs.search_attributes.indexed_fields["CustomIntField"].CopyFrom(
+            Payload(data=b"1")
+        )
+        decision_result = workflow_engine.process_decision(
+            [
+                _event(
+                    1,
+                    workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(),
+                ),
+                _event(
+                    2,
+                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+                ),
+                _event(
+                    3,
+                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                        scheduled_event_id=2
+                    ),
+                ),
+                _event(
+                    4,
+                    decision_task_completed_event_attributes=DecisionTaskCompletedEventAttributes(
+                        scheduled_event_id=2
+                    ),
+                ),
+                _event(
+                    5,
+                    upsert_workflow_search_attributes_event_attributes=upsert_attrs,
+                ),
+                _event(
+                    6,
+                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+                ),
+                _event(
+                    7,
+                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                        scheduled_event_id=6
+                    ),
+                ),
+            ]
+        )
+
+        assert decision_result.decisions == []
 
 
 def create_workflow_engine(workflow_definition: WorkflowDefinition) -> WorkflowEngine:

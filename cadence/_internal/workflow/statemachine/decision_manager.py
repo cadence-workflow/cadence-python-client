@@ -20,6 +20,7 @@ from cadence._internal.workflow.statemachine.completion_state_machine import (
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     CancelFn,
     DecisionId,
+    DecisionState,
     DecisionStateMachine,
     DecisionType,
     DecisionFuture,
@@ -53,6 +54,10 @@ from cadence._internal.workflow.statemachine.signal_external_workflow_state_mach
 from cadence._internal.workflow.statemachine.timer_state_machine import (
     TimerStateMachine,
     timer_events,
+)
+from cadence._internal.workflow.statemachine.upsert_search_attributes_state_machine import (
+    UpsertSearchAttributesStateMachine,
+    upsert_search_attributes_events,
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
@@ -116,6 +121,7 @@ class DecisionManager:
             DecisionType.CHILD_WORKFLOW: child_workflow_events,
             DecisionType.SIGNAL: signal_external_events,
             DecisionType.MARKER: marker_events,
+            DecisionType.UPSERT_SEARCH_ATTRIBUTES: upsert_search_attributes_events,
         }
     )
 
@@ -126,6 +132,7 @@ class DecisionManager:
         self._replaying = False
         self._recorded_marker_details: Dict[DecisionId, Payload] = {}
         self._mutable_side_effects: dict[str, MutableSideEffectState] = {}
+        self._upsert_id_counter = 0
         self.state_machines: OrderedDict[DecisionId, DecisionStateMachine] = (
             OrderedDict()
         )
@@ -196,6 +203,19 @@ class DecisionManager:
         machine = SignalExternalWorkflowStateMachine(attrs, future, signal_id)
         self._add_state_machine(machine)
         return future
+
+    # ----- Upsert Search Attributes API -----
+
+    def upsert_search_attributes(
+        self,
+        attrs: decision.UpsertWorkflowSearchAttributesDecisionAttributes,
+    ) -> None:
+        upsert_id = str(self._upsert_id_counter)
+        self._upsert_id_counter += 1
+        if self._replaying:
+            self._determinism_tracker.validate_action(attrs)
+        machine = UpsertSearchAttributesStateMachine(attrs, upsert_id)
+        self._add_state_machine(machine)
 
     # ----- Marker API -----
 
@@ -367,6 +387,10 @@ class DecisionManager:
                 machine = self._state_machine_for_marker_event(event_attributes)
                 if machine is None:
                     return
+            elif decision_type is DecisionType.UPSERT_SEARCH_ATTRIBUTES:
+                machine = self._state_machine_for_upsert_event()
+                if machine is None:
+                    return
             else:
                 machine = self._state_machine_for_event(
                     event.event_id, decision_type, action, event_attributes
@@ -394,6 +418,18 @@ class DecisionManager:
         if machine is None:
             raise KeyError(f"Event {event_id} references unknown state machine {alias}")
         return machine
+
+    def _state_machine_for_upsert_event(
+        self,
+    ) -> DecisionStateMachine | None:
+        # Upsert history events have no client ID; match the next REQUESTED machine.
+        for machine in self.state_machines.values():
+            if (
+                isinstance(machine, UpsertSearchAttributesStateMachine)
+                and machine.state is DecisionState.REQUESTED
+            ):
+                return machine
+        return None
 
     def _state_machine_for_marker_event(
         self,

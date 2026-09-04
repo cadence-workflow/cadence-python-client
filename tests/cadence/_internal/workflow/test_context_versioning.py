@@ -262,6 +262,14 @@ def test_in_memory_context_selects_max_version():
     assert context.get_version("change", DEFAULT_VERSION, 2) == 2
 
 
+def test_in_memory_context_rejects_unserializable_search_attributes():
+    context = _InMemoryWorkflowContext(MagicMock(), _info())
+
+    with pytest.raises(Exception):
+        context.upsert_search_attributes({"bad": object()})  # type: ignore[dict-item]
+    assert context.info().search_attributes is None
+
+
 def test_in_memory_context_revalidates_cached_version():
     context = _InMemoryWorkflowContext(MagicMock(), _info())
     assert context.get_version("change", DEFAULT_VERSION, 2) == 2

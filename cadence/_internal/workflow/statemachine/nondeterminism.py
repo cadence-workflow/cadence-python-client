@@ -394,6 +394,22 @@ def _(attrs: history.MarkerRecordedEventAttributes) -> Expectation | None:
     return Expectation(marker_decision_id(attrs.marker_name, context_id), {})
 
 
+# Upsert search attributes are not part of decision matching. Presence, order,
+# and indexed-field values may change without being treated as nondeterminism.
+@to_expectation.register
+def _(
+    _: decision.UpsertWorkflowSearchAttributesDecisionAttributes,
+) -> None:
+    return None
+
+
+@to_expectation.register
+def _(
+    _: history.UpsertWorkflowSearchAttributesEventAttributes,
+) -> None:
+    return None
+
+
 # Workflow Completion - Enforce complete vs failure. Maybe we should enforce the output data?
 @to_expectation.register
 def _(_: decision.CompleteWorkflowExecutionDecisionAttributes) -> Expectation:

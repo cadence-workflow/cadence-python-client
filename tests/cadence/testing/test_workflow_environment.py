@@ -135,6 +135,20 @@ class FailingWorkflow:
 
 
 @registry.workflow
+class UpsertSearchAttributesWorkflow:
+    @workflow.run
+    async def run(self) -> dict[str, object]:
+        workflow.upsert_search_attributes(
+            {"CustomIntField": 1, "CustomBoolField": True}
+        )
+        workflow.upsert_search_attributes(
+            {"CustomIntField": 2, "CustomKeywordField": "seattle"}
+        )
+        info = WorkflowContext.get().info()
+        return dict(info.search_attributes or {})
+
+
+@registry.workflow
 class ExternalSignalerWorkflow:
     @workflow.run
     async def run(self, target_id: str, value: str) -> str:
@@ -177,6 +191,18 @@ async def test_start_simple_workflow(env: TestWorkflowEnvironment):
     assert execution.run_id
     assert env.is_workflow_completed(execution.workflow_id)
     assert env.get_workflow_result(str, execution.workflow_id) == "echo: world"
+
+
+@pytest.mark.asyncio
+async def test_upsert_search_attributes_merges(env: TestWorkflowEnvironment):
+    execution = await env.client.start_workflow(
+        "UpsertSearchAttributesWorkflow", task_list="tl"
+    )
+    assert env.get_workflow_result(dict, execution.workflow_id) == {
+        "CustomIntField": 2,
+        "CustomBoolField": True,
+        "CustomKeywordField": "seattle",
+    }
 
 
 @pytest.mark.asyncio

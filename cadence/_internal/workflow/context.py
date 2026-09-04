@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 from asyncio import get_running_loop
 from datetime import datetime, timedelta
 from math import ceil
-from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable
+from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable, Mapping
 
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
+from cadence._internal.workflow.search_attributes import search_attributes_to_proto
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
@@ -34,6 +36,7 @@ from cadence.api.v1.decision_pb2 import (
     SignalExternalWorkflowExecutionDecisionAttributes,
     StartChildWorkflowExecutionDecisionAttributes,
     StartTimerDecisionAttributes,
+    UpsertWorkflowSearchAttributesDecisionAttributes,
 )
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
@@ -43,6 +46,7 @@ from cadence.workflow import (
     ChildWorkflowFuture,
     ChildWorkflowOptions,
     ResultType,
+    SearchAttributeType,
     WorkflowCancellationInfo,
     WorkflowContext,
     WorkflowInfo,
@@ -345,6 +349,22 @@ class Context(WorkflowContext):
             ResultType,
             self.data_converter().from_data(result_payload, [result_type])[0],
         )
+
+    def upsert_search_attributes(
+        self, attributes: Mapping[str, SearchAttributeType | list[SearchAttributeType]]
+    ) -> None:
+        proto = search_attributes_to_proto(attributes)
+        if proto is None:
+            raise ValueError("search attributes must not be empty")
+        if not self.is_replay_mode():
+            self._decision_manager.upsert_search_attributes(
+                UpsertWorkflowSearchAttributesDecisionAttributes(
+                    search_attributes=proto
+                )
+            )
+        merged = dict(self._info.search_attributes or {})
+        merged.update(attributes)
+        self._info = replace(self._info, search_attributes=merged)
 
     def get_version(
         self,

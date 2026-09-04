@@ -8,6 +8,7 @@ from typing import Optional, Sequence
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.context import header_to_dict
 from cadence._internal.workflow.memo import memo_from_proto
+from cadence._internal.workflow.search_attributes import search_attributes_from_proto
 from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.decision_pb2 import Decision
 from cadence.api.v1.service_worker_pb2 import (
@@ -182,6 +183,11 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             if started_attrs.HasField("memo")
             else None
         )
+        search_attributes = (
+            search_attributes_from_proto(started_attrs.search_attributes)
+            if started_attrs.HasField("search_attributes")
+            else None
+        )
 
         workflow_info = WorkflowInfo(
             workflow_type=workflow_type_name,
@@ -191,6 +197,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_task_list=self.task_list,
             data_converter=self._client.data_converter,
             memo=memo,
+            search_attributes=search_attributes,
         )
 
         workflow_engine = WorkflowEngine(

@@ -21,9 +21,11 @@ from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Header, Payload
 from cadence.data_converter import DefaultDataConverter
 from cadence.workflow import (
+    CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE,
     DEFAULT_VERSION,
     WorkflowInfo,
     get_version,
+    upsert_search_attributes,
 )
 
 
@@ -66,10 +68,21 @@ def test_get_version_records_max_version_for_new_execution():
     assert machine.state is DecisionState.REQUESTED
     assert machine.get_result() == encode_version_marker_details(2)
     pending = manager.collect_pending_decisions()
-    assert len(pending) == 1
+    assert len(pending) == 2
     assert pending[0].record_marker_decision_attributes.details == (
         encode_version_marker_details(2)
     )
+    assert (
+        pending[1]
+        .upsert_workflow_search_attributes_decision_attributes.search_attributes.indexed_fields[
+            CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE
+        ]
+        .data
+        == b'["change-2"]'
+    )
+    assert context.info().search_attributes == {
+        CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: ["change-2"]
+    }
 
 
 def test_get_version_explicit_default_does_not_record_a_marker():
@@ -89,13 +102,44 @@ def test_repeated_get_version_reads_the_same_state_machine():
     for _ in range(3):
         assert context.get_version("change", DEFAULT_VERSION, 2) == 2
 
-    assert not hasattr(context, "_versions")
+    assert context._change_versions == {"change": 2}
     assert [decision_id.id for decision_id in manager.state_machines] == [
-        "Version_change"
+        "Version_change",
+        "0",
     ]
     assert manager.collect_pending_decisions()[
         0
     ].record_marker_decision_attributes.details == (encode_version_marker_details(2))
+    assert len(manager.collect_pending_decisions()) == 2
+
+
+def test_get_version_upserts_all_change_versions_newest_first():
+    context, manager = _context()
+
+    assert (
+        context.get_version("old-change", DEFAULT_VERSION, DEFAULT_VERSION)
+        == DEFAULT_VERSION
+    )
+    assert context.get_version("first-change", 1, 1) == 1
+    assert context.get_version("second-change", 1, 2) == 2
+
+    expected = [
+        "second-change-2",
+        "first-change-1",
+        "old-change--1",
+    ]
+    assert context.info().search_attributes == {
+        CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: expected
+    }
+    pending = manager.collect_pending_decisions()
+    assert (
+        pending[-1]
+        .upsert_workflow_search_attributes_decision_attributes.search_attributes.indexed_fields[
+            CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE
+        ]
+        .data
+        == b'["second-change-2","first-change-1","old-change--1"]'
+    )
 
 
 def test_get_version_old_replay_without_marker_returns_default_and_emits_nothing():
@@ -134,6 +178,26 @@ def test_get_version_recorded_version_is_revalidated():
 
     with pytest.raises(FatalDecisionError, match="version 2"):
         context.get_version("change", 3, 4)
+
+
+def test_get_version_does_not_upsert_for_an_existing_marker():
+    context, manager = _context()
+    _load_version_marker(
+        manager,
+        history.HistoryEvent(
+            event_id=1,
+            marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
+                marker_name=VERSION_MARKER_NAME,
+                details=encode_version_marker_details(2),
+                header=Header(
+                    fields={MARKER_HEADER_KEY: encode_marker_header("change")}
+                ),
+            ),
+        ),
+    )
+
+    assert context.get_version("change", 1, 3) == 2
+    assert manager.collect_pending_decisions() == []
 
 
 @pytest.mark.parametrize(
@@ -260,6 +324,26 @@ def test_in_memory_context_selects_max_version():
     context = _InMemoryWorkflowContext(MagicMock(), _info())
 
     assert context.get_version("change", DEFAULT_VERSION, 2) == 2
+    assert context.info().search_attributes == {
+        CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: ["change-2"]
+    }
+
+
+def test_in_memory_context_upserts_all_change_versions_newest_first():
+    context = _InMemoryWorkflowContext(MagicMock(), _info())
+
+    assert (
+        context.get_version("old-change", DEFAULT_VERSION, DEFAULT_VERSION)
+        == DEFAULT_VERSION
+    )
+    assert context.get_version("new-change", 1, 2) == 2
+
+    assert context.info().search_attributes == {
+        CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: [
+            "new-change-2",
+            "old-change--1",
+        ]
+    }
 
 
 def test_in_memory_context_rejects_unserializable_search_attributes():
@@ -267,6 +351,18 @@ def test_in_memory_context_rejects_unserializable_search_attributes():
 
     with pytest.raises(Exception):
         context.upsert_search_attributes({"bad": object()})  # type: ignore[dict-item]
+    assert context.info().search_attributes is None
+
+
+def test_in_memory_context_rejects_reserved_change_version_search_attribute():
+    context = _InMemoryWorkflowContext(MagicMock(), _info())
+
+    with context._activate():
+        with pytest.raises(ValueError, match="reserved for workflow versioning"):
+            upsert_search_attributes(
+                {CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: ["change-1"]}
+            )
+
     assert context.info().search_attributes is None
 
 

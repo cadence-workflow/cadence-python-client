@@ -312,6 +312,9 @@ class DecisionManager:
             change_id, details, record=record
         ).get_result()
 
+    def has_version_marker(self, change_id: str) -> bool:
+        return marker_decision_id(VERSION_MARKER_NAME, change_id) in self.state_machines
+
     def _get_or_create_version_marker(
         self, change_id: str, details: Payload, *, record: bool = False
     ) -> MarkerStateMachine:

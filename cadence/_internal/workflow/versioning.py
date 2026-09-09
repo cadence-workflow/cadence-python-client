@@ -1,9 +1,14 @@
+from collections.abc import Mapping
 from typing import cast
 
 from msgspec import DecodeError, json
 
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence.api.v1.common_pb2 import Payload
+from cadence.workflow import (
+    CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE,
+    SearchAttributeType,
+)
 
 
 def encode_version_marker_details(version: int) -> Payload:
@@ -54,3 +59,17 @@ def validate_resolved_version(
             f"version {version} for change_id {change_id!r} is outside "
             f"the supported range [{min_supported}, {max_supported}]"
         )
+
+
+def change_version_search_attributes(
+    change_id: str,
+    version: int,
+    existing_versions: Mapping[str, int],
+) -> dict[str, SearchAttributeType | list[SearchAttributeType]]:
+    """Build the Go SDK-compatible searchable change-version attribute."""
+    values: list[SearchAttributeType] = [f"{change_id}-{version}"]
+    values.extend(
+        f"{existing_change_id}-{existing_version}"
+        for existing_change_id, existing_version in sorted(existing_versions.items())
+    )
+    return {CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: values}

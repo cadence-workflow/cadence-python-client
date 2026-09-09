@@ -17,6 +17,7 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
     SIDE_EFFECT_MARKER_NAME,
 )
 from cadence._internal.workflow.versioning import (
+    change_version_search_attributes,
     decode_version_marker_details,
     encode_version_marker_details,
     validate_resolved_version,
@@ -73,6 +74,7 @@ class Context(WorkflowContext):
         self._decision_manager = decision_manager
         self._context_propagators = context_propagators
         self._cancellation_info: WorkflowCancellationInfo | None = None
+        self._change_versions: dict[str, int] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -373,6 +375,8 @@ class Context(WorkflowContext):
         max_supported: int,
     ) -> int:
         validate_version_arguments(change_id, min_supported, max_supported)
+        existing_versions = dict(self._change_versions)
+        is_new_change = not self._decision_manager.has_version_marker(change_id)
         selected = DEFAULT_VERSION if self.is_replay_mode() else max_supported
         details = self._decision_manager.version_marker_result(
             change_id,
@@ -381,6 +385,15 @@ class Context(WorkflowContext):
         )
         version = self._decode_recorded_version(change_id, details)
         validate_resolved_version(change_id, version, min_supported, max_supported)
+        if is_new_change and not self.is_replay_mode() and version != DEFAULT_VERSION:
+            self.upsert_search_attributes(
+                change_version_search_attributes(
+                    change_id,
+                    version,
+                    existing_versions,
+                )
+            )
+        self._change_versions[change_id] = version
         return version
 
     def _decode_recorded_version(self, change_id: str, details: Payload) -> int:

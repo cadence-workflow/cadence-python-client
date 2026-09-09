@@ -36,6 +36,7 @@ _QUERY_TYPES_QUERY_NAME = "__query_types"
 ResultType = TypeVar("ResultType")
 SearchAttributeType = str | int | float | bool | datetime
 DEFAULT_VERSION = -1
+CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE = "CadenceChangeVersion"
 
 
 class RetryPolicy(TypedDict, total=False):
@@ -225,9 +226,11 @@ def get_version(
     """Return the deterministic version for ``change_id``.
 
     A new execution selects ``max_supported`` and records it when it is not
-    ``DEFAULT_VERSION``. A recorded marker is the source of truth for subsequent
-    calls. When replaying history from before this marker was introduced, the
-    result is ``DEFAULT_VERSION``; therefore ``min_supported`` must include
+    ``DEFAULT_VERSION``. It also updates the reserved ``CadenceChangeVersion``
+    search attribute so executions can be queried by ``"<change_id>-<version>"``.
+    A recorded marker is the source of truth for subsequent calls. When replaying
+    history from before this marker was introduced, the result is
+    ``DEFAULT_VERSION``; therefore ``min_supported`` must include
     ``DEFAULT_VERSION`` until those executions have completed.
 
     """
@@ -242,9 +245,15 @@ def upsert_search_attributes(
     Keys and value types must be registered on the Cadence server (see
     GetSearchAttributes). Values may be a scalar (str, int, float, bool,
     datetime) or a list of that scalar type. Values are merged into the
-    existing map; there is no API to remove a key. During replay this is a
-    no-op aside from updating :attr:`WorkflowInfo.search_attributes`.
+    existing map; there is no API to remove a key. ``CadenceChangeVersion`` is
+    reserved for :func:`get_version`. During replay this is a no-op aside from
+    updating :attr:`WorkflowInfo.search_attributes`.
     """
+    if CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE in attributes:
+        raise ValueError(
+            f"{CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE} is reserved for "
+            "workflow versioning"
+        )
     WorkflowContext.get().upsert_search_attributes(attributes)
 
 

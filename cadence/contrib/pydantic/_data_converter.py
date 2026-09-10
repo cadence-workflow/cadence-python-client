@@ -1,8 +1,13 @@
+"""JSON payload conversion using Pydantic v2 TypeAdapter."""
+
+from __future__ import annotations
+
 import dataclasses
 import datetime as dt
 import enum
 import json as json_module
 import logging
+import uuid
 from json import JSONDecoder
 from typing import Any, List, Sequence, Type
 
@@ -18,8 +23,13 @@ logger = logging.getLogger(__name__)
 
 
 class PydanticDataConverter(DataConverter):
-    """DataConverter that handles Pydantic BaseModel and TypedDict types
-    (e.g. ResponseInputItemParam) via Pydantic's TypeAdapter."""
+    """Serialize and deserialize Cadence payloads with Pydantic v2.
+
+    Values are encoded as whitespace-delimited JSON, matching
+    :class:`~cadence.data_converter.DefaultDataConverter`. Decoding uses
+    Pydantic ``TypeAdapter`` so ``BaseModel``, ``TypedDict``, dataclasses,
+    and other Pydantic-supported types round-trip as typed objects.
+    """
 
     def __init__(self) -> None:
         self._decoder = JSONDecoder(strict=False)
@@ -40,7 +50,10 @@ class PydanticDataConverter(DataConverter):
     def from_data(
         self, payload: Payload, type_hints: Sequence[Type | None]
     ) -> List[Any]:
-        return self._from_payload(payload, type_hints, fill_missing_defaults=True)
+        if not payload.data:
+            return [_get_default(th) for th in type_hints]
+        hints: Sequence[Type | None] = type_hints if type_hints else [None]
+        return self._from_payload(payload, hints, fill_missing_defaults=True)
 
     def _from_payload(
         self,
@@ -127,12 +140,14 @@ def _serialize_value(value: Any) -> bytes:
 
 def _to_json_compatible(obj: Any) -> Any:
     """Recursively convert an object to a JSON-compatible structure."""
-    if isinstance(obj, (dt.datetime, dt.date)):
+    if isinstance(obj, (dt.datetime, dt.date, dt.time)):
         return obj.isoformat()
     if isinstance(obj, dt.timedelta):
         return obj.total_seconds()
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
     if isinstance(obj, BaseModel):
-        return obj.model_dump()
+        return obj.model_dump(mode="json")
     if isinstance(obj, enum.Enum):
         return obj.value
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
@@ -147,16 +162,18 @@ def _to_json_compatible(obj: Any) -> Any:
 
 
 def _json_default(obj: Any) -> Any:
-    if isinstance(obj, (dt.datetime, dt.date)):
+    if isinstance(obj, (dt.datetime, dt.date, dt.time)):
         return obj.isoformat()
     if isinstance(obj, dt.timedelta):
         return obj.total_seconds()
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
     if isinstance(obj, enum.Enum):
         return obj.value
     if isinstance(obj, set):
         return sorted(obj)
     if isinstance(obj, BaseModel):
-        return obj.model_dump()
+        return obj.model_dump(mode="json")
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return dataclasses.asdict(obj)
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")

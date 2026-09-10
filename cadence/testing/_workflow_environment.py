@@ -65,6 +65,7 @@ from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.search_attributes import search_attributes_to_proto
 from cadence._internal.workflow.versioning import (
+    change_version_search_attributes,
     validate_resolved_version,
     validate_version_arguments,
 )
@@ -86,6 +87,7 @@ from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
     ChildWorkflowOptions,
+    DEFAULT_VERSION,
     ResultType,
     SearchAttributeType,
     WorkflowContext,
@@ -200,7 +202,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         self._env = env
         self._info = info
         self._mutable_side_effect_values: dict[str, Any] = {}
-        self._versions: dict[str, int] = {}
+        self._change_versions: dict[str, int] = {}
 
     def info(self) -> WorkflowInfo:
         return self._info
@@ -297,13 +299,23 @@ class _InMemoryWorkflowContext(WorkflowContext):
         max_supported: int,
     ) -> int:
         validate_version_arguments(change_id, min_supported, max_supported)
-        version = self._versions.setdefault(change_id, max_supported)
+        existing_versions = dict(self._change_versions)
+        is_new_change = change_id not in existing_versions
+        version = self._change_versions.setdefault(change_id, max_supported)
         validate_resolved_version(
             change_id,
             version,
             min_supported,
             max_supported,
         )
+        if is_new_change and version != DEFAULT_VERSION:
+            self.upsert_search_attributes(
+                change_version_search_attributes(
+                    change_id,
+                    version,
+                    existing_versions,
+                )
+            )
         return version
 
     def upsert_search_attributes(

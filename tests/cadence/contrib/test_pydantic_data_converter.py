@@ -7,9 +7,12 @@ from typing import Any, Optional, Type, TypedDict
 import pytest
 from pydantic import BaseModel
 
+from msgspec import ValidationError
+
 from cadence._internal.fn_signature import FnSignature
 from cadence.api.v1.common_pb2 import Payload
 from cadence.contrib.pydantic import PydanticDataConverter
+from cadence.data_converter import DefaultDataConverter
 
 
 @dataclasses.dataclass
@@ -132,21 +135,15 @@ def test_from_data_empty_hints_decodes_single_value() -> None:
     assert actual == ["hello"]
 
 
-def test_from_data_invalid_payload_falls_back_to_raw() -> None:
+def test_from_data_invalid_payload_raises() -> None:
     converter = PydanticDataConverter()
-    actual = converter.from_data(Payload(data=b'"not-an-int"'), [int])
-    assert actual == ["not-an-int"]
+    with pytest.raises(ValidationError):
+        converter.from_data(Payload(data=b'"not-an-int"'), [int])
 
 
-def test_decode_provided_values_does_not_fill_defaults() -> None:
-    converter = PydanticDataConverter()
-    actual = converter._decode_provided_values(Payload(data=b"1"), [int, int])
-    assert actual == [1]
-
-
-def test_decode_provided_values_empty_payload() -> None:
-    converter = PydanticDataConverter()
-    assert converter._decode_provided_values(Payload(), [int, str]) == []
+def test_default_converter_cannot_encode_pydantic_model() -> None:
+    with pytest.raises(TypeError, match="unsupported"):
+        DefaultDataConverter().to_data([_TestModel()])
 
 
 def test_roundtrip_pydantic_model() -> None:
@@ -216,7 +213,7 @@ def test_to_data(values: list[Any], expected: str) -> None:
 
 def test_to_data_unserializable_raises() -> None:
     converter = PydanticDataConverter()
-    with pytest.raises(TypeError, match="not JSON serializable"):
+    with pytest.raises(TypeError, match="unsupported"):
         converter.to_data([object()])
 
 

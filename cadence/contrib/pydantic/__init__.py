@@ -1,7 +1,9 @@
 """Pydantic v2 data converter for Cadence payloads.
 
-Install Pydantic and pass :class:`PydanticDataConverter` as the
-``data_converter`` argument to :class:`cadence.client.Client`:
+Extends :class:`~cadence.data_converter.DefaultDataConverter` with msgspec
+hooks for :class:`pydantic.BaseModel`. Install Pydantic and pass
+:class:`PydanticDataConverter` as the ``data_converter`` argument to
+:class:`cadence.client.Client`:
 
 .. code-block:: python
 

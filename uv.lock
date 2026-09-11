@@ -191,6 +191,7 @@ dev = [
     { name = "mypy" },
     { name = "opentelemetry-instrumentation-grpc" },
     { name = "opentelemetry-sdk" },
+    { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -210,10 +211,15 @@ examples = [
 ]
 google-adk = [
     { name = "google-adk" },
+    { name = "pydantic" },
 ]
 openai = [
     { name = "openai" },
     { name = "openai-agents" },
+    { name = "pydantic" },
+]
+pydantic = [
+    { name = "pydantic" },
 ]
 
 [package.metadata]
@@ -233,6 +239,10 @@ requires-dist = [
     { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.39.1" },
     { name = "prometheus-client", specifier = ">=0.21.0" },
     { name = "protobuf", specifier = ">=6.31.0,<7.0.0" },
+    { name = "pydantic", marker = "extra == 'dev'", specifier = ">=2" },
+    { name = "pydantic", marker = "extra == 'google-adk'", specifier = ">=2" },
+    { name = "pydantic", marker = "extra == 'openai'", specifier = ">=2" },
+    { name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
@@ -245,7 +255,7 @@ requires-dist = [
     { name = "types-grpcio", marker = "extra == 'dev'", specifier = ">=1.0.0.20260408" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
 ]
-provides-extras = ["dev", "docs", "examples", "openai", "google-adk"]
+provides-extras = ["dev", "docs", "examples", "pydantic", "openai", "google-adk"]
 
 [[package]]
 name = "certifi"

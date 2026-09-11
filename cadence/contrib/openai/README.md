@@ -78,7 +78,7 @@ import asyncio
 import cadence
 from datetime import timedelta
 from cadence.api.v1.history_pb2 import EventFilterType
-from cadence.contrib.openai import PydanticDataConverter
+from cadence.contrib.pydantic import PydanticDataConverter
 from book_flight_agent import cadence_registry
 from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest
 

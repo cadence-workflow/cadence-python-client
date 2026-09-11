@@ -1,11 +1,13 @@
 from abc import abstractmethod
-from typing import Protocol, List, Type, Any, Sequence
+from typing import Protocol, List, Type, Any, Sequence, Callable
 
 from cadence.api.v1.common_pb2 import Payload
 from json import JSONDecoder
 from msgspec import json, convert
 
 _SPACE = " ".encode()
+EncHook = Callable[[Any], Any]
+DecHook = Callable[[Any, Any], Any]
 
 
 class DataConverter(Protocol):
@@ -19,8 +21,16 @@ class DataConverter(Protocol):
 
 
 class DefaultDataConverter(DataConverter):
-    def __init__(self) -> None:
-        self._encoder = json.Encoder()
+    def __init__(
+        self,
+        *,
+        enc_hook: EncHook | None = None,
+        dec_hook: DecHook | None = None,
+    ) -> None:
+        self._dec_hook = dec_hook
+        self._encoder = (
+            json.Encoder(enc_hook=enc_hook) if enc_hook is not None else json.Encoder()
+        )
         # Need to use std lib decoder in order to decode the custom whitespace delimited data format
         self._decoder = JSONDecoder(strict=False)
 
@@ -28,7 +38,7 @@ class DefaultDataConverter(DataConverter):
         self, payload: Payload, type_hints: Sequence[Type | None]
     ) -> List[Any]:
         if not payload.data:
-            return DefaultDataConverter._convert_into([], type_hints)
+            return self._convert_into([], type_hints)
 
         if not type_hints:
             type_hints = [None]
@@ -48,7 +58,7 @@ class DefaultDataConverter(DataConverter):
             start += value_end + 1
             results.append(value)
 
-        return DefaultDataConverter._convert_into(results, type_hints)
+        return self._convert_into(results, type_hints)
 
     def _payload_value_count(self, payload: Payload, max_count: int) -> int:
         if not payload.data or max_count <= 0:
@@ -64,16 +74,15 @@ class DefaultDataConverter(DataConverter):
 
         return count
 
-    @staticmethod
     def _convert_into(
-        values: List[Any], type_hints: Sequence[Type | None]
+        self, values: List[Any], type_hints: Sequence[Type | None]
     ) -> List[Any]:
         results: List[Any] = []
         for i, type_hint in enumerate(type_hints):
             if i < len(values):
                 value = values[i]
                 if type_hint and type_hint is not Any:
-                    value = convert(value, type_hint)
+                    value = convert(value, type_hint, dec_hook=self._dec_hook)
             else:
                 value = DefaultDataConverter._get_default(type_hint)
             results.append(value)

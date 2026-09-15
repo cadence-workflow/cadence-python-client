@@ -82,16 +82,27 @@ async def test_activity_state_machine_timeout():
     m = ActivityStateMachine(attrs, completed)
 
     m.handle_scheduled(history.ActivityTaskScheduledEventAttributes(activity_id="a"))
+    heartbeat_details = Payload(data=b'{"progress": 42}')
     m.handle_timeout(
         history.ActivityTaskTimedOutEventAttributes(
-            details=Payload(data="error message".encode())
+            timeout_type=4,  # TIMEOUT_TYPE_HEARTBEAT
+            details=heartbeat_details,
+            last_failure=Failure(
+                reason="RuntimeError",
+                details=b"Traceback (most recent call last):\nRuntimeError: boom",
+            ),
         )
     )
 
     assert completed.done() is True
     assert m.get_decision() is None
-    with pytest.raises(ActivityFailure, match="error message"):
+    with pytest.raises(ActivityFailure, match="TIMEOUT_TYPE_HEARTBEAT") as exc_info:
         completed.result()
+    assert exc_info.value.failure_details == (
+        "Traceback (most recent call last):\nRuntimeError: boom"
+    )
+    assert exc_info.value.heartbeat_details == heartbeat_details
+    assert exc_info.value.heartbeat_details.data == b'{"progress": 42}'
 
 
 async def test_activity_state_machine_failed():

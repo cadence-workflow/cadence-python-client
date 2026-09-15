@@ -24,8 +24,11 @@ class ContinueAsNewError(Exception):
 
 
 class ActivityFailure(Exception):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
+    def __init__(self, message: str, failure_details: str | None = None) -> None:
+        super().__init__(
+            message if not failure_details else f"{message}\n{failure_details}"
+        )
+        self.failure_details = failure_details
 
 
 class ActivityCancelledError(Exception):

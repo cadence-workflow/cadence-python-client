@@ -103,14 +103,22 @@ async def test_activity_state_machine_failed():
     m.handle_started(history.ActivityTaskStartedEventAttributes())
     m.handle_failed(
         history.ActivityTaskFailedEventAttributes(
-            failure=Failure(reason="error message")
+            failure=Failure(
+                reason="RuntimeError",
+                details=b"Traceback (most recent call last):\nRuntimeError: error message",
+            )
         )
     )
 
     assert completed.done() is True
     assert m.get_decision() is None
-    with pytest.raises(ActivityFailure, match="error message"):
+    with pytest.raises(
+        ActivityFailure, match="RuntimeError.*error message"
+    ) as exc_info:
         completed.result()
+    assert exc_info.value.details == (
+        "Traceback (most recent call last):\nRuntimeError: error message"
+    )
 
 
 async def test_activity_state_machine_cancel_confirmed():

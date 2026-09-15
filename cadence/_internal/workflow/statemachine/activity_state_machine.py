@@ -86,7 +86,13 @@ class ActivityStateMachine(BaseDecisionStateMachine):
     @activity_events.event()
     def handle_failed(self, event: history.ActivityTaskFailedEventAttributes) -> None:
         self._transition(DecisionState.COMPLETED)
-        self._resolve(self.completed, exc=ActivityFailure(event.failure.reason))
+        failure_details = (
+            event.failure.details.decode("utf-8", errors="replace") or None
+        )
+        self._resolve(
+            self.completed,
+            exc=ActivityFailure(event.failure.reason, failure_details),
+        )
 
     @activity_events.event()
     def handle_timeout(

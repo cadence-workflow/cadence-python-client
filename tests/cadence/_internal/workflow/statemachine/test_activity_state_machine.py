@@ -116,7 +116,7 @@ async def test_activity_state_machine_failed():
         ActivityFailure, match="RuntimeError.*error message"
     ) as exc_info:
         completed.result()
-    assert exc_info.value.details == (
+    assert exc_info.value.failure_details == (
         "Traceback (most recent call last):\nRuntimeError: error message"
     )
 

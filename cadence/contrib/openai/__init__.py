@@ -7,7 +7,7 @@ if sys.version_info < (3, 12):
 
 from .openai_activities import OpenAIActivities  # type: ignore[unreachable]
 from .cadence_agent_runner import CadenceAgentRunner as _CadenceAgentRunner  # noqa: F401 — imported for side effect
-from .pydantic_data_converter import PydanticDataConverter
+from cadence.contrib.pydantic import PydanticDataConverter
 
 __all__ = [
     "PydanticDataConverter",

@@ -46,7 +46,7 @@ This keeps ADK responsible for agent behavior, sessions, tool planning, and even
 
 Tools are not automatically converted into Cadence activities. If an ADK tool performs I/O, has side effects, or should be retried durably, register that tool function as a Cadence activity and pass the same callable to `LlmAgent.tools`.
 
-Use `PydanticDataConverter` on the Cadence client because ADK request and response objects are Pydantic models that must cross the Cadence activity boundary.
+Use `PydanticDataConverter` (`cadence.contrib.pydantic`) on the Cadence client because ADK request and response objects are Pydantic models that must cross the Cadence activity boundary.
 
 ## End-to-End Flow
 
@@ -192,7 +192,7 @@ import asyncio
 import cadence
 from datetime import timedelta
 from cadence.api.v1.history_pb2 import EventFilterType
-from cadence.contrib.google_adk import PydanticDataConverter
+from cadence.contrib.pydantic import PydanticDataConverter
 from book_flight_agent import cadence_registry
 from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest
 

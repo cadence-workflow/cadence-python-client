@@ -14,6 +14,7 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, Failure
 from cadence.api.v1.decision_pb2 import RequestCancelActivityTaskDecisionAttributes
+from cadence.api.v1.workflow_pb2 import TimeoutType
 from cadence.error import ActivityFailure
 
 ### These tests have to be async because they rely on the presence of an eventloop
@@ -85,7 +86,7 @@ async def test_activity_state_machine_timeout():
     heartbeat_details = Payload(data=b'{"progress": 42}')
     m.handle_timeout(
         history.ActivityTaskTimedOutEventAttributes(
-            timeout_type=4,  # TIMEOUT_TYPE_HEARTBEAT
+            timeout_type=TimeoutType.TIMEOUT_TYPE_HEARTBEAT,
             details=heartbeat_details,
             last_failure=Failure(
                 reason="RuntimeError",

@@ -8,10 +8,12 @@ from typing import Sequence, TypedDict, Unpack, Any, cast, Union
 
 from grpc import ChannelCredentials, Compression
 
+from cadence._internal.rpc.auth import AuthorizationInterceptor
 from cadence._internal.rpc.error import CadenceErrorInterceptor
 from cadence._internal.rpc.metrics import MetricsInterceptor
 from cadence._internal.rpc.retry import RetryInterceptor
 from cadence._internal.rpc.yarpc import YarpcMetadataInterceptor
+from cadence.auth import AuthorizationProvider
 from cadence._internal.workflow.active_cluster_selection_policy import (
     active_cluster_selection_policy_to_proto,
 )
@@ -167,6 +169,7 @@ class ClientOptions(TypedDict, total=False):
     metrics_emitter: MetricsEmitter
     interceptors: list[ClientInterceptor]
     context_propagators: Sequence[ContextPropagator]
+    authorization_provider: AuthorizationProvider | None
 
 
 _DEFAULT_OPTIONS: ClientOptions = {
@@ -180,6 +183,7 @@ _DEFAULT_OPTIONS: ClientOptions = {
     "metrics_emitter": NoOpMetricsEmitter(),
     "interceptors": [],
     "context_propagators": (),
+    "authorization_provider": None,
 }
 
 
@@ -227,6 +231,10 @@ class Client:
     @property
     def context_propagators(self) -> tuple[ContextPropagator, ...]:
         return tuple(self._options["context_propagators"])
+
+    @property
+    def authorization_provider(self) -> AuthorizationProvider | None:
+        return self._options.get("authorization_provider")
 
     async def ready(self) -> None:
         await self._channel.channel_ready()
@@ -796,6 +804,8 @@ def _create_channel(options: ClientOptions) -> Channel:
     interceptors.append(
         YarpcMetadataInterceptor(options["service_name"], options["caller_name"])
     )
+    if options.get("authorization_provider"):
+        interceptors.append(AuthorizationInterceptor(options["authorization_provider"]))
     interceptors.append(RetryInterceptor())
     interceptors.append(MetricsInterceptor(options["metrics_emitter"]))
     interceptors.append(CadenceErrorInterceptor())

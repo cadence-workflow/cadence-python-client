@@ -235,3 +235,31 @@ class TestClientAuthorizationIntegration:
 
         assert CADENCE_AUTHORIZATION_HEADER not in servicer.received_metadata
         assert servicer.received_metadata.get("rpc-service") == "cadence-frontend"
+
+    def test_static_provider_rejects_non_utf8_bytes(self):
+        non_utf8_bytes = b"\xff\xfe\xfa\xbc"
+        with pytest.raises(ValueError, match="valid UTF-8 encoded string"):
+            StaticAuthorizationProvider(non_utf8_bytes)
+
+    @pytest.mark.asyncio
+    async def test_callable_provider_rejects_non_utf8_bytes_during_resolution(
+        self, auth_test_server
+    ):
+        port, _ = auth_test_server
+        provider = CallableAuthorizationProvider(lambda: b"\xff\xfe\xfa\xbc")
+
+        client = Client(
+            domain="test-domain",
+            target=f"localhost:{port}",
+            authorization_provider=provider,
+        )
+
+        try:
+            with pytest.raises(ValueError, match="valid UTF-8 encoded string"):
+                await client.start_workflow(
+                    "MyWorkflow",
+                    task_list="test-tl",
+                    execution_start_to_close_timeout=timedelta(minutes=5),
+                )
+        finally:
+            await client.close()

@@ -31,7 +31,12 @@ class AuthorizationInterceptor(UnaryUnaryClientInterceptor):
             return None
 
         if isinstance(raw_token, bytes):
-            return raw_token.decode("utf-8")
+            try:
+                return raw_token.decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise ValueError(
+                    "Authorization token bytes must be valid UTF-8 encoded string"
+                ) from e
         return str(raw_token)
 
     async def intercept_unary_unary(

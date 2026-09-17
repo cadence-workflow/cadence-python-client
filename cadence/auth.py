@@ -20,7 +20,8 @@ class AuthorizationProvider(ABC):
         """Provide the authorization token.
 
         Called before requests to the Cadence server. Can return a string,
-        bytes, or an awaitable returning a string or bytes.
+        bytes, or an awaitable returning a string or bytes. If bytes are
+        provided, they must be a valid UTF-8 encoded string.
         """
         pass
 
@@ -31,6 +32,13 @@ class StaticAuthorizationProvider(AuthorizationProvider):
     def __init__(self, token: AuthToken) -> None:
         if not token:
             raise ValueError("Token must not be empty")
+        if isinstance(token, bytes):
+            try:
+                token.decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise ValueError(
+                    "Authorization token bytes must be a valid UTF-8 encoded string"
+                ) from e
         self._token = token
 
     def get_auth_token(self) -> AuthToken:

@@ -11,6 +11,7 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload
+from cadence.api.v1.workflow_pb2 import TimeoutType
 from cadence.error import ActivityFailure
 
 activity_events = EventDispatcher("scheduled_event_id")
@@ -86,14 +87,30 @@ class ActivityStateMachine(BaseDecisionStateMachine):
     @activity_events.event()
     def handle_failed(self, event: history.ActivityTaskFailedEventAttributes) -> None:
         self._transition(DecisionState.COMPLETED)
-        self._resolve(self.completed, exc=ActivityFailure(event.failure.reason))
+        failure_details = (
+            event.failure.details.decode("utf-8", errors="replace") or None
+        )
+        self._resolve(
+            self.completed,
+            exc=ActivityFailure(event.failure.reason, failure_details),
+        )
 
     @activity_events.event()
     def handle_timeout(
         self, event: history.ActivityTaskTimedOutEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self._resolve(self.completed, exc=ActivityFailure(event.details.data.decode()))
+        failure_details = (
+            event.last_failure.details.decode("utf-8", errors="replace") or None
+        )
+        self._resolve(
+            self.completed,
+            exc=ActivityFailure(
+                TimeoutType.Name(event.timeout_type),
+                failure_details=failure_details,
+                heartbeat_details=event.details,
+            ),
+        )
 
     @activity_events.event()
     def handle_canceled(

@@ -16,7 +16,11 @@ from typing import (
 )
 
 import pytest
-from pydantic import BaseModel, field_validator
+from pydantic import (
+    BaseModel,
+    ValidationError as PydanticValidationError,
+    field_validator,
+)
 
 from msgspec import ValidationError
 
@@ -70,7 +74,7 @@ class _ItemDict(TypedDict):
 
 
 class _TaggedMetadata(TypedDict):
-    count: int
+    when: datetime
 
 
 class _TaggedCall(TypedDict, total=False):
@@ -208,9 +212,7 @@ def test_type_adapter_fallback_does_not_retry_runtime_type_error() -> None:
             {
                 "type": "call",
                 "name": "greet",
-                "metadata": {"count": 1},
-                "id": None,
-                "note": None,
+                "metadata": {"when": datetime(2026, 9, 21, tzinfo=timezone.utc)},
             }
         ],
     ],
@@ -222,11 +224,41 @@ def test_type_adapter_fallback_roundtrip(value: object) -> None:
     assert converter.from_data(payload, [_TAGGED_INPUT_TYPE]) == [value]
 
 
+def test_type_adapter_canonical_retry_returns_coerced_value() -> None:
+    converter = PydanticDataConverter()
+    value = [
+        {
+            "type": "call",
+            "name": "greet",
+            "metadata": {"when": "2026-09-21T00:00:00Z"},
+            "id": None,
+            "note": None,
+        }
+    ]
+    payload = converter.to_data([value])
+
+    assert converter.from_data(payload, [_TAGGED_INPUT_TYPE]) == [
+        [
+            {
+                "type": "call",
+                "name": "greet",
+                "metadata": {"when": datetime(2026, 9, 21, tzinfo=timezone.utc)},
+            }
+        ]
+    ]
+
+
 @pytest.mark.parametrize(
     "value",
     [
-        [{"type": "call", "name": None, "metadata": {"count": 1}}],
-        [{"type": "call", "name": "greet", "metadata": {"count": None}}],
+        [
+            {
+                "type": "call",
+                "name": None,
+                "metadata": {"when": "2026-09-21T00:00:00Z"},
+            }
+        ],
+        [{"type": "call", "name": "greet", "metadata": {"when": "not-a-date"}}],
         [{"type": "output"}],
         [{"type": "unknown", "id": None}],
     ],
@@ -237,6 +269,31 @@ def test_type_adapter_fallback_rejects_malformed_values(value: object) -> None:
 
     with pytest.raises(ValueError):
         converter.from_data(payload, [_TAGGED_INPUT_TYPE])
+
+
+def test_type_adapter_canonical_failure_raises_original_error() -> None:
+    converter = PydanticDataConverter()
+    value = [
+        {
+            "type": "call",
+            "name": "greet",
+            "metadata": {"when": "not-a-date"},
+            "id": None,
+        }
+    ]
+    payload = converter.to_data([value])
+
+    with pytest.raises(PydanticValidationError) as error:
+        converter.from_data(payload, [_TAGGED_INPUT_TYPE])
+
+    errors = error.value.errors()
+    assert any(
+        detail["loc"][-1] == "id" and detail["input"] is None for detail in errors
+    )
+    assert any(
+        detail["loc"][-2:] == ("metadata", "when") and detail["input"] == "not-a-date"
+        for detail in errors
+    )
 
 
 def test_default_converter_cannot_encode_pydantic_model() -> None:

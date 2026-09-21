@@ -25,23 +25,6 @@ _MODEL_INPUT_TYPE = cast(Type, str | list[TResponseInputItem])
                 "output": "Hello",
             }
         ],
-        [
-            {"role": "user", "content": "Hello"},
-            {
-                "type": "function_call",
-                "arguments": '{"name":"Ada"}',
-                "call_id": "call-1",
-                "name": "greet",
-                "id": None,
-                "namespace": None,
-                "status": "completed",
-            },
-            {
-                "type": "function_call_output",
-                "call_id": "call-1",
-                "output": "Hello",
-            },
-        ],
     ],
 )
 def test_roundtrip_openai_model_input(value: object) -> None:
@@ -50,6 +33,46 @@ def test_roundtrip_openai_model_input(value: object) -> None:
     payload = converter.to_data([value])
 
     assert converter.from_data(payload, [_MODEL_INPUT_TYPE]) == [value]
+
+
+def test_roundtrip_openai_second_turn_canonicalizes_optional_nulls() -> None:
+    converter = PydanticDataConverter()
+    value = [
+        {"role": "user", "content": "Hello"},
+        {
+            "type": "function_call",
+            "arguments": '{"name":"Ada"}',
+            "call_id": "call-1",
+            "name": "greet",
+            "id": None,
+            "namespace": None,
+            "status": "completed",
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "call-1",
+            "output": "Hello",
+        },
+    ]
+    payload = converter.to_data([value])
+
+    assert converter.from_data(payload, [_MODEL_INPUT_TYPE]) == [
+        [
+            {"role": "user", "content": "Hello"},
+            {
+                "type": "function_call",
+                "arguments": '{"name":"Ada"}',
+                "call_id": "call-1",
+                "name": "greet",
+                "status": "completed",
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "Hello",
+            },
+        ]
+    ]
 
 
 @pytest.mark.parametrize(

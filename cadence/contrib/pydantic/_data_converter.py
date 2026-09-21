@@ -106,8 +106,8 @@ class PydanticDataConverter(DefaultDataConverter):
     msgspec cannot represent a concrete type hint, Pydantic ``TypeAdapter``
     validates it instead. This includes unions with multiple ``TypedDict``
     members and unions containing Pydantic-supported custom types. Optional
-    ``TypedDict`` keys represented as ``None`` may be validated as omitted
-    while the original wire value is preserved.
+    ``TypedDict`` keys represented as ``None`` may be validated and returned
+    in their canonical omitted-key form.
     """
 
     def __init__(self) -> None:
@@ -139,14 +139,16 @@ class PydanticDataConverter(DefaultDataConverter):
                 else:
                     try:
                         converted = adapter.validate_python(values[index])
-                    except ValidationError:
+                    except ValidationError as original:
                         canonical_value = _canonicalize_optional_typed_dict_nones(
                             values[index], type_hint
                         )
                         if canonical_value == values[index]:
                             raise
-                        adapter.validate_python(canonical_value)
-                        converted = values[index]
+                        try:
+                            converted = adapter.validate_python(canonical_value)
+                        except ValidationError:
+                            raise original from None
                 results.append(converted)
             else:
                 results.append(values[index])

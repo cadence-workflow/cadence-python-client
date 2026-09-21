@@ -1,10 +1,17 @@
 import json
+import sys
 from datetime import timedelta
 from typing import Any
 
 import pytest
 
-try:
+if sys.version_info < (3, 12):
+    pytest.skip(
+        "cadence.contrib.openai requires Python 3.12 or higher",
+        allow_module_level=True,
+    )
+
+try:  # type: ignore[unreachable]
     import httpx
     from agents import Agent, RunConfig, Runner, function_tool
     from openai import AsyncOpenAI

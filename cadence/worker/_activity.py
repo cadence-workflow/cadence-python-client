@@ -1,12 +1,14 @@
 import asyncio
 from typing import Optional
 
+from google.protobuf.wrappers_pb2 import DoubleValue
+
 from cadence._internal.activity import ActivityExecutor
 from cadence.api.v1.service_worker_pb2 import (
     PollForActivityTaskResponse,
     PollForActivityTaskRequest,
 )
-from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
+from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind, TaskListMetadata
 from cadence.client import Client
 from cadence.metrics import MetricsEmitter
 from cadence.metrics.constants import (
@@ -41,6 +43,12 @@ class ActivityWorker:
             {TAG_DOMAIN: client.domain, TAG_TASK_LIST: task_list}
         )
         self._num_pollers = options["activity_task_pollers"]
+        if options["task_list_activities_per_second"] > 0:
+            self._task_list_metadata = TaskListMetadata(
+                max_tasks_per_second=DoubleValue(
+                    value=options["task_list_activities_per_second"]
+                )
+            )
         self._poll_metrics = PollMetrics(
             emitter=self._tagged_emitter,
             poll=ACTIVITY_POLL_COUNTER,
@@ -92,6 +100,7 @@ class ActivityWorker:
                             kind=TaskListKind.TASK_LIST_KIND_NORMAL,
                         ),
                         identity=self._identity,
+                        task_list_metadata=self._task_list_metadata,
                     ),
                     timeout=_LONG_POLL_TIMEOUT.total_seconds(),
                 )

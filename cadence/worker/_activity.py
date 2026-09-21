@@ -43,7 +43,8 @@ class ActivityWorker:
             {TAG_DOMAIN: client.domain, TAG_TASK_LIST: task_list}
         )
         self._num_pollers = options["activity_task_pollers"]
-        if options["task_list_activities_per_second"] > 0:
+        self._task_list_metadata = None
+        if options.get("task_list_activities_per_second", 0) > 0:
             self._task_list_metadata = TaskListMetadata(
                 max_tasks_per_second=DoubleValue(
                     value=options["task_list_activities_per_second"]

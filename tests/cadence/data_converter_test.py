@@ -1,11 +1,11 @@
 import dataclasses
-from typing import Any, Type, Optional
+from typing import Any, Optional, Type, TypedDict, Union
 
 import pytest
+from msgspec import json
 
 from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DefaultDataConverter
-from msgspec import json
 
 
 @dataclasses.dataclass
@@ -13,6 +13,17 @@ class _TestDataClass:
     foo: str = "foo"
     bar: int = -1
     baz: Optional["_TestDataClass"] = None
+
+
+@dataclasses.dataclass
+class _RequiredDataClass:
+    foo: str
+    bar: int
+
+
+class _ItemDict(TypedDict):
+    name: str
+    count: int
 
 
 @pytest.mark.parametrize(
@@ -77,6 +88,30 @@ class _TestDataClass:
             ["hello", "world"],
             id="extra content",
         ),
+        pytest.param(
+            '{"foo": "hello", "bar": 42}',
+            [_RequiredDataClass | _ItemDict],
+            [_RequiredDataClass(foo="hello", bar=42)],
+            id="union dataclass first",
+        ),
+        pytest.param(
+            '{"name": "widget", "count": 3}',
+            [_RequiredDataClass | _ItemDict],
+            [{"name": "widget", "count": 3}],
+            id="union typed dict fallback",
+        ),
+        pytest.param(
+            '{"name": "widget", "count": 3}',
+            [Union[_ItemDict, _RequiredDataClass]],
+            [{"name": "widget", "count": 3}],
+            id="union typed dict first",
+        ),
+        pytest.param(
+            "null",
+            [_RequiredDataClass | _ItemDict | None],
+            [None],
+            id="union optional none",
+        ),
     ],
 )
 def test_data_converter_from_data(
@@ -85,6 +120,15 @@ def test_data_converter_from_data(
     converter = DefaultDataConverter()
     actual = converter.from_data(Payload(data=json.encode()), types)
     assert expected == actual
+
+
+def test_from_data_union_no_matching_variant_raises() -> None:
+    converter = DefaultDataConverter()
+    with pytest.raises(TypeError, match="Unable to convert value into any union variant"):
+        converter.from_data(
+            Payload(data=b'{"other": true}'),
+            [_RequiredDataClass | _ItemDict],
+        )
 
 
 @pytest.mark.parametrize(

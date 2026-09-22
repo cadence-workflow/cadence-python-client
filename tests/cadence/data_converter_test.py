@@ -1,8 +1,8 @@
 import dataclasses
-from typing import Any, Optional, Type, TypedDict, Union, cast
+from typing import Any, NotRequired, Optional, Type, TypedDict, Union, cast
 
 import pytest
-from msgspec import json
+from msgspec import MsgspecError, json
 
 from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DefaultDataConverter
@@ -41,6 +41,16 @@ class _OptionalItem(TypedDict, total=False):
 
 class _NestedItem(TypedDict):
     item: _RequiredDataClass | _ItemDict
+
+
+class _InheritedOptionalItem(_OptionalItem):
+    name: str
+
+
+class _NullableItem(TypedDict):
+    name: str
+    note: NotRequired[str]
+    tag: NotRequired[Optional[str]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -215,6 +225,42 @@ class _FooItem:
             [{"item": {"name": "widget", "count": 3}}],
             id="union nested in typed dict field",
         ),
+        pytest.param(
+            '{"name": "widget"}',
+            [_InheritedOptionalItem],
+            [{"name": "widget"}],
+            id="inherited optional key stays optional",
+        ),
+        pytest.param(
+            '{"name": "widget", "note": null, "tag": null}',
+            [_NullableItem],
+            [{"name": "widget", "tag": None}],
+            id="null drops non nullable optional key and keeps nullable one",
+        ),
+        pytest.param(
+            '[{"name": "widget", "note": null}]',
+            [cast(Type, list[_NullableItem])],
+            [[{"name": "widget"}]],
+            id="null canonicalized inside list",
+        ),
+        pytest.param(
+            '{"name": "widget", "note": null}',
+            [cast(Type, Optional[_NullableItem])],
+            [{"name": "widget"}],
+            id="null canonicalized inside optional",
+        ),
+        pytest.param(
+            '{"first": {"name": "widget", "note": null}}',
+            [cast(Type, dict[str, _NullableItem])],
+            [{"first": {"name": "widget"}}],
+            id="null canonicalized inside dict values",
+        ),
+        pytest.param(
+            '[{"name": "widget", "note": null}]',
+            [cast(Type, tuple[_NullableItem, ...])],
+            [({"name": "widget"},)],
+            id="null canonicalized inside tuple",
+        ),
     ],
 )
 def test_data_converter_from_data(
@@ -223,6 +269,26 @@ def test_data_converter_from_data(
     converter = DefaultDataConverter()
     actual = converter.from_data(Payload(data=json.encode()), types)
     assert expected == actual
+
+
+@pytest.mark.parametrize(
+    "json,type_hint",
+    [
+        pytest.param('{"note": null}', _NullableItem, id="missing required key"),
+        pytest.param(
+            '{"name": null}', _NullableItem, id="null for non nullable required key"
+        ),
+        pytest.param(
+            '[{"name": "widget", "note": 1}]',
+            cast(Type, list[_NullableItem]),
+            id="wrong field type inside list",
+        ),
+    ],
+)
+def test_from_data_invalid_typed_dict_raises(json: str, type_hint: Type) -> None:
+    converter = DefaultDataConverter()
+    with pytest.raises((TypeError, MsgspecError)):
+        converter.from_data(Payload(data=json.encode()), [type_hint])
 
 
 def test_from_data_union_no_matching_variant_raises() -> None:

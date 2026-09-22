@@ -26,6 +26,32 @@ _SPACE = " ".encode()
 EncHook = Callable[[Any], Any]
 DecHook = Callable[[Any, Any], Any]
 
+_UNWRAPPED_ORIGINS = (Annotated, Required, NotRequired)
+
+
+def _unwrap(type_hint: Any) -> Any:
+    while get_origin(type_hint) in _UNWRAPPED_ORIGINS:
+        type_hint = get_args(type_hint)[0]
+    return type_hint
+
+
+def _allows_none(type_hint: Any) -> bool:
+    hint = _unwrap(type_hint)
+    if hint is None or hint is type(None) or hint is Any:
+        return True
+    return get_origin(hint) in (Union, UnionType) and any(
+        arg is type(None) for arg in get_args(hint)
+    )
+
+
+def _contains_typed_dict(type_hint: Any, seen: frozenset[int] = frozenset()) -> bool:
+    if is_typeddict(type_hint):
+        return True
+    if id(type_hint) in seen:
+        return False
+    seen = seen | {id(type_hint)}
+    return any(_contains_typed_dict(arg, seen) for arg in get_args(type_hint))
+
 
 class DataConverter(Protocol):
     @abstractmethod
@@ -106,40 +132,47 @@ class DefaultDataConverter(DataConverter):
         return results
 
     def _convert_value(self, value: Any, type_hint: Any) -> Any:
-        if is_typeddict(type_hint) and isinstance(value, dict):
-            return self._convert_typed_dict(value, type_hint)
+        # TypedDict hints are walked here rather than by msgspec so that null
+        # optional keys get the same treatment wherever the TypedDict appears.
+        if _contains_typed_dict(type_hint):
+            return self._convert_structured(value, type_hint)
         try:
             return convert(value, type_hint, dec_hook=self._dec_hook)
         except TypeError:
             # msgspec cannot schema-compile unions of multiple dict-like types
-            # (dataclass, TypedDict, Struct, dict). Try each variant instead.
-            origin = get_origin(type_hint)
-            args = get_args(type_hint)
-            if origin is Annotated:
-                return self._convert_value(value, args[0])
-            if origin in (Required, NotRequired):
-                return self._convert_value(value, args[0])
-            if origin is Union or origin is UnionType:
-                return self._convert_union(value, args)
-            if origin is list and isinstance(value, list):
-                item_hint = args[0] if args else Any
-                return [self._convert_value(item, item_hint) for item in value]
-            if origin in (set, frozenset) and isinstance(value, (list, tuple)):
-                item_hint = args[0] if args else Any
-                return origin(self._convert_value(item, item_hint) for item in value)
-            if origin is tuple and isinstance(value, (list, tuple)):
-                return self._convert_tuple(value, args)
-            if origin is dict and isinstance(value, dict):
-                key_hint, value_hint = args if len(args) == 2 else (Any, Any)
-                return {
-                    self._convert_value(key, key_hint): self._convert_value(
-                        item, value_hint
-                    )
-                    for key, item in value.items()
-                }
-            if dataclasses.is_dataclass(type_hint) and isinstance(value, dict):
-                return self._convert_dataclass(value, type_hint)
-            raise
+            # (dataclass, TypedDict, Struct, dict). Walk the hint instead.
+            return self._convert_structured(value, type_hint)
+
+    def _convert_structured(self, value: Any, type_hint: Any) -> Any:
+        if is_typeddict(type_hint) and isinstance(value, dict):
+            return self._convert_typed_dict(value, type_hint)
+
+        origin = get_origin(type_hint)
+        args = get_args(type_hint)
+        if origin is Annotated or origin in (Required, NotRequired):
+            return self._convert_value(value, args[0])
+        if origin is Union or origin is UnionType:
+            return self._convert_union(value, args)
+        if origin is list and isinstance(value, list):
+            item_hint = args[0] if args else Any
+            return [self._convert_value(item, item_hint) for item in value]
+        if origin in (set, frozenset) and isinstance(value, (list, tuple)):
+            item_hint = args[0] if args else Any
+            return origin(self._convert_value(item, item_hint) for item in value)
+        if origin is tuple and isinstance(value, (list, tuple)):
+            return self._convert_tuple(value, args)
+        if origin is dict and isinstance(value, dict):
+            key_hint, value_hint = args if len(args) == 2 else (Any, Any)
+            return {
+                self._convert_value(key, key_hint): self._convert_value(
+                    item, value_hint
+                )
+                for key, item in value.items()
+            }
+        if dataclasses.is_dataclass(type_hint) and isinstance(value, dict):
+            return self._convert_dataclass(value, type_hint)
+        # The hint has no dict-like shape to walk, so let msgspec report it.
+        return convert(value, type_hint, dec_hook=self._dec_hook)
 
     @staticmethod
     def _covers(variant: Any, keys: Any) -> bool:
@@ -200,7 +233,11 @@ class DefaultDataConverter(DataConverter):
             field_hint = field_hints.get(key)
             if field_hint is None:
                 continue
-            if item is None and key not in required_keys:
+            if (
+                item is None
+                and key not in required_keys
+                and not _allows_none(field_hint)
+            ):
                 continue
             result[key] = self._convert_value(item, field_hint)
         return result
@@ -210,15 +247,12 @@ class DefaultDataConverter(DataConverter):
         type_hint: Any, field_hints: dict[str, Any]
     ) -> set[str]:
         required_keys = set(type_hint.__required_keys__)
-        total = getattr(type_hint, "__total__", True)
         for key, field_hint in field_hints.items():
             origin = get_origin(field_hint)
             if origin is Required:
                 required_keys.add(key)
             elif origin is NotRequired:
                 required_keys.discard(key)
-            elif total:
-                required_keys.add(key)
         return required_keys
 
     def _convert_dataclass(self, value: dict[Any, Any], type_hint: Any) -> Any:

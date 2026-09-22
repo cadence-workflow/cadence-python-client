@@ -397,14 +397,16 @@ class TestDeleteSchedule:
 class TestUpdateSchedule:
     @pytest.mark.asyncio
     async def test_update_spec(self, client, servicer):
-        """update_schedule describes first then sends the full modified state."""
+        """A changed spec is sent; domain/schedule_id are always populated."""
         new_spec = schedule_pb2.ScheduleSpec(cron_expression="0 12 * * *")
         await client.update_schedule("sched-upd", lambda d: d.spec.CopyFrom(new_spec))
         assert servicer.last_update.spec.cron_expression == "0 12 * * *"
+        assert servicer.last_update.domain == "test-domain"
+        assert servicer.last_update.schedule_id == "sched-upd"
 
     @pytest.mark.asyncio
-    async def test_update_preserves_unmodified_fields(self, client, servicer):
-        """Fields not touched by the updater callback are read from describe and preserved."""
+    async def test_update_omits_unmodified_fields(self, client, servicer):
+        """Fields the updater doesn't change are omitted so the server preserves them."""
         original_action = schedule_pb2.ScheduleAction(
             start_workflow=schedule_pb2.ScheduleAction.StartWorkflowAction(
                 workflow_type=WorkflowType(name="my-workflow"),
@@ -419,20 +421,72 @@ class TestUpdateSchedule:
         )
         new_spec = schedule_pb2.ScheduleSpec(cron_expression="0 18 * * *")
         await client.update_schedule("sched-upd", lambda d: d.spec.CopyFrom(new_spec))
+        # Only the changed field is sent; unchanged action/policies are omitted.
         assert servicer.last_update.spec.cron_expression == "0 18 * * *"
-        assert servicer.last_update.action == original_action
-        assert (
-            servicer.last_update.policies.overlap_policy
-            == schedule_pb2.SCHEDULE_OVERLAP_POLICY_SKIP_NEW
-        )
+        assert not servicer.last_update.HasField("action")
+        assert not servicer.last_update.HasField("policies")
 
     @pytest.mark.asyncio
-    async def test_update_sends_full_state(self, client, servicer):
-        """UpdateScheduleRequest always contains spec, action, and policies from describe."""
+    async def test_update_noop_sends_no_rpc(self, client, servicer):
+        """An updater that changes nothing issues no UpdateSchedule RPC."""
         await client.update_schedule("sched-upd", lambda d: None)
-        assert servicer.last_update.HasField("spec")
-        assert servicer.last_update.domain == "test-domain"
-        assert servicer.last_update.schedule_id == "sched-upd"
+        assert servicer.last_update is None
+
+    @pytest.mark.asyncio
+    async def test_update_only_changed_field_sent(self, client, servicer):
+        """Changing policies sends policies but not the untouched spec."""
+        servicer.describe_response = DescribeScheduleResponse(
+            spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
+            policies=schedule_pb2.SchedulePolicies(
+                overlap_policy=schedule_pb2.SCHEDULE_OVERLAP_POLICY_SKIP_NEW,
+            ),
+        )
+
+        def _mutate(d):
+            d.policies.overlap_policy = schedule_pb2.SCHEDULE_OVERLAP_POLICY_BUFFER
+
+        await client.update_schedule("sched-upd", _mutate)
+        assert servicer.last_update.HasField("policies")
+        assert (
+            servicer.last_update.policies.overlap_policy
+            == schedule_pb2.SCHEDULE_OVERLAP_POLICY_BUFFER
+        )
+        assert not servicer.last_update.HasField("spec")
+
+    @pytest.mark.asyncio
+    async def test_update_empty_cron_raises(self, client, servicer):
+        """Changing spec to an empty cron expression is rejected."""
+
+        def _mutate(d):
+            d.spec.CopyFrom(schedule_pb2.ScheduleSpec(cron_expression=""))
+            d.spec.jitter.seconds = 5  # force a diff without a cron
+
+        with pytest.raises(ValueError, match="cron_expression"):
+            await client.update_schedule("sched-upd", _mutate)
+        assert servicer.last_update is None
+
+    @pytest.mark.asyncio
+    async def test_update_action_validated_and_defaulted(self, client, servicer):
+        """A changed action is validated and its decision timeout defaulted."""
+
+        def _mutate(d):
+            d.action.CopyFrom(_start_workflow_action(decision_timeout_seconds=None))
+
+        await client.update_schedule("sched-upd", _mutate)
+        sw = servicer.last_update.action.start_workflow
+        assert sw.workflow_type.name == "MyWorkflow"
+        assert sw.task_start_to_close_timeout.seconds == 10
+
+    @pytest.mark.asyncio
+    async def test_update_invalid_action_raises(self, client, servicer):
+        """A changed action missing a required field is rejected before the RPC."""
+
+        def _mutate(d):
+            d.action.CopyFrom(_start_workflow_action(task_list=None))
+
+        with pytest.raises(ValueError, match="task_list"):
+            await client.update_schedule("sched-upd", _mutate)
+        assert servicer.last_update is None
 
 
 # ---------------------------------------------------------------------------

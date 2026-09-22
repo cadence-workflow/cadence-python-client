@@ -26,6 +26,35 @@ class _ItemDict(TypedDict):
     count: int
 
 
+class _BaseItem(TypedDict):
+    id: str
+
+
+class _DetailedItem(TypedDict):
+    id: str
+    name: str
+
+
+class _OptionalItem(TypedDict, total=False):
+    note: str
+
+
+class _NestedItem(TypedDict):
+    item: _RequiredDataClass | _ItemDict
+
+
+@dataclasses.dataclass(frozen=True)
+class _NamedItem:
+    name: str
+    count: int
+
+
+@dataclasses.dataclass(frozen=True)
+class _FooItem:
+    foo: str
+    bar: int
+
+
 @pytest.mark.parametrize(
     "json,types,expected",
     [
@@ -122,6 +151,69 @@ class _ItemDict(TypedDict):
                 ]
             ],
             id="union nested in list",
+        ),
+        pytest.param(
+            '{"id": "1", "name": "detailed"}',
+            [cast(Type, _BaseItem | _DetailedItem)],
+            [{"id": "1", "name": "detailed"}],
+            id="union prefers variant covering all keys",
+        ),
+        pytest.param(
+            '{"name": "widget", "count": 3}',
+            [cast(Type, _OptionalItem | _ItemDict)],
+            [{"name": "widget", "count": 3}],
+            id="union does not select unrelated all-optional variant",
+        ),
+        pytest.param(
+            '{"name": "widget", "count": 3}',
+            [cast(Type, _TestDataClass | _ItemDict)],
+            [{"name": "widget", "count": 3}],
+            id="union does not select unrelated defaulted dataclass",
+        ),
+        pytest.param(
+            '{"first": {"foo": "hello", "bar": 42}, '
+            '"second": {"name": "widget", "count": 3}}',
+            [cast(Type, dict[str, _RequiredDataClass | _ItemDict])],
+            [
+                {
+                    "first": _RequiredDataClass(foo="hello", bar=42),
+                    "second": {"name": "widget", "count": 3},
+                }
+            ],
+            id="union nested in dict values",
+        ),
+        pytest.param(
+            '[{"foo": "hello", "bar": 42}, {"name": "widget", "count": 3}]',
+            [
+                cast(
+                    Type,
+                    tuple[_RequiredDataClass | _ItemDict, ...],
+                )
+            ],
+            [
+                (
+                    _RequiredDataClass(foo="hello", bar=42),
+                    {"name": "widget", "count": 3},
+                )
+            ],
+            id="union nested in tuple",
+        ),
+        pytest.param(
+            '[{"foo": "hello", "bar": 42}, {"name": "widget", "count": 3}]',
+            [cast(Type, set[_FooItem | _NamedItem])],
+            [
+                {
+                    _FooItem(foo="hello", bar=42),
+                    _NamedItem(name="widget", count=3),
+                }
+            ],
+            id="union nested in set",
+        ),
+        pytest.param(
+            '{"item": {"name": "widget", "count": 3}}',
+            [_NestedItem],
+            [{"item": {"name": "widget", "count": 3}}],
+            id="union nested in typed dict field",
         ),
     ],
 )

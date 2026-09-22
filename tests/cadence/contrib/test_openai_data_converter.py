@@ -8,9 +8,19 @@ except ModuleNotFoundError:
     pytest.skip("OpenAI dependencies are not installed", allow_module_level=True)
 
 from cadence.contrib.pydantic import PydanticDataConverter
+from cadence.data_converter import DefaultDataConverter
 
 
 _MODEL_INPUT_TYPE = cast(Type, str | list[TResponseInputItem])
+
+
+@pytest.fixture(
+    params=[DefaultDataConverter, PydanticDataConverter],
+    ids=["default", "pydantic"],
+)
+def converter(request: pytest.FixtureRequest) -> DefaultDataConverter:
+    converter_type = cast(type[DefaultDataConverter], request.param)
+    return converter_type()
 
 
 @pytest.mark.parametrize(
@@ -27,16 +37,17 @@ _MODEL_INPUT_TYPE = cast(Type, str | list[TResponseInputItem])
         ],
     ],
 )
-def test_roundtrip_openai_model_input(value: object) -> None:
-    converter = PydanticDataConverter()
-
+def test_roundtrip_openai_model_input(
+    converter: DefaultDataConverter, value: object
+) -> None:
     payload = converter.to_data([value])
 
     assert converter.from_data(payload, [_MODEL_INPUT_TYPE]) == [value]
 
 
-def test_roundtrip_openai_second_turn_canonicalizes_optional_nulls() -> None:
-    converter = PydanticDataConverter()
+def test_roundtrip_openai_second_turn_canonicalizes_optional_nulls(
+    converter: DefaultDataConverter,
+) -> None:
     value = [
         {"role": "user", "content": "Hello"},
         {
@@ -98,9 +109,10 @@ def test_roundtrip_openai_second_turn_canonicalizes_optional_nulls() -> None:
         ],
     ],
 )
-def test_openai_model_input_rejects_malformed_value(value: object) -> None:
-    converter = PydanticDataConverter()
+def test_openai_model_input_rejects_malformed_value(
+    converter: DefaultDataConverter, value: object
+) -> None:
     payload = converter.to_data([value])
 
-    with pytest.raises(ValueError):
+    with pytest.raises((TypeError, ValueError)):
         converter.from_data(payload, [_MODEL_INPUT_TYPE])

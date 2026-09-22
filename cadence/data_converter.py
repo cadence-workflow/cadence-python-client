@@ -1,9 +1,10 @@
 from abc import abstractmethod
-from typing import Protocol, List, Type, Any, Sequence, Callable
+from types import UnionType
+from typing import Protocol, List, Type, Any, Sequence, Callable, Union, get_args, get_origin
 
 from cadence.api.v1.common_pb2 import Payload
 from json import JSONDecoder
-from msgspec import json, convert
+from msgspec import ValidationError, convert, json
 
 _SPACE = " ".encode()
 EncHook = Callable[[Any], Any]
@@ -82,11 +83,39 @@ class DefaultDataConverter(DataConverter):
             if i < len(values):
                 value = values[i]
                 if type_hint and type_hint is not Any:
-                    value = convert(value, type_hint, dec_hook=self._dec_hook)
+                    value = self._convert_value(value, type_hint)
             else:
                 value = DefaultDataConverter._get_default(type_hint)
             results.append(value)
         return results
+
+    def _convert_value(self, value: Any, type_hint: Any) -> Any:
+        try:
+            return convert(value, type_hint, dec_hook=self._dec_hook)
+        except TypeError:
+            # msgspec cannot schema-compile unions of multiple dict-like types
+            # (dataclass, TypedDict, Struct, dict). Try each variant instead.
+            origin = get_origin(type_hint)
+            if origin is Union or origin is UnionType:
+                return self._convert_union(value, get_args(type_hint))
+            raise
+
+    def _convert_union(self, value: Any, variants: tuple[Any, ...]) -> Any:
+        if value is None and any(variant is type(None) for variant in variants):
+            return None
+
+        errors: list[Exception] = []
+        for variant in variants:
+            if variant is type(None):
+                continue
+            try:
+                return self._convert_value(value, variant)
+            except (TypeError, ValidationError) as exc:
+                errors.append(exc)
+
+        raise TypeError(
+            f"Unable to convert value into any union variant {variants}"
+        ) from (errors[-1] if errors else None)
 
     @staticmethod
     def _get_default(type_hint: Type | None) -> Any:

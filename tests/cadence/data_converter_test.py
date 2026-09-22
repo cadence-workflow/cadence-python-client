@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, Optional, Type, TypedDict, Union
+from typing import Any, Optional, Type, TypedDict, Union, cast
 
 import pytest
 from msgspec import json
@@ -108,9 +108,20 @@ class _ItemDict(TypedDict):
         ),
         pytest.param(
             "null",
-            [_RequiredDataClass | _ItemDict | None],
+            [cast(Type, _RequiredDataClass | _ItemDict | None)],
             [None],
             id="union optional none",
+        ),
+        pytest.param(
+            '[{"foo": "hello", "bar": 42}, {"name": "widget", "count": 3}]',
+            [cast(Type, list[_RequiredDataClass | _ItemDict])],
+            [
+                [
+                    _RequiredDataClass(foo="hello", bar=42),
+                    {"name": "widget", "count": 3},
+                ]
+            ],
+            id="union nested in list",
         ),
     ],
 )
@@ -124,10 +135,12 @@ def test_data_converter_from_data(
 
 def test_from_data_union_no_matching_variant_raises() -> None:
     converter = DefaultDataConverter()
-    with pytest.raises(TypeError, match="Unable to convert value into any union variant"):
+    with pytest.raises(
+        TypeError, match="Unable to convert value into any union variant"
+    ):
         converter.from_data(
             Payload(data=b'{"other": true}'),
-            [_RequiredDataClass | _ItemDict],
+            [cast(Type, _RequiredDataClass | _ItemDict)],
         )
 
 

@@ -1,10 +1,20 @@
 from abc import abstractmethod
 from types import UnionType
-from typing import Protocol, List, Type, Any, Sequence, Callable, Union, get_args, get_origin
+from typing import (
+    Any,
+    Callable,
+    List,
+    Protocol,
+    Sequence,
+    Type,
+    Union,
+    get_args,
+    get_origin,
+)
 
 from cadence.api.v1.common_pb2 import Payload
 from json import JSONDecoder
-from msgspec import ValidationError, convert, json
+from msgspec import convert, json
 
 _SPACE = " ".encode()
 EncHook = Callable[[Any], Any]
@@ -98,6 +108,10 @@ class DefaultDataConverter(DataConverter):
             origin = get_origin(type_hint)
             if origin is Union or origin is UnionType:
                 return self._convert_union(value, get_args(type_hint))
+            if origin is list and isinstance(value, list):
+                variants = get_args(type_hint)
+                item_hint = variants[0] if variants else Any
+                return [self._convert_value(item, item_hint) for item in value]
             raise
 
     def _convert_union(self, value: Any, variants: tuple[Any, ...]) -> Any:
@@ -110,7 +124,9 @@ class DefaultDataConverter(DataConverter):
                 continue
             try:
                 return self._convert_value(value, variant)
-            except (TypeError, ValidationError) as exc:
+            except Exception as exc:
+                # A custom dec_hook may reject a variant with an exception
+                # other than TypeError. Keep trying until a variant succeeds.
                 errors.append(exc)
 
         raise TypeError(

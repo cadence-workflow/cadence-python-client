@@ -7,8 +7,11 @@ from datetime import datetime, timezone
 import grpc.aio
 import pytest
 
+from google.protobuf.duration_pb2 import Duration
+
 from cadence.api.v1 import schedule_pb2
 from cadence.api.v1.common_pb2 import WorkflowType
+from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.api.v1.service_schedule_pb2 import (
     BackfillScheduleRequest,
     BackfillScheduleResponse,
@@ -115,33 +118,93 @@ async def client(schedule_server):
 # ---------------------------------------------------------------------------
 
 
+def _spec(cron: str = "0 9 * * *") -> schedule_pb2.ScheduleSpec:
+    return schedule_pb2.ScheduleSpec(cron_expression=cron)
+
+
+def _start_workflow_action(
+    *,
+    workflow_type: str | None = "MyWorkflow",
+    task_list: str | None = "my-task-list",
+    execution_timeout_seconds: int | None = 3600,
+    decision_timeout_seconds: int | None = 30,
+) -> schedule_pb2.ScheduleAction:
+    """Build a ScheduleAction, omitting any field whose argument is None."""
+    start = schedule_pb2.ScheduleAction.StartWorkflowAction()
+    if workflow_type is not None:
+        start.workflow_type.CopyFrom(WorkflowType(name=workflow_type))
+    if task_list is not None:
+        start.task_list.CopyFrom(TaskList(name=task_list))
+    if execution_timeout_seconds is not None:
+        start.execution_start_to_close_timeout.CopyFrom(
+            Duration(seconds=execution_timeout_seconds)
+        )
+    if decision_timeout_seconds is not None:
+        start.task_start_to_close_timeout.CopyFrom(
+            Duration(seconds=decision_timeout_seconds)
+        )
+    return schedule_pb2.ScheduleAction(start_workflow=start)
+
+
 class TestCreateSchedule:
     @pytest.mark.asyncio
     async def test_returns_response(self, client, servicer):
         resp = await client.create_schedule(
-            "my-schedule",
-            spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
+            "my-schedule", spec=_spec(), action=_start_workflow_action()
         )
         assert isinstance(resp, CreateScheduleResponse)
         assert resp.schedule_id == "my-schedule"
 
     @pytest.mark.asyncio
     async def test_request_fields(self, client, servicer):
-        spec = schedule_pb2.ScheduleSpec(cron_expression="0 6 * * 1")
-        await client.create_schedule("sched-1", spec=spec)
+        await client.create_schedule(
+            "sched-1", spec=_spec("0 6 * * 1"), action=_start_workflow_action()
+        )
         req = servicer.last_create
         assert req.domain == "test-domain"
         assert req.schedule_id == "sched-1"
         assert req.spec.cron_expression == "0 6 * * 1"
+        assert req.action.start_workflow.workflow_type.name == "MyWorkflow"
 
     @pytest.mark.asyncio
-    async def test_none_fields_not_sent(self, client, servicer):
-        await client.create_schedule("sched-2")
+    async def test_optional_fields_not_sent(self, client, servicer):
+        await client.create_schedule(
+            "sched-2", spec=_spec(), action=_start_workflow_action()
+        )
         req = servicer.last_create
-        assert not req.HasField("spec")
-        assert not req.HasField("action")
+        # Optional fields left unset are not sent.
         assert not req.HasField("policies")
+        assert not req.HasField("memo")
+        assert not req.HasField("search_attributes")
         assert not req.HasField("state")
+
+    @pytest.mark.asyncio
+    async def test_empty_schedule_id_raises(self, client, servicer):
+        with pytest.raises(ValueError, match="schedule_id"):
+            await client.create_schedule(
+                "", spec=_spec(), action=_start_workflow_action()
+            )
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_missing_spec_raises(self, client, servicer):
+        with pytest.raises(ValueError, match="cron_expression"):
+            await client.create_schedule("sched-2", action=_start_workflow_action())
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_empty_cron_raises(self, client, servicer):
+        with pytest.raises(ValueError, match="cron_expression"):
+            await client.create_schedule(
+                "sched-2", spec=_spec(cron=""), action=_start_workflow_action()
+            )
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_missing_action_raises(self, client, servicer):
+        with pytest.raises(ValueError, match="action is required"):
+            await client.create_schedule("sched-2", spec=_spec())
+        assert servicer.last_create is None
 
     @pytest.mark.asyncio
     async def test_create_with_initial_paused_state(self, client, servicer):
@@ -151,7 +214,9 @@ class TestCreateSchedule:
                 reason="deploying", paused_by="ci"
             ),
         )
-        await client.create_schedule("sched-3", state=state)
+        await client.create_schedule(
+            "sched-3", spec=_spec(), action=_start_workflow_action(), state=state
+        )
         req = servicer.last_create
         assert req.HasField("state")
         assert req.state.paused is True
@@ -161,11 +226,86 @@ class TestCreateSchedule:
     @pytest.mark.asyncio
     async def test_create_paused_no_pause_info(self, client, servicer):
         state = schedule_pb2.ScheduleState(paused=True)
-        await client.create_schedule("sched-4", state=state)
+        await client.create_schedule(
+            "sched-4", spec=_spec(), action=_start_workflow_action(), state=state
+        )
         req = servicer.last_create
         assert req.HasField("state")
         assert req.state.paused is True
         assert not req.state.HasField("pause_info")
+
+
+class TestCreateScheduleActionValidation:
+    @pytest.mark.asyncio
+    async def test_valid_action_passed_through(self, client, servicer):
+        action = _start_workflow_action(decision_timeout_seconds=45)
+        await client.create_schedule("sched-a", spec=_spec(), action=action)
+        req = servicer.last_create
+        assert req.HasField("action")
+        sw = req.action.start_workflow
+        assert sw.workflow_type.name == "MyWorkflow"
+        assert sw.task_list.name == "my-task-list"
+        assert sw.execution_start_to_close_timeout.seconds == 3600
+        assert sw.task_start_to_close_timeout.seconds == 45
+
+    @pytest.mark.asyncio
+    async def test_decision_timeout_defaulted_when_unset(self, client, servicer):
+        action = _start_workflow_action(decision_timeout_seconds=None)
+        await client.create_schedule("sched-b", spec=_spec(), action=action)
+        sw = servicer.last_create.action.start_workflow
+        assert sw.task_start_to_close_timeout.seconds == 10
+        assert sw.task_start_to_close_timeout.nanos == 0
+
+    @pytest.mark.asyncio
+    async def test_caller_action_not_mutated_by_default(self, client, servicer):
+        action = _start_workflow_action(decision_timeout_seconds=None)
+        await client.create_schedule("sched-c", spec=_spec(), action=action)
+        # The default is applied to the request copy, not the caller's object.
+        assert not action.start_workflow.HasField("task_start_to_close_timeout")
+
+    @pytest.mark.asyncio
+    async def test_missing_workflow_type_raises(self, client, servicer):
+        action = _start_workflow_action(workflow_type=None)
+        with pytest.raises(ValueError, match="workflow_type"):
+            await client.create_schedule("sched-d", spec=_spec(), action=action)
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_missing_task_list_raises(self, client, servicer):
+        action = _start_workflow_action(task_list=None)
+        with pytest.raises(ValueError, match="task_list"):
+            await client.create_schedule("sched-e", spec=_spec(), action=action)
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_missing_execution_timeout_raises(self, client, servicer):
+        action = _start_workflow_action(execution_timeout_seconds=None)
+        with pytest.raises(ValueError, match="execution_start_to_close_timeout"):
+            await client.create_schedule("sched-f", spec=_spec(), action=action)
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_nonpositive_execution_timeout_raises(self, client, servicer):
+        action = _start_workflow_action(execution_timeout_seconds=0)
+        with pytest.raises(ValueError, match="execution_start_to_close_timeout"):
+            await client.create_schedule("sched-g", spec=_spec(), action=action)
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_negative_decision_timeout_raises(self, client, servicer):
+        action = _start_workflow_action()
+        action.start_workflow.task_start_to_close_timeout.CopyFrom(Duration(seconds=-1))
+        with pytest.raises(ValueError, match="must not be negative"):
+            await client.create_schedule("sched-h", spec=_spec(), action=action)
+        assert servicer.last_create is None
+
+    @pytest.mark.asyncio
+    async def test_action_without_start_workflow_raises(self, client, servicer):
+        with pytest.raises(ValueError, match="start_workflow"):
+            await client.create_schedule(
+                "sched-i", spec=_spec(), action=schedule_pb2.ScheduleAction()
+            )
+        assert servicer.last_create is None
 
 
 # ---------------------------------------------------------------------------

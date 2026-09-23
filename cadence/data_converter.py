@@ -1,5 +1,6 @@
 import dataclasses
 from abc import abstractmethod
+from functools import lru_cache
 from types import UnionType
 from typing import (
     Annotated,
@@ -19,7 +20,7 @@ from typing import (
 
 from cadence.api.v1.common_pb2 import Payload
 from json import JSONDecoder
-from msgspec import convert, json
+from msgspec import ValidationError, convert, json
 from typing_extensions import is_typeddict
 
 _SPACE = " ".encode()
@@ -51,6 +52,26 @@ def _contains_typed_dict(type_hint: Any, seen: frozenset[int] = frozenset()) -> 
         return False
     seen = seen | {id(type_hint)}
     return any(_contains_typed_dict(arg, seen) for arg in get_args(type_hint))
+
+
+@lru_cache(maxsize=1024)
+def _typed_dict_info(type_hint: Any) -> tuple[dict[str, Any], set[str]]:
+    field_hints = get_type_hints(type_hint, include_extras=True)
+    required_keys = set(type_hint.__required_keys__)
+    for key, field_hint in field_hints.items():
+        origin = get_origin(field_hint)
+        if origin is Required:
+            required_keys.add(key)
+        elif origin is NotRequired:
+            required_keys.discard(key)
+    return field_hints, required_keys
+
+
+@lru_cache(maxsize=1024)
+def _dataclass_info(type_hint: Any) -> tuple[dict[str, Any], frozenset[str]]:
+    field_hints = get_type_hints(type_hint, include_extras=True)
+    field_names = frozenset(field.name for field in dataclasses.fields(type_hint))
+    return field_hints, field_names
 
 
 class DataConverter(Protocol):
@@ -132,16 +153,20 @@ class DefaultDataConverter(DataConverter):
         return results
 
     def _convert_value(self, value: Any, type_hint: Any) -> Any:
-        # TypedDict hints are walked here rather than by msgspec so that null
-        # optional keys get the same treatment wherever the TypedDict appears.
-        if _contains_typed_dict(type_hint):
-            return self._convert_structured(value, type_hint)
         try:
             return convert(value, type_hint, dec_hook=self._dec_hook)
         except TypeError:
             # msgspec cannot schema-compile unions of multiple dict-like types
             # (dataclass, TypedDict, Struct, dict). Walk the hint instead.
             return self._convert_structured(value, type_hint)
+        except ValidationError:
+            # msgspec rejects explicit nulls on non-nullable optional
+            # TypedDict keys. Only TypedDict hints get a second pass, so
+            # those nulls can be canonicalized; every other type keeps the
+            # original strict failure.
+            if _contains_typed_dict(type_hint):
+                return self._convert_structured(value, type_hint)
+            raise
 
     def _convert_structured(self, value: Any, type_hint: Any) -> Any:
         if is_typeddict(type_hint) and isinstance(value, dict):
@@ -169,7 +194,11 @@ class DefaultDataConverter(DataConverter):
                 )
                 for key, item in value.items()
             }
-        if dataclasses.is_dataclass(type_hint) and isinstance(value, dict):
+        if (
+            isinstance(type_hint, type)
+            and dataclasses.is_dataclass(type_hint)
+            and isinstance(value, dict)
+        ):
             return self._convert_dataclass(value, type_hint)
         # The hint has no dict-like shape to walk, so let msgspec report it.
         return convert(value, type_hint, dec_hook=self._dec_hook)
@@ -179,9 +208,9 @@ class DefaultDataConverter(DataConverter):
         while get_origin(variant) is Annotated:
             variant = get_args(variant)[0]
         if is_typeddict(variant):
-            return set(keys) <= set(get_type_hints(variant))
-        if dataclasses.is_dataclass(variant):
-            return set(keys) <= {field.name for field in dataclasses.fields(variant)}
+            return set(keys) <= _typed_dict_info(variant)[0].keys()
+        if isinstance(variant, type) and dataclasses.is_dataclass(variant):
+            return set(keys) <= _dataclass_info(variant)[1]
         return True
 
     def _convert_union(self, value: Any, variants: tuple[Any, ...]) -> Any:
@@ -194,6 +223,11 @@ class DefaultDataConverter(DataConverter):
             candidates.sort(key=lambda variant: not self._covers(variant, value.keys()))
         for variant in candidates:
             try:
+                # A TypedDict variant is walked directly so canonicalization
+                # runs in one pass instead of a doomed msgspec attempt plus
+                # the fallback walk.
+                if is_typeddict(variant) and isinstance(value, dict):
+                    return self._convert_typed_dict(value, variant)
                 return self._convert_value(value, variant)
             except Exception as exc:
                 # A custom dec_hook may reject a variant with an exception
@@ -220,8 +254,7 @@ class DefaultDataConverter(DataConverter):
     def _convert_typed_dict(
         self, value: dict[Any, Any], type_hint: Any
     ) -> dict[Any, Any]:
-        field_hints = get_type_hints(type_hint, include_extras=True)
-        required_keys = self._typed_dict_required_keys(type_hint, field_hints)
+        field_hints, required_keys = _typed_dict_info(type_hint)
         missing_keys = required_keys - value.keys()
         if missing_keys:
             raise TypeError(
@@ -242,22 +275,8 @@ class DefaultDataConverter(DataConverter):
             result[key] = self._convert_value(item, field_hint)
         return result
 
-    @staticmethod
-    def _typed_dict_required_keys(
-        type_hint: Any, field_hints: dict[str, Any]
-    ) -> set[str]:
-        required_keys = set(type_hint.__required_keys__)
-        for key, field_hint in field_hints.items():
-            origin = get_origin(field_hint)
-            if origin is Required:
-                required_keys.add(key)
-            elif origin is NotRequired:
-                required_keys.discard(key)
-        return required_keys
-
     def _convert_dataclass(self, value: dict[Any, Any], type_hint: Any) -> Any:
-        field_hints = get_type_hints(type_hint, include_extras=True)
-        field_names = {field.name for field in dataclasses.fields(type_hint)}
+        field_hints, field_names = _dataclass_info(type_hint)
         converted = {
             key: self._convert_value(item, field_hints[key])
             for key, item in value.items()

@@ -302,6 +302,34 @@ def test_from_data_union_no_matching_variant_raises() -> None:
         )
 
 
+class _HookedModel:
+    pass
+
+
+class _DictWithHookedField(TypedDict):
+    name: str
+    model: _HookedModel
+
+
+def test_from_data_dec_hook_failure_is_not_retried() -> None:
+    calls = 0
+
+    def dec_hook(typ: Any, obj: Any) -> Any:
+        nonlocal calls
+        if typ is _HookedModel:
+            calls += 1
+            raise ValueError("rejected")
+        raise TypeError(f"unsupported {typ}")
+
+    converter = DefaultDataConverter(dec_hook=dec_hook)
+    with pytest.raises(MsgspecError, match="rejected"):
+        converter.from_data(
+            Payload(data=b'{"name": "widget", "model": {}}'),
+            [cast(Type, _DictWithHookedField)],
+        )
+    assert calls == 1
+
+
 @pytest.mark.parametrize(
     "values,expected",
     [

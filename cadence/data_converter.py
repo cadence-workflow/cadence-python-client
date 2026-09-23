@@ -54,6 +54,16 @@ def _contains_typed_dict(type_hint: Any, seen: frozenset[int] = frozenset()) -> 
     return any(_contains_typed_dict(arg, seen) for arg in get_args(type_hint))
 
 
+def _contains_none(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, dict):
+        return any(_contains_none(item) for item in value.values())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_contains_none(item) for item in value)
+    return False
+
+
 @lru_cache(maxsize=1024)
 def _typed_dict_info(type_hint: Any) -> tuple[dict[str, Any], set[str]]:
     field_hints = get_type_hints(type_hint, include_extras=True)
@@ -160,11 +170,12 @@ class DefaultDataConverter(DataConverter):
             # (dataclass, TypedDict, Struct, dict). Walk the hint instead.
             return self._convert_structured(value, type_hint)
         except ValidationError:
-            # msgspec rejects explicit nulls on non-nullable optional
-            # TypedDict keys. Only TypedDict hints get a second pass, so
-            # those nulls can be canonicalized; every other type keeps the
-            # original strict failure.
-            if _contains_typed_dict(type_hint):
+            # The only failure the walk can repair is an explicit null on a
+            # non-nullable optional TypedDict key. Retry only when a null is
+            # actually present in the payload; anything else is a real
+            # validation failure (including dec_hook errors, which msgspec
+            # wraps as ValidationError) that must not run twice.
+            if _contains_typed_dict(type_hint) and _contains_none(value):
                 return self._convert_structured(value, type_hint)
             raise
 

@@ -2,7 +2,12 @@ import dataclasses
 import enum
 import uuid
 from datetime import date, datetime, timezone
-from typing import Any, Optional, Type, TypedDict
+from typing import (
+    Any,
+    Optional,
+    Type,
+    TypedDict,
+)
 
 import pytest
 from pydantic import BaseModel

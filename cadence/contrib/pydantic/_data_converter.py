@@ -63,9 +63,14 @@ def _allows_none(type_hint: Any) -> bool:
 def _contains_typed_dict(type_hint: Any, seen: frozenset[int] = frozenset()) -> bool:
     if is_typeddict(type_hint):
         return True
-    if id(type_hint) in seen:
+    if id(type_hint) in seen:  # pragma: no cover - guards recursive hints
         return False
     seen = seen | {id(type_hint)}
+    if isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
+        return any(
+            _contains_typed_dict(hint, seen)
+            for hint in _dataclass_fields(type_hint).values()
+        )
     return any(_contains_typed_dict(arg, seen) for arg in get_args(type_hint))
 
 
@@ -181,10 +186,6 @@ def _canonicalize_nulls(value: Any, type_hint: Any) -> Any:
         return value
 
     if origin is list and isinstance(value, list):
-        item_hint = args[0] if args else Any
-        return [_canonicalize_nulls(item, item_hint) for item in value]
-
-    if origin in (set, frozenset) and isinstance(value, (list, tuple, set, frozenset)):
         item_hint = args[0] if args else Any
         return [_canonicalize_nulls(item, item_hint) for item in value]
 
@@ -304,7 +305,7 @@ class PydanticDataConverter(DefaultDataConverter):
                 hash(type_hint)
             except TypeError:
                 adapter = TypeAdapter(type_hint)
-            else:
+            else:  # pragma: no cover - TypeAdapter raises TypeError only on exotic hints
                 raise
         try:
             return adapter.validate_python(value)

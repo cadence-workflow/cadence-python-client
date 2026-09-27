@@ -110,6 +110,22 @@ class _MixedTotalItem(TypedDict, total=False):
     note: str
 
 
+class _AnyNoteItem(TypedDict):
+    name: str
+    note: NotRequired[str]
+    extra: NotRequired[Any]
+
+
+class _UnionNoteItem(TypedDict):
+    name: str
+    note: NotRequired[Union[str, int]]
+
+
+@dataclasses.dataclass(frozen=True)
+class _HolderDataClass:
+    item: _MixedTotalItem
+
+
 @dataclasses.dataclass
 class _WrapperDataClass:
     items: list[Union[_RequiredDataClass, _ItemDict]]
@@ -471,6 +487,114 @@ def test_params_from_payload_uses_python_defaults() -> None:
             [{"name": "widget", "note": None}],
             id="null canonicalized inside optional",
         ),
+        pytest.param(
+            '{"name": "w", "note": null, "extra": null}',
+            [_AnyNoteItem],
+            [{"name": "w", "extra": None}],
+            id="null dropped and kept on same typed dict",
+        ),
+        pytest.param(
+            '{"name": "w", "note": null, "zzz": 1}',
+            [_MixedTotalItem],
+            [{"name": "w"}],
+            id="undeclared key ignored during canonicalization",
+        ),
+        pytest.param(
+            '{"name": "w", "note": null}',
+            [_UnionNoteItem],
+            [{"name": "w"}],
+            id="null dropped for non-nullable union field",
+        ),
+        pytest.param(
+            '[{"name": "w", "note": null}]',
+            [list[_MixedTotalItem]],
+            [[{"name": "w"}]],
+            id="null dropped inside list",
+        ),
+        pytest.param(
+            '{"k": {"name": "w", "note": null}}',
+            [dict[str, _MixedTotalItem]],
+            [{"k": {"name": "w"}}],
+            id="null dropped inside dict",
+        ),
+        pytest.param(
+            '[{"name": "w", "note": null}, "x"]',
+            [tuple[_MixedTotalItem, str]],
+            [({"name": "w"}, "x")],
+            id="null dropped inside fixed tuple",
+        ),
+        pytest.param(
+            '[{"name": "w", "note": null}]',
+            [tuple[_MixedTotalItem, ...]],
+            [({"name": "w"},)],
+            id="null dropped inside variadic tuple",
+        ),
+        pytest.param(
+            '{"item": {"name": "w", "note": null}}',
+            [_HolderDataClass],
+            [_HolderDataClass(item={"name": "w"})],
+            id="null dropped inside dataclass field",
+        ),
+        pytest.param(
+            '{"name": "w", "note": null}',
+            [Union[_MixedTotalItem, _ItemDict]],
+            [{"name": "w"}],
+            id="union canonicalizes against covering variant",
+        ),
+        pytest.param(
+            '{"name": "w", "note": null, "count": 3}',
+            [Union[_ItemDict, _MixedTotalItem]],
+            [{"name": "w", "count": 3}],
+            id="union falls back when no variant covers all keys",
+        ),
+        pytest.param(
+            '{"a": {"name": "w", "note": null}}',
+            [Union[dict[str, _MixedTotalItem], str]],
+            [{"a": {"name": "w"}}],
+            id="union dict variant canonicalizes values",
+        ),
+        pytest.param(
+            '[{"name": "w", "note": null}]',
+            [Union[list[_MixedTotalItem], str]],
+            [[{"name": "w"}]],
+            id="union list variant canonicalizes items",
+        ),
+        pytest.param(
+            '{"name": "w", "note": null}',
+            [Union[_RequiredDataClass, _MixedTotalItem]],
+            [{"name": "w"}],
+            id="union with dataclass variant",
+        ),
+        pytest.param(
+            '[{"name": "w", "note": null}]',
+            [list[Union[_MixedTotalItem, _ItemDict]]],
+            [[{"name": "w"}]],
+            id="nested union picks covering variant",
+        ),
+        pytest.param(
+            '[{"name": "w", "note": null, "count": 3}]',
+            [list[Union[_ItemDict, _MixedTotalItem]]],
+            [[{"name": "w", "count": 3}]],
+            id="nested union falls back when nothing covers",
+        ),
+        pytest.param(
+            '[{"a": {"name": "w", "note": null}}]',
+            [list[Union[dict[str, _MixedTotalItem], str]]],
+            [[{"a": {"name": "w"}}]],
+            id="nested union dict variant canonicalizes values",
+        ),
+        pytest.param(
+            '[{"name": "w", "note": null}]',
+            [list[Union[_RequiredDataClass, _MixedTotalItem]]],
+            [[{"name": "w"}]],
+            id="nested union with dataclass variant",
+        ),
+        pytest.param(
+            '[[{"name": "w", "note": null}]]',
+            [list[Union[list[_MixedTotalItem], str]]],
+            [[[{"name": "w"}]]],
+            id="nested union list variant canonicalizes items",
+        ),
     ],
 )
 def test_from_data_dict_like_unions_and_nulls(
@@ -497,6 +621,21 @@ def test_from_data_dict_like_unions_and_nulls(
             id="fixed tuple arity mismatch",
         ),
         pytest.param(
+            '[{"name": "w", "note": null}]',
+            [tuple[_MixedTotalItem, str]],
+            id="fixed tuple arity mismatch during canonicalization",
+        ),
+        pytest.param(
+            '[{"a": null}]',
+            [list[Union[str, list[_MixedTotalItem]]]],
+            id="dict value against union with no dict-like variant",
+        ),
+        pytest.param(
+            "[[null]]",
+            [list[Union[_MixedTotalItem, str]]],
+            id="null against union with no container variant",
+        ),
+        pytest.param(
             '{"other": true}',
             [Union[_RequiredDataClass, _ItemDict]],
             id="union no matching variant",
@@ -512,3 +651,14 @@ def test_from_data_malformed_still_raises(json: str, types: list[Any]) -> None:
     converter = PydanticDataConverter()
     with pytest.raises((TypeError, ValueError)):
         converter.from_data(Payload(data=json.encode()), types)
+
+
+def test_negative_adapter_cache_size_raises() -> None:
+    with pytest.raises(ValueError, match="max_cached_type_adapters"):
+        PydanticDataConverter(max_cached_type_adapters=-1)
+
+
+def test_unhashable_type_hint_raises() -> None:
+    converter = PydanticDataConverter()
+    with pytest.raises(Exception):
+        converter.from_data(Payload(data=b'{"a": 1}'), [{"a": int}])  # type: ignore[list-item]

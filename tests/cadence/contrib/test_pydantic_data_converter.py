@@ -2,12 +2,19 @@ import dataclasses
 import enum
 import uuid
 from datetime import date, datetime, timezone
-from typing import Any, Optional, Type, TypedDict
+from typing import (
+    Annotated,
+    Any,
+    NotRequired,
+    Optional,
+    Required,
+    Type,
+    TypedDict,
+    Union,
+)
 
 import pytest
-from pydantic import BaseModel
-
-from msgspec import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from cadence._internal.fn_signature import FnSignature
 from cadence.api.v1.common_pb2 import Payload
@@ -45,6 +52,78 @@ class _UuidModel(BaseModel):
 class _ItemDict(TypedDict):
     name: str
     count: int
+
+
+@dataclasses.dataclass
+class _RequiredDataClass:
+    foo: str
+    bar: int
+
+
+@dataclasses.dataclass(frozen=True)
+class _FooItem:
+    foo: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _NamedItem:
+    name: str
+
+
+class _BaseItem(TypedDict):
+    id: str
+
+
+class _DetailedItem(TypedDict):
+    id: str
+    name: str
+
+
+class _OptionalItem(TypedDict, total=False):
+    note: str
+
+
+class _NestedItem(TypedDict):
+    item: Union[_RequiredDataClass, _ItemDict]
+
+
+class _BaseOptionalItem(TypedDict):
+    name: str
+
+
+class _InheritedOptionalItem(_BaseOptionalItem, total=False):
+    note: str
+
+
+class _NullableItem(TypedDict):
+    name: str
+    note: NotRequired[Optional[str]]
+
+
+class _AnyNullItem(TypedDict):
+    name: str
+    extra: NotRequired[Any]
+
+
+class _MixedTotalItem(TypedDict, total=False):
+    name: Required[str]
+    note: str
+
+
+@dataclasses.dataclass
+class _WrapperDataClass:
+    items: list[Union[_RequiredDataClass, _ItemDict]]
+    note: Optional[str] = None
+
+
+class _RejectingModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    required_field: str
+
+
+class _DictWithHookedField(TypedDict):
+    name: str
+    model: _RejectingModel
 
 
 @pytest.mark.parametrize(
@@ -230,3 +309,206 @@ def test_params_from_payload_uses_python_defaults() -> None:
         _TestModel(foo="x", bar=3),
         True,
     ]
+
+
+@pytest.mark.parametrize(
+    "json,types,expected",
+    [
+        pytest.param(
+            '{"foo": "hello", "bar": 42}',
+            [Union[_RequiredDataClass, _ItemDict]],
+            [_RequiredDataClass("hello", 42)],
+            id="union dataclass variant",
+        ),
+        pytest.param(
+            '{"name": "widget", "count": 3}',
+            [Union[_RequiredDataClass, _ItemDict]],
+            [{"name": "widget", "count": 3}],
+            id="union dict variant",
+        ),
+        pytest.param(
+            '{"name": "widget", "count": 3}',
+            [Union[_ItemDict, _RequiredDataClass]],
+            [{"name": "widget", "count": 3}],
+            id="union dict variant reversed order",
+        ),
+        pytest.param(
+            "null",
+            [Optional[Union[_RequiredDataClass, _ItemDict]]],
+            [None],
+            id="union optional none",
+        ),
+        pytest.param(
+            '[{"foo": "a", "bar": 1}, {"name": "n", "count": 2}]',
+            [list[Union[_RequiredDataClass, _ItemDict]]],
+            [
+                [_RequiredDataClass("a", 1), {"name": "n", "count": 2}],
+            ],
+            id="union nested in list",
+        ),
+        pytest.param(
+            '{"first": {"foo": "a", "bar": 1}, "second": {"name": "n", "count": 2}}',
+            [dict[str, Union[_RequiredDataClass, _ItemDict]]],
+            [
+                {
+                    "first": _RequiredDataClass("a", 1),
+                    "second": {"name": "n", "count": 2},
+                }
+            ],
+            id="union nested in dict values",
+        ),
+        pytest.param(
+            '[{"foo": "a", "bar": 1}, "note"]',
+            [tuple[Union[_RequiredDataClass, _ItemDict], str]],
+            [(_RequiredDataClass("a", 1), "note")],
+            id="union nested in fixed tuple",
+        ),
+        pytest.param(
+            '[{"foo": "a"}, {"name": "n"}]',
+            [set[Union[_FooItem, _NamedItem]]],
+            [{_FooItem("a"), _NamedItem("n")}],
+            id="union nested in set",
+        ),
+        pytest.param(
+            '{"item": {"name": "widget", "count": 3}}',
+            [_NestedItem],
+            [{"item": {"name": "widget", "count": 3}}],
+            id="union nested in typed dict field",
+        ),
+        pytest.param(
+            '{"items": [{"name": "w", "count": 3}], "note": "x"}',
+            [_WrapperDataClass],
+            [_WrapperDataClass(items=[{"name": "w", "count": 3}], note="x")],
+            id="union nested in dataclass field",
+        ),
+        pytest.param(
+            '{"id": "1", "name": "detailed"}',
+            [Union[_BaseItem, _DetailedItem]],
+            [{"id": "1", "name": "detailed"}],
+            id="union prefers variant covering all keys",
+        ),
+        pytest.param(
+            '{"id": "1"}',
+            [Union[_BaseItem, _DetailedItem]],
+            [{"id": "1"}],
+            id="union narrower variant when keys match",
+        ),
+        pytest.param(
+            '{"name": "w", "count": 3}',
+            [Union[_OptionalItem, _ItemDict]],
+            [{"name": "w", "count": 3}],
+            id="union optional typed dict variant",
+        ),
+        pytest.param(
+            '{"name": "w", "count": 3}',
+            [Union[_TestDataClass, _ItemDict]],
+            [{"name": "w", "count": 3}],
+            id="union dataclass with defaults loses to covering variant",
+        ),
+        pytest.param(
+            '{"name": "w", "count": 3, "extra": "ignored"}',
+            [_ItemDict],
+            [{"name": "w", "count": 3}],
+            id="typed dict drops undeclared keys",
+        ),
+        pytest.param(
+            '"hello"',
+            [Union[str, _BaseItem, _DetailedItem]],
+            ["hello"],
+            id="union scalar variant",
+        ),
+        pytest.param(
+            '{"id": "1"}',
+            [Union[Annotated[str, "meta"], _BaseItem]],
+            [{"id": "1"}],
+            id="union skips annotated variant",
+        ),
+        pytest.param(
+            '{"name": "widget"}',
+            [_InheritedOptionalItem],
+            [{"name": "widget"}],
+            id="inherited optional keys",
+        ),
+        pytest.param(
+            '{"name": "widget", "note": null}',
+            [_NullableItem],
+            [{"name": "widget", "note": None}],
+            id="null kept for nullable optional",
+        ),
+        pytest.param(
+            '{"name": "widget", "extra": null}',
+            [_AnyNullItem],
+            [{"name": "widget", "extra": None}],
+            id="null kept for any typed optional",
+        ),
+        pytest.param(
+            '{"name": "widget", "note": null}',
+            [_MixedTotalItem],
+            [{"name": "widget"}],
+            id="null dropped for non-nullable optional in total false dict",
+        ),
+        pytest.param(
+            '[{"name": "widget", "note": null}]',
+            [list[_NullableItem]],
+            [[{"name": "widget", "note": None}]],
+            id="null canonicalized inside list",
+        ),
+        pytest.param(
+            '{"item": {"name": "widget", "note": null}}',
+            [dict[str, _NullableItem]],
+            [{"item": {"name": "widget", "note": None}}],
+            id="null canonicalized inside dict",
+        ),
+        pytest.param(
+            '[{"name": "widget", "note": null}, "x"]',
+            [tuple[_NullableItem, str]],
+            [({"name": "widget", "note": None}, "x")],
+            id="null canonicalized inside tuple",
+        ),
+        pytest.param(
+            '{"name": "widget", "note": null}',
+            [Optional[_NullableItem]],
+            [{"name": "widget", "note": None}],
+            id="null canonicalized inside optional",
+        ),
+    ],
+)
+def test_from_data_dict_like_unions_and_nulls(
+    json: str, types: list[Any], expected: list[Any]
+) -> None:
+    converter = PydanticDataConverter()
+    assert converter.from_data(Payload(data=json.encode()), types) == expected
+
+
+@pytest.mark.parametrize(
+    "json,types",
+    [
+        pytest.param('{"note": null}', [_NullableItem], id="missing required key"),
+        pytest.param('{"name": null}', [_NullableItem], id="null for required key"),
+        pytest.param(
+            '[{"name": "widget", "note": 1}]',
+            [list[_NullableItem]],
+            id="wrong type for nullable optional",
+        ),
+        pytest.param("null", [_NullableItem], id="null for typed dict"),
+        pytest.param(
+            '[{"name": "widget"}]',
+            [tuple[Union[_RequiredDataClass, _ItemDict], str]],
+            id="fixed tuple arity mismatch",
+        ),
+        pytest.param(
+            '{"other": true}',
+            [Union[_RequiredDataClass, _ItemDict]],
+            id="union no matching variant",
+        ),
+        pytest.param(
+            '{"name": "w", "model": {"unexpected": 1}}',
+            [_DictWithHookedField],
+            id="model validation error propagates without retry",
+        ),
+    ],
+)
+def test_from_data_malformed_still_raises(json: str, types: list[Any]) -> None:
+    converter = PydanticDataConverter()
+    with pytest.raises((TypeError, ValueError)):
+        converter.from_data(Payload(data=json.encode()), types)

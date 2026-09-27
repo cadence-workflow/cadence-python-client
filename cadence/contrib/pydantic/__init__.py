@@ -1,7 +1,9 @@
 """Pydantic v2 data converter for Cadence payloads.
 
-Extends :class:`~cadence.data_converter.DefaultDataConverter` with msgspec
-hooks for :class:`pydantic.BaseModel`. Install Pydantic and pass
+Serializes payloads with ``pydantic_core.to_json`` and deserializes them
+with ``pydantic.TypeAdapter``, so every type Pydantic supports works,
+including ``BaseModel``, ``TypedDict``, dataclasses, and unions of
+dict-like types that msgspec cannot compile. Pass
 :class:`PydanticDataConverter` as the ``data_converter`` argument to
 :class:`cadence.client.Client`:
 

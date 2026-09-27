@@ -189,6 +189,10 @@ def _canonicalize_nulls(value: Any, type_hint: Any) -> Any:
         item_hint = args[0] if args else Any
         return [_canonicalize_nulls(item, item_hint) for item in value]
 
+    if origin in (set, frozenset) and isinstance(value, (list, tuple, set, frozenset)):
+        item_hint = args[0] if args else Any
+        return [_canonicalize_nulls(item, item_hint) for item in value]
+
     if origin is tuple and isinstance(value, (list, tuple)):
         if len(args) == 2 and args[1] is Ellipsis:
             return [_canonicalize_nulls(item, args[0]) for item in value]
@@ -305,7 +309,7 @@ class PydanticDataConverter(DefaultDataConverter):
                 hash(type_hint)
             except TypeError:
                 adapter = TypeAdapter(type_hint)
-            else:  # pragma: no cover - TypeAdapter raises TypeError only on exotic hints
+            else:
                 raise
         try:
             return adapter.validate_python(value)

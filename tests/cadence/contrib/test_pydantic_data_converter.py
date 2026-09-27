@@ -126,6 +126,13 @@ class _HolderDataClass:
     item: _MixedTotalItem
 
 
+@dataclasses.dataclass(frozen=True)
+class _SettableHolder:
+    # Excluding the TypedDict field from comparison keeps instances
+    # hashable even though the field decodes to a dict.
+    item: _MixedTotalItem = dataclasses.field(compare=False)
+
+
 @dataclasses.dataclass
 class _WrapperDataClass:
     items: list[Union[_RequiredDataClass, _ItemDict]]
@@ -658,7 +665,23 @@ def test_negative_adapter_cache_size_raises() -> None:
         PydanticDataConverter(max_cached_type_adapters=-1)
 
 
-def test_unhashable_type_hint_raises() -> None:
+def test_unhashable_type_hint_bypasses_cache() -> None:
     converter = PydanticDataConverter()
-    with pytest.raises(Exception):
-        converter.from_data(Payload(data=b'{"a": 1}'), [{"a": int}])  # type: ignore[list-item]
+    hint = Annotated[int, [1]]
+    assert converter.from_data(Payload(data=b"1"), [hint]) == [1]  # type: ignore[list-item]
+
+
+def test_invalid_hashable_type_hint_raises() -> None:
+    converter = PydanticDataConverter()
+    with pytest.raises(TypeError):
+        converter.from_data(Payload(data=b"1"), [42])  # type: ignore[list-item]
+
+
+def test_from_data_canonicalizes_set_items() -> None:
+    converter = PydanticDataConverter()
+    result = converter.from_data(
+        Payload(data=b'[{"item": {"name": "w", "note": null}}]'),
+        [set[_SettableHolder]],
+    )
+    (holder,) = result[0]
+    assert holder.item == {"name": "w"}

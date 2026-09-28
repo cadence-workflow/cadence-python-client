@@ -1,33 +1,56 @@
-"""msgspec data converter with Pydantic ``BaseModel`` encode/decode hooks."""
+"""Pydantic-native data converter for Cadence payloads."""
 
 from __future__ import annotations
 
-from typing import Any
+from json import JSONDecoder
+from typing import Any, List, Sequence, Type
 
-from pydantic import BaseModel
+from pydantic import TypeAdapter
+from pydantic_core import to_json
 
-from cadence.data_converter import DefaultDataConverter
-
-
-def _enc_hook(obj: Any) -> Any:
-    if isinstance(obj, BaseModel):
-        return obj.model_dump()
-    raise TypeError(f"Encoding objects of type {type(obj).__name__} is unsupported")
+from cadence.api.v1.common_pb2 import Payload
+from cadence.data_converter import DataConverter
 
 
-def _dec_hook(typ: Any, obj: Any) -> Any:
-    if isinstance(typ, type) and issubclass(typ, BaseModel):
-        return typ.model_validate(obj)
-    raise TypeError(f"Decoding objects of type {typ} is unsupported")
+class PydanticDataConverter(DataConverter):
+    """Data converter using Pydantic's default serialization and validation.
 
-
-class PydanticDataConverter(DefaultDataConverter):
-    """:class:`~cadence.data_converter.DefaultDataConverter` plus Pydantic models.
-
-    Uses msgspec ``enc_hook`` / ``dec_hook`` so ``pydantic.BaseModel`` values
-    are dumped and validated while every other type stays on the default
-    msgspec path.
+    Pydantic serializes each value to JSON and validates decoded JSON values
+    against their type hints. Cadence's whitespace-delimited payload framing
+    is retained.
     """
 
     def __init__(self) -> None:
-        super().__init__(enc_hook=_enc_hook, dec_hook=_dec_hook)
+        self._decoder = JSONDecoder(strict=False)
+
+    def from_data(
+        self, payload: Payload, type_hints: List[Type | None]
+    ) -> List[Any]:
+        if not payload.data:
+            return []
+
+        if not type_hints:
+            type_hints = [None]
+
+        return self._decode_whitespace_delimited(payload.data.decode(), type_hints)
+
+    def _decode_whitespace_delimited(
+        self,
+        payload: str,
+        type_hints: Sequence[Type | None],
+    ) -> List[Any]:
+        results: List[Any] = []
+        start, end = 0, len(payload)
+        while start < end and len(results) < len(type_hints):
+            remaining = payload[start:end]
+            value, value_end = self._decoder.raw_decode(remaining)
+            type_hint = type_hints[len(results)]
+            if type_hint and type_hint is not Any:
+                value = TypeAdapter(type_hint).validate_json(remaining[:value_end])
+            results.append(value)
+            start += value_end + 1
+
+        return results
+
+    def to_data(self, values: List[Any]) -> Payload:
+        return Payload(data=b" ".join(to_json(value) for value in values))

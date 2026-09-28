@@ -14,7 +14,8 @@ argument to :class:`cadence.client.Client`:
         data_converter=PydanticDataConverter(),
     )
 
-Pydantic v1 is not supported.
+Pydantic v1 is not supported. On Python < 3.12, Pydantic requires
+``typing_extensions.TypedDict`` instead of ``typing.TypedDict``.
 """
 
 try:

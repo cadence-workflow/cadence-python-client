@@ -2,37 +2,41 @@
 
 from __future__ import annotations
 
-from json import JSONDecoder
-from typing import Any, List, Sequence, Type
+from functools import lru_cache
+from typing import Any, Callable, List, Sequence, Type
 
 from pydantic import TypeAdapter
-from pydantic_core import to_json
+from pydantic_core import SchemaSerializer, core_schema
 
 from cadence.api.v1.common_pb2 import Payload
-from cadence.data_converter import DataConverter
+from cadence.data_converter import DefaultDataConverter
 
 
-class PydanticDataConverter(DataConverter):
+class PydanticDataConverter(DefaultDataConverter):
     """Data converter using Pydantic's default serialization and validation.
 
-    Pydantic serializes each value to JSON and validates decoded JSON values
-    against their type hints. Cadence's whitespace-delimited payload framing
-    is retained.
+    Pydantic serializes each value to JSON and validates each JSON value
+    against its type hint through a cached :class:`pydantic.TypeAdapter`.
+    Cadence's whitespace-delimited payload framing and the defaults for
+    missing values are inherited from
+    :class:`~cadence.data_converter.DefaultDataConverter`.
     """
 
-    def __init__(self) -> None:
-        self._decoder = JSONDecoder(strict=False)
+    def __init__(self, *, exclude_unset: bool = False) -> None:
+        """Create the converter.
 
-    def from_data(
-        self, payload: Payload, type_hints: List[Type | None]
-    ) -> List[Any]:
-        if not payload.data:
-            return []
-
-        if not type_hints:
-            type_hints = [None]
-
-        return self._decode_whitespace_delimited(payload.data.decode(), type_hints)
+        Args:
+            exclude_unset: Omit Pydantic model fields that were never set, so
+                ``model_fields_set`` survives the round trip. Fields filled
+                by a ``default_factory`` are not set and are regenerated on
+                decode. The OpenAI Agents integration requires ``True``.
+        """
+        super().__init__()
+        self._exclude_unset = exclude_unset
+        self._serializer = SchemaSerializer(core_schema.any_schema())
+        self._type_adapter: Callable[[Any], TypeAdapter[Any]] = lru_cache(maxsize=1024)(
+            TypeAdapter
+        )
 
     def _decode_whitespace_delimited(
         self,
@@ -46,11 +50,20 @@ class PydanticDataConverter(DataConverter):
             value, value_end = self._decoder.raw_decode(remaining)
             type_hint = type_hints[len(results)]
             if type_hint and type_hint is not Any:
-                value = TypeAdapter(type_hint).validate_json(remaining[:value_end])
+                value = self._type_adapter(type_hint).validate_json(
+                    remaining[:value_end]
+                )
             results.append(value)
             start += value_end + 1
 
-        return results
+        return results + [
+            self._get_default(type_hint) for type_hint in type_hints[len(results) :]
+        ]
 
     def to_data(self, values: List[Any]) -> Payload:
-        return Payload(data=b" ".join(to_json(value) for value in values))
+        return Payload(
+            data=b" ".join(
+                self._serializer.to_json(value, exclude_unset=self._exclude_unset)
+                for value in values
+            )
+        )

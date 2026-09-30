@@ -13,6 +13,22 @@ from tests.integration_tests.canary.constants import (
 sanity_registry = Registry()
 
 
+async def _execute_child_workflow(
+    parent_workflow_id: str,
+    child_workflow: str,
+) -> Exception | None:
+    try:
+        await workflow.execute_child_workflow(
+            child_workflow,
+            Any,
+            workflow_id=f"{parent_workflow_id}/{child_workflow}",
+            execution_start_to_close_timeout=CHILD_WORKFLOW_TIMEOUT,
+        )
+    except Exception as error:
+        return error
+    return None
+
+
 @sanity_registry.workflow(name=WORKFLOW_TYPE_SANITY)
 class SanityWorkflow:
     @workflow.run
@@ -24,15 +40,12 @@ class SanityWorkflow:
 
         results = await asyncio.gather(
             *(
-                workflow.execute_child_workflow(
+                _execute_child_workflow(
+                    workflow_id,
                     child_workflow,
-                    Any,
-                    workflow_id=f"{workflow_id}/{child_workflow}",
-                    execution_start_to_close_timeout=CHILD_WORKFLOW_TIMEOUT,
                 )
                 for child_workflow in child_workflows
-            ),
-            return_exceptions=True,
+            )
         )
         failures = [
             (
@@ -44,7 +57,7 @@ class SanityWorkflow:
                 results,
                 strict=True,
             )
-            if isinstance(result, BaseException)
+            if result is not None
         ]
         if failures:
             details = "; ".join(

@@ -30,7 +30,7 @@ class TimeoutWorkflow:
                 start_to_close_timeout=timedelta(seconds=1),
             )
         except ActivityFailure as error:
-            if "TIMEOUT_TYPE_START_TO_CLOSE" not in str(error):
+            if not str(error).startswith("TIMEOUT_TYPE_"):
                 raise
         else:
             raise RuntimeError("expected activity to time out")

@@ -73,13 +73,11 @@ def info() -> ActivityInfo:
 
 def logger() -> logging.LoggerAdapter[Any]:
     """Return a logger tagged with the current activity's identity."""
-    raise_if_cancelled()
     return ActivityContext.get().logger()
 
 
 def metrics() -> "MetricsEmitter":
     """Return a metrics emitter tagged with the current activity's identity."""
-    raise_if_cancelled()
     return ActivityContext.get().metrics()
 
 

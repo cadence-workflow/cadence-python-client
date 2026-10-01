@@ -94,6 +94,10 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         self._registry = registry
         self._executor = executor
         self._context_propagators = tuple(options.get("context_propagators", ()))
+        self._logger = options.get("logger")
+        self._enable_logging_in_replay = bool(
+            options.get("enable_logging_in_replay", False)
+        )
 
     async def _handle_task_implementation(
         self, task: PollForDecisionTaskResponse
@@ -205,6 +209,9 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_definition=workflow_definition,
             context_propagators=self._context_propagators,
             headers=header_to_dict(started_attrs.header),
+            metrics_emitter=self._metrics_emitter,
+            logger=self._logger,
+            enable_logging_in_replay=self._enable_logging_in_replay,
         )
 
         exec_start_ns = time.monotonic_ns()

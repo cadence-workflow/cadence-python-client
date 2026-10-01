@@ -1,6 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+import logging
 from logging import getLogger
 import time
 from traceback import format_exception
@@ -56,6 +57,7 @@ class ActivityExecutor:
         registry: Callable[[str], ActivityDefinition],
         metrics_emitter: MetricsEmitter | None = None,
         context_propagators: Sequence[ContextPropagator] = (),
+        logger: logging.Logger | None = None,
     ):
         self._client = client
         self._data_converter = client.data_converter
@@ -66,6 +68,7 @@ class ActivityExecutor:
             metrics_emitter if metrics_emitter is not None else NoOpMetricsEmitter()
         )
         self._context_propagators = tuple(context_propagators)
+        self._logger = logger
         self._thread_pool = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix=f"{task_list}-activity-"
         )
@@ -149,6 +152,8 @@ class ActivityExecutor:
                 heartbeat_sender,
                 self._context_propagators,
                 header_to_dict(task.header),
+                metrics_emitter=self._metrics_emitter,
+                logger=self._logger,
             )
         return _SyncContext(
             self._client,
@@ -158,6 +163,8 @@ class ActivityExecutor:
             heartbeat_sender,
             self._context_propagators,
             header_to_dict(task.header),
+            metrics_emitter=self._metrics_emitter,
+            logger=self._logger,
         )
 
     async def _report_failure(

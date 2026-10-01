@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from dataclasses import replace
 from asyncio import get_running_loop
@@ -7,6 +8,10 @@ from datetime import datetime, timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable, Mapping
 
+from cadence._internal.replay_aware import (
+    ReplayAwareLoggerAdapter,
+    ReplayAwareMetricsEmitter,
+)
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.memo import memo_to_proto
@@ -42,6 +47,14 @@ from cadence.api.v1.decision_pb2 import (
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DataConverter
 from cadence.context import ContextPropagator
+from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics.constants import (
+    TAG_DOMAIN,
+    TAG_RUN_ID,
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_ID,
+    TAG_WORKFLOW_TYPE,
+)
 from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
@@ -67,6 +80,9 @@ class Context(WorkflowContext):
         info: WorkflowInfo,
         decision_manager: DecisionManager,
         context_propagators: tuple[ContextPropagator, ...] = (),
+        metrics_emitter: MetricsEmitter | None = None,
+        logger: logging.Logger | None = None,
+        enable_logging_in_replay: bool = False,
     ):
         self._info = info
         self._replay_mode = True
@@ -75,12 +91,46 @@ class Context(WorkflowContext):
         self._context_propagators = context_propagators
         self._cancellation_info: WorkflowCancellationInfo | None = None
         self._change_versions: dict[str, int] = {}
+        base_emitter = metrics_emitter if metrics_emitter is not None else NoOpMetricsEmitter()
+        tagged_emitter = base_emitter.with_tags(
+            {
+                TAG_WORKFLOW_TYPE: info.workflow_type,
+                TAG_DOMAIN: info.workflow_domain,
+                TAG_WORKFLOW_ID: info.workflow_id,
+                TAG_RUN_ID: info.workflow_run_id,
+                TAG_TASK_LIST: info.workflow_task_list,
+            }
+        )
+        self._metrics: MetricsEmitter = ReplayAwareMetricsEmitter(
+            tagged_emitter, self.is_replay_mode
+        )
+        self._logger: logging.LoggerAdapter[Any] = ReplayAwareLoggerAdapter(
+            logger if logger is not None else logging.getLogger("cadence.workflow"),
+            {
+                "workflow_type": info.workflow_type,
+                "workflow_domain": info.workflow_domain,
+                "workflow_id": info.workflow_id,
+                "workflow_run_id": info.workflow_run_id,
+                "workflow_task_list": info.workflow_task_list,
+            },
+            self.is_replay_mode,
+            enable_logging_in_replay=enable_logging_in_replay,
+        )
 
     def info(self) -> WorkflowInfo:
         return self._info
 
     def data_converter(self) -> DataConverter:
         return self.info().data_converter
+
+    def logger(self) -> logging.LoggerAdapter[Any]:
+        return self._logger
+
+    def metrics(self) -> MetricsEmitter:
+        return self._metrics
+
+    def is_replaying(self) -> bool:
+        return self.is_replay_mode()
 
     async def execute_activity(
         self,

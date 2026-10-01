@@ -1,5 +1,6 @@
 import asyncio
 import contextvars
+import logging
 import threading
 from concurrent.futures import Future as ConcurrentFuture
 from concurrent.futures.thread import ThreadPoolExecutor
@@ -10,9 +11,20 @@ from cadence import Client
 from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence._internal.context import extract_headers
+from cadence._internal.replay_aware import TaggedLoggerAdapter
 from cadence.activity import ActivityInfo, ActivityContext
 from cadence.api.v1.common_pb2 import Payload
 from cadence.context import ContextPropagator
+from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics.constants import (
+    TAG_ACTIVITY_TYPE,
+    TAG_ATTEMPT,
+    TAG_DOMAIN,
+    TAG_RUN_ID,
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_ID,
+    TAG_WORKFLOW_TYPE,
+)
 
 
 class _Context(ActivityContext):
@@ -24,6 +36,8 @@ class _Context(ActivityContext):
         heartbeat_sender: _HeartbeatSender,
         context_propagators: Sequence[ContextPropagator] = (),
         headers: Mapping[str, bytes] | None = None,
+        metrics_emitter: MetricsEmitter | None = None,
+        logger: logging.Logger | None = None,
     ):
         self._client = client
         self._info = info
@@ -35,6 +49,31 @@ class _Context(ActivityContext):
         self._cancel_event = asyncio.Event()
         self._context_propagators = tuple(context_propagators)
         self._headers = dict(headers) if headers is not None else {}
+        base_emitter = metrics_emitter if metrics_emitter is not None else NoOpMetricsEmitter()
+        self._metrics: MetricsEmitter = base_emitter.with_tags(
+            {
+                TAG_ACTIVITY_TYPE: info.activity_type,
+                TAG_WORKFLOW_TYPE: info.workflow_type,
+                TAG_DOMAIN: info.workflow_domain,
+                TAG_WORKFLOW_ID: info.workflow_id,
+                TAG_RUN_ID: info.workflow_run_id,
+                TAG_TASK_LIST: info.task_list,
+                TAG_ATTEMPT: str(info.attempt),
+            }
+        )
+        self._logger: logging.LoggerAdapter[Any] = TaggedLoggerAdapter(
+            logger if logger is not None else logging.getLogger("cadence.activity"),
+            {
+                "activity_type": info.activity_type,
+                "activity_id": info.activity_id,
+                "workflow_type": info.workflow_type,
+                "workflow_domain": info.workflow_domain,
+                "workflow_id": info.workflow_id,
+                "workflow_run_id": info.workflow_run_id,
+                "attempt": info.attempt,
+                "task_list": info.task_list,
+            },
+        )
 
     async def execute(self, payload: Payload) -> Any:
         params = self._to_params(payload)
@@ -89,6 +128,12 @@ class _Context(ActivityContext):
     def info(self) -> ActivityInfo:
         return self._info
 
+    def logger(self) -> logging.LoggerAdapter[Any]:
+        return self._logger
+
+    def metrics(self) -> MetricsEmitter:
+        return self._metrics
+
     def heartbeat(self, *details: Any) -> None:
         heartbeat_task = asyncio.create_task(
             self._heartbeat_sender.send_heartbeat(*details)
@@ -128,6 +173,8 @@ class _SyncContext(_Context):
         heartbeat_sender: _HeartbeatSender,
         context_propagators: Sequence[ContextPropagator] = (),
         headers: Mapping[str, bytes] | None = None,
+        metrics_emitter: MetricsEmitter | None = None,
+        logger: logging.Logger | None = None,
     ):
         super().__init__(
             client,
@@ -136,6 +183,8 @@ class _SyncContext(_Context):
             heartbeat_sender,
             context_propagators,
             headers,
+            metrics_emitter=metrics_emitter,
+            logger=logger,
         )
         self._executor = executor
         self._sync_cancel_event = threading.Event()

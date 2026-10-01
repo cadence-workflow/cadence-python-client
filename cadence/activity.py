@@ -1,10 +1,12 @@
 import inspect
+import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta, datetime
 from typing import (
+    TYPE_CHECKING,
     Iterator,
     TypedDict,
     Unpack,
@@ -33,6 +35,9 @@ from cadence._internal.activity._definition import (
 )
 from cadence._internal.fn_signature import FnSignature
 from cadence.workflow import ActivityOptions
+
+if TYPE_CHECKING:
+    from cadence.metrics import MetricsEmitter
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,16 @@ def in_activity() -> bool:
 def info() -> ActivityInfo:
     raise_if_cancelled()
     return ActivityContext.get().info()
+
+
+def logger() -> logging.LoggerAdapter[Any]:
+    """Return a logger tagged with the current activity's identity."""
+    return ActivityContext.get().logger()
+
+
+def metrics() -> "MetricsEmitter":
+    """Return a metrics emitter tagged with the current activity's identity."""
+    return ActivityContext.get().metrics()
 
 
 def heartbeat(*details: Any) -> None:
@@ -154,6 +169,12 @@ class ActivityContext(ABC):
 
     @abstractmethod
     def client(self) -> Client: ...
+
+    @abstractmethod
+    def logger(self) -> logging.LoggerAdapter[Any]: ...
+
+    @abstractmethod
+    def metrics(self) -> "MetricsEmitter": ...
 
     @abstractmethod
     def heartbeat(self, *details: Any) -> None: ...

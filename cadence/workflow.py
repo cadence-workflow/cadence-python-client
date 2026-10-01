@@ -1,10 +1,12 @@
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import (
+    TYPE_CHECKING,
     Awaitable,
     Iterator,
     Callable,
@@ -30,6 +32,9 @@ from cadence.data_converter import DataConverter
 from cadence.error import ContinueAsNewError
 from cadence.query import QueryDefinition, QueryDefinitionOptions
 from cadence.signal import SignalDefinition, SignalDefinitionOptions
+
+if TYPE_CHECKING:
+    from cadence.metrics import MetricsEmitter
 
 _QUERY_TYPES_QUERY_NAME = "__query_types"
 
@@ -259,6 +264,37 @@ def upsert_search_attributes(
 
 def is_cancel_requested() -> bool:
     return WorkflowContext.get().is_cancel_requested()
+
+
+def info() -> "WorkflowInfo":
+    """Return information about the currently executing workflow."""
+    return WorkflowContext.get().info()
+
+
+def logger() -> logging.LoggerAdapter[Any]:
+    """Return a replay-aware logger for the current workflow.
+
+    Log records are suppressed while history is being replayed unless the
+    worker was configured with ``enable_logging_in_replay=True``.
+    """
+    return WorkflowContext.get().logger()
+
+
+def metrics() -> "MetricsEmitter":
+    """Return a replay-aware metrics emitter for the current workflow.
+
+    Metric emissions are suppressed while history is being replayed.
+    """
+    return WorkflowContext.get().metrics()
+
+
+def is_replaying() -> bool:
+    """Return whether the workflow is currently replaying history events.
+
+    Prefer :func:`logger` and :func:`metrics` over branching on this flag.
+    Never use replay status to change workflow business logic.
+    """
+    return WorkflowContext.get().is_replaying()
 
 
 def continue_as_new(
@@ -628,6 +664,15 @@ class WorkflowContext(ABC):
 
     @abstractmethod
     def data_converter(self) -> DataConverter: ...
+
+    @abstractmethod
+    def logger(self) -> logging.LoggerAdapter[Any]: ...
+
+    @abstractmethod
+    def metrics(self) -> "MetricsEmitter": ...
+
+    @abstractmethod
+    def is_replaying(self) -> bool: ...
 
     @abstractmethod
     async def execute_activity(

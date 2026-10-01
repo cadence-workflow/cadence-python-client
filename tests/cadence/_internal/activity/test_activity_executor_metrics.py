@@ -261,4 +261,5 @@ class TestActivityExecutionFailure:
         executor = _make_executor(emitter, reg)
         await executor.execute(_make_task())
 
-        emitter.with_tags.assert_called_once_with(EXPECTED_TAGS)
+        assert emitter.with_tags.call_count == 2
+        emitter.with_tags.assert_any_call(EXPECTED_TAGS)

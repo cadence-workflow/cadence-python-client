@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from logging import Logger
 from typing import TYPE_CHECKING, Sequence, TypedDict
 
 if TYPE_CHECKING:
@@ -19,6 +20,8 @@ class WorkerOptions(TypedDict, total=False):
     disable_activity_worker: bool
     identity: str
     metrics_emitter: MetricsEmitter
+    logger: Logger
+    enable_logging_in_replay: bool
     context_propagators: Sequence[ContextPropagator]
 
 
@@ -30,6 +33,7 @@ _DEFAULT_WORKER_OPTIONS: WorkerOptions = {
     "decision_task_pollers": 2,
     "disable_workflow_worker": False,
     "disable_activity_worker": False,
+    "enable_logging_in_replay": False,
     "context_propagators": (),
 }
 

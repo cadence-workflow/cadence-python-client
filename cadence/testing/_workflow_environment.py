@@ -82,7 +82,7 @@ from cadence.api.v1.query_pb2 import QueryRejectCondition
 from cadence.client import Client, ClientOptions, StartWorkflowOptions
 from cadence.context import ContextPropagator
 from cadence.data_converter import DataConverter, DefaultDataConverter
-from cadence.metrics import NoOpMetricsEmitter
+from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 from cadence.workflow import (
     ActivityOptions,
     ChildWorkflowFuture,
@@ -154,6 +154,11 @@ class _InMemoryActivityContext(ActivityContext):
         self._activity_type = activity_type
         self._workflow_info = workflow_info
         self._heartbeat_details: list[Any] = []
+        self._logger: logging.LoggerAdapter[Any] = logging.LoggerAdapter(
+            logging.getLogger("cadence.activity"),
+            {"activity_type": activity_type},
+        )
+        self._metrics: MetricsEmitter = NoOpMetricsEmitter()
 
     def info(self) -> ActivityInfo:
         now = self._env.now()
@@ -175,6 +180,12 @@ class _InMemoryActivityContext(ActivityContext):
 
     def client(self) -> Client:
         return self._env.client
+
+    def logger(self) -> logging.LoggerAdapter[Any]:
+        return self._logger
+
+    def metrics(self) -> MetricsEmitter:
+        return self._metrics
 
     def heartbeat(self, *details: Any) -> None:
         self._heartbeat_details = list(details)
@@ -203,12 +214,30 @@ class _InMemoryWorkflowContext(WorkflowContext):
         self._info = info
         self._mutable_side_effect_values: dict[str, Any] = {}
         self._change_versions: dict[str, int] = {}
+        self._logger: logging.LoggerAdapter[Any] = logging.LoggerAdapter(
+            logging.getLogger("cadence.workflow"),
+            {
+                "workflow_type": info.workflow_type,
+                "workflow_id": info.workflow_id,
+                "workflow_run_id": info.workflow_run_id,
+            },
+        )
+        self._metrics: MetricsEmitter = NoOpMetricsEmitter()
 
     def info(self) -> WorkflowInfo:
         return self._info
 
     def data_converter(self) -> DataConverter:
         return self._info.data_converter
+
+    def logger(self) -> logging.LoggerAdapter[Any]:
+        return self._logger
+
+    def metrics(self) -> MetricsEmitter:
+        return self._metrics
+
+    def is_replaying(self) -> bool:
+        return False
 
     async def execute_activity(
         self,

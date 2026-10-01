@@ -4,7 +4,7 @@ from datetime import timedelta
 from cadence import Registry, workflow
 from cadence.error import ActivityFailure
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     ACTIVITY_TYPE_TIMEOUT,
     WORKFLOW_TYPE_TIMEOUT,
 )

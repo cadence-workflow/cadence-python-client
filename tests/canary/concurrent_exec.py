@@ -2,7 +2,7 @@ import asyncio
 
 from cadence import Registry, workflow
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     ACTIVITY_TIMEOUT,
     ACTIVITY_TYPE_CONCURRENT_EXECUTION,
     WORKFLOW_TYPE_CONCURRENT_EXECUTION,

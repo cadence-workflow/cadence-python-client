@@ -3,8 +3,8 @@ from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
     GetWorkflowExecutionHistoryResponse,
 )
-from tests.integration_tests.canary import WORKFLOW_TYPE_SANITY, registry
-from tests.integration_tests.canary.constants import SANITY_WORKFLOW_TIMEOUT
+from tests.canary import WORKFLOW_TYPE_SANITY, registry
+from tests.canary.constants import SANITY_WORKFLOW_TIMEOUT
 from tests.integration_tests.helper import CadenceHelper, DOMAIN_NAME
 
 

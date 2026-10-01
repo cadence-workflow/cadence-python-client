@@ -3,7 +3,7 @@ from datetime import timedelta
 from cadence import Registry, activity, workflow
 from cadence.workflow import WorkflowContext
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     ACTIVITY_TIMEOUT,
     ACTIVITY_TYPE_SIGNAL,
     CHILD_WORKFLOW_TIMEOUT,

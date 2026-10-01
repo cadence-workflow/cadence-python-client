@@ -1,10 +1,10 @@
 from cadence import Registry, workflow
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     WORKFLOW_TYPE_ARCHIVAL_EXTERNAL,
     WORKFLOW_TYPE_HISTORY_ARCHIVAL,
 )
-from tests.integration_tests.canary.unsupported import raise_unsupported
+from tests.canary.unsupported import raise_unsupported
 
 history_archival_registry = Registry()
 

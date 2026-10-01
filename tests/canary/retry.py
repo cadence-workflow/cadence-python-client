@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from cadence import Registry, activity, workflow
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     ACTIVITY_TYPE_RETRY_ON_FAILURE,
     ACTIVITY_TYPE_RETRY_ON_TIMEOUT,
     WORKFLOW_TYPE_RETRY,

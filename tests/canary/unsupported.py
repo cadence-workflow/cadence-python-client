@@ -1,6 +1,6 @@
 from typing import NoReturn
 
-from tests.integration_tests.canary.constants import UNSUPPORTED_WORKFLOW_REASONS
+from tests.canary.constants import UNSUPPORTED_WORKFLOW_REASONS
 
 
 class UnsupportedCanaryError(RuntimeError):

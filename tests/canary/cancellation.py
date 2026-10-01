@@ -5,7 +5,7 @@ from cadence import Registry, workflow
 from cadence.error import ChildWorkflowExecutionCanceled
 from cadence.workflow import WorkflowContext
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     CHILD_WORKFLOW_TIMEOUT,
     WORKFLOW_TYPE_CANCELLATION,
     WORKFLOW_TYPE_CANCELLATION_EXTERNAL,

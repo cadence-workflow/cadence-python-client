@@ -4,7 +4,7 @@ from typing import Any
 from cadence import Registry, workflow
 from cadence.workflow import WorkflowContext
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     CHILD_WORKFLOW_TIMEOUT,
     DEFAULT_SANITY_CHILD_WORKFLOWS,
     WORKFLOW_TYPE_SANITY,

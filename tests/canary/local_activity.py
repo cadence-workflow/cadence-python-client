@@ -1,7 +1,7 @@
 from cadence import Registry, workflow
 
-from tests.integration_tests.canary.constants import WORKFLOW_TYPE_LOCAL_ACTIVITY
-from tests.integration_tests.canary.unsupported import raise_unsupported
+from tests.canary.constants import WORKFLOW_TYPE_LOCAL_ACTIVITY
+from tests.canary.unsupported import raise_unsupported
 
 local_activity_registry = Registry()
 

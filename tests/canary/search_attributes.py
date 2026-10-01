@@ -1,7 +1,7 @@
 from cadence import Registry, workflow
 
-from tests.integration_tests.canary.constants import WORKFLOW_TYPE_SEARCH_ATTRIBUTES
-from tests.integration_tests.canary.unsupported import raise_unsupported
+from tests.canary.constants import WORKFLOW_TYPE_SEARCH_ATTRIBUTES
+from tests.canary.unsupported import raise_unsupported
 
 search_attributes_registry = Registry()
 

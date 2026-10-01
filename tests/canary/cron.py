@@ -3,7 +3,7 @@ from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import GetWorkflowExecutionHistoryRequest
 from cadence.workflow import WorkflowContext
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     ACTIVITY_TYPE_CRON,
     SANITY_WORKFLOW_TIMEOUT,
     WORKFLOW_TYPE_CRON,

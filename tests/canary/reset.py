@@ -1,10 +1,10 @@
 from cadence import Registry, workflow
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     WORKFLOW_TYPE_RESET,
     WORKFLOW_TYPE_RESET_BASE,
 )
-from tests.integration_tests.canary.unsupported import raise_unsupported
+from tests.canary.unsupported import raise_unsupported
 
 reset_registry = Registry()
 

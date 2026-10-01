@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from cadence import Registry, workflow
 
-from tests.integration_tests.canary.constants import (
+from tests.canary.constants import (
     ACTIVITY_TIMEOUT,
     ACTIVITY_TYPE_ECHO,
     WORKFLOW_TYPE_ECHO,

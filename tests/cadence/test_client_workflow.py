@@ -17,6 +17,13 @@ from cadence.client import (
 )
 from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DefaultDataConverter
+from cadence.metrics import MetricsEmitter
+from cadence.metrics.constants import (
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_TYPE,
+    WORKFLOW_SIGNAL_WITH_START_COUNTER,
+    WORKFLOW_START_COUNTER,
+)
 from cadence.workflow import (
     ActiveClusterSelectionPolicy,
     WorkflowDefinition,
@@ -533,7 +540,10 @@ class TestClientStartWorkflow:
         )
 
         # Create a real client but replace the workflow_stub
-        client = Client(domain="test-domain", target="localhost:7933")
+        emitter = Mock(spec=MetricsEmitter)
+        client = Client(
+            domain="test-domain", target="localhost:7933", metrics_emitter=emitter
+        )
         client._workflow_stub = mock_client.workflow_stub
 
         # Mock the internal method to avoid full request building
@@ -541,6 +551,8 @@ class TestClientStartWorkflow:
             request = StartWorkflowExecutionRequest()
             request.workflow_id = "test-workflow-id"
             request.domain = "test-domain"
+            request.task_list.name = options["task_list"]
+            request.workflow_type.name = workflow
             return request
 
         client._build_start_workflow_request = Mock(side_effect=mock_build_request)  # type: ignore
@@ -561,6 +573,15 @@ class TestClientStartWorkflow:
 
         # Verify the gRPC call was made
         mock_client.workflow_stub.StartWorkflowExecution.assert_called_once()
+
+        # Verify the start metric was emitted
+        emitter.counter.assert_called_once_with(
+            WORKFLOW_START_COUNTER,
+            tags={
+                TAG_TASK_LIST: "test-task-list",
+                TAG_WORKFLOW_TYPE: "TestWorkflow",
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_start_workflow_grpc_error(self, mock_client):
@@ -884,7 +905,10 @@ class TestBuildStartWorkflowRequestRetryPolicy:
         response = SignalWithStartWorkflowExecutionResponse()
         response.run_id = "run-2"
 
-        client = Client(domain="test-domain", target="localhost:7933")
+        emitter = Mock(spec=MetricsEmitter)
+        client = Client(
+            domain="test-domain", target="localhost:7933", metrics_emitter=emitter
+        )
         client._workflow_stub = Mock()
         client._workflow_stub.SignalWithStartWorkflowExecution = AsyncMock(
             return_value=response
@@ -906,3 +930,11 @@ class TestBuildStartWorkflowRequestRetryPolicy:
         assert request.start_request.HasField("retry_policy")
         assert request.start_request.retry_policy.initial_interval.seconds == 3
         assert request.start_request.retry_policy.maximum_attempts == 2
+
+        emitter.counter.assert_called_once_with(
+            WORKFLOW_SIGNAL_WITH_START_COUNTER,
+            tags={
+                TAG_TASK_LIST: "tl",
+                TAG_WORKFLOW_TYPE: "WF",
+            },
+        )

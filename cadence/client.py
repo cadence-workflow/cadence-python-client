@@ -65,6 +65,13 @@ from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.context import ContextPropagator
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics.constants import (
+    TAG_DOMAIN,
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_TYPE,
+    WORKFLOW_SIGNAL_WITH_START_COUNTER,
+    WORKFLOW_START_COUNTER,
+)
 from cadence.workflow import (
     ActiveClusterSelectionPolicy,
     RetryPolicy,
@@ -328,6 +335,19 @@ class Client:
 
         return request
 
+    def _emit_metric_with_tags(
+        self, key: str, request: StartWorkflowExecutionRequest
+    ) -> None:
+        if self.metrics_emitter:
+            self.metrics_emitter.counter(
+                key,
+                tags={
+                    TAG_DOMAIN: self.domain,
+                    TAG_TASK_LIST: request.task_list.name,
+                    TAG_WORKFLOW_TYPE: request.workflow_type.name,
+                },
+            )
+
     async def start_workflow(
         self,
         workflow: Union[str, WorkflowDefinition],
@@ -361,10 +381,7 @@ class Client:
                 await self.workflow_stub.StartWorkflowExecution(request)
             )
 
-            # Emit metrics if available
-            if self.metrics_emitter:
-                # TODO: Add workflow start metrics similar to Go client
-                pass
+            self._emit_metric_with_tags(WORKFLOW_START_COUNTER, request)
 
             execution = WorkflowExecution()
             execution.workflow_id = request.workflow_id
@@ -573,6 +590,10 @@ class Client:
         try:
             response: SignalWithStartWorkflowExecutionResponse = (
                 await self.workflow_stub.SignalWithStartWorkflowExecution(request)
+            )
+
+            self._emit_metric_with_tags(
+                WORKFLOW_SIGNAL_WITH_START_COUNTER, start_request
             )
 
             execution = WorkflowExecution()

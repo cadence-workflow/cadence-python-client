@@ -19,6 +19,7 @@ from cadence.api.v1 import workflow_pb2
 from cadence.data_converter import DefaultDataConverter
 from cadence.metrics import MetricsEmitter
 from cadence.metrics.constants import (
+    TAG_DOMAIN,
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
     WORKFLOW_SIGNAL_WITH_START_COUNTER,
@@ -578,6 +579,7 @@ class TestClientStartWorkflow:
         emitter.counter.assert_called_once_with(
             WORKFLOW_START_COUNTER,
             tags={
+                TAG_DOMAIN: "test-domain",
                 TAG_TASK_LIST: "test-task-list",
                 TAG_WORKFLOW_TYPE: "TestWorkflow",
             },
@@ -934,6 +936,7 @@ class TestBuildStartWorkflowRequestRetryPolicy:
         emitter.counter.assert_called_once_with(
             WORKFLOW_SIGNAL_WITH_START_COUNTER,
             tags={
+                TAG_DOMAIN: "test-domain",
                 TAG_TASK_LIST: "tl",
                 TAG_WORKFLOW_TYPE: "WF",
             },

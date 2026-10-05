@@ -66,6 +66,7 @@ from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.context import ContextPropagator
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 from cadence.metrics.constants import (
+    TAG_DOMAIN,
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
     WORKFLOW_SIGNAL_WITH_START_COUNTER,
@@ -341,6 +342,7 @@ class Client:
             self.metrics_emitter.counter(
                 key,
                 tags={
+                    TAG_DOMAIN: self.domain,
                     TAG_TASK_LIST: request.task_list.name,
                     TAG_WORKFLOW_TYPE: request.workflow_type.name,
                 },

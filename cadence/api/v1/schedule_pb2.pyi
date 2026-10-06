@@ -150,13 +150,17 @@ class ScheduleInfo(_message.Message):
     def __init__(self, last_run_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., next_run_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., total_runs: _Optional[int] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., ongoing_backfills: _Optional[_Iterable[_Union[BackfillInfo, _Mapping]]] = ..., missed_runs: _Optional[int] = ..., skipped_runs: _Optional[int] = ..., buffered_fire_count: _Optional[int] = ..., running_workflow_count: _Optional[int] = ...) -> None: ...
 
 class ScheduleListEntry(_message.Message):
-    __slots__ = ("schedule_id", "workflow_type", "state", "cron_expression")
+    __slots__ = ("schedule_id", "workflow_type", "state", "cron_expression", "memo", "search_attributes")
     SCHEDULE_ID_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_TYPE_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
     CRON_EXPRESSION_FIELD_NUMBER: _ClassVar[int]
+    MEMO_FIELD_NUMBER: _ClassVar[int]
+    SEARCH_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
     schedule_id: str
     workflow_type: _common_pb2.WorkflowType
     state: ScheduleState
     cron_expression: str
-    def __init__(self, schedule_id: _Optional[str] = ..., workflow_type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., state: _Optional[_Union[ScheduleState, _Mapping]] = ..., cron_expression: _Optional[str] = ...) -> None: ...
+    memo: _common_pb2.Memo
+    search_attributes: _common_pb2.SearchAttributes
+    def __init__(self, schedule_id: _Optional[str] = ..., workflow_type: _Optional[_Union[_common_pb2.WorkflowType, _Mapping]] = ..., state: _Optional[_Union[ScheduleState, _Mapping]] = ..., cron_expression: _Optional[str] = ..., memo: _Optional[_Union[_common_pb2.Memo, _Mapping]] = ..., search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ...) -> None: ...

@@ -11,7 +11,7 @@ import datetime
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class Decision(_message.Message):
-    __slots__ = ("schedule_activity_task_decision_attributes", "start_timer_decision_attributes", "complete_workflow_execution_decision_attributes", "fail_workflow_execution_decision_attributes", "request_cancel_activity_task_decision_attributes", "cancel_timer_decision_attributes", "cancel_workflow_execution_decision_attributes", "request_cancel_external_workflow_execution_decision_attributes", "record_marker_decision_attributes", "continue_as_new_workflow_execution_decision_attributes", "start_child_workflow_execution_decision_attributes", "signal_external_workflow_execution_decision_attributes", "upsert_workflow_search_attributes_decision_attributes")
+    __slots__ = ("schedule_activity_task_decision_attributes", "start_timer_decision_attributes", "complete_workflow_execution_decision_attributes", "fail_workflow_execution_decision_attributes", "request_cancel_activity_task_decision_attributes", "cancel_timer_decision_attributes", "cancel_workflow_execution_decision_attributes", "request_cancel_external_workflow_execution_decision_attributes", "record_marker_decision_attributes", "continue_as_new_workflow_execution_decision_attributes", "start_child_workflow_execution_decision_attributes", "signal_external_workflow_execution_decision_attributes", "upsert_workflow_search_attributes_decision_attributes", "acquire_semaphore_decision_attributes", "release_semaphore_decision_attributes")
     SCHEDULE_ACTIVITY_TASK_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
     START_TIMER_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
     COMPLETE_WORKFLOW_EXECUTION_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
@@ -25,6 +25,8 @@ class Decision(_message.Message):
     START_CHILD_WORKFLOW_EXECUTION_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
     SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
     UPSERT_WORKFLOW_SEARCH_ATTRIBUTES_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
+    ACQUIRE_SEMAPHORE_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
+    RELEASE_SEMAPHORE_DECISION_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
     schedule_activity_task_decision_attributes: ScheduleActivityTaskDecisionAttributes
     start_timer_decision_attributes: StartTimerDecisionAttributes
     complete_workflow_execution_decision_attributes: CompleteWorkflowExecutionDecisionAttributes
@@ -38,7 +40,9 @@ class Decision(_message.Message):
     start_child_workflow_execution_decision_attributes: StartChildWorkflowExecutionDecisionAttributes
     signal_external_workflow_execution_decision_attributes: SignalExternalWorkflowExecutionDecisionAttributes
     upsert_workflow_search_attributes_decision_attributes: UpsertWorkflowSearchAttributesDecisionAttributes
-    def __init__(self, schedule_activity_task_decision_attributes: _Optional[_Union[ScheduleActivityTaskDecisionAttributes, _Mapping]] = ..., start_timer_decision_attributes: _Optional[_Union[StartTimerDecisionAttributes, _Mapping]] = ..., complete_workflow_execution_decision_attributes: _Optional[_Union[CompleteWorkflowExecutionDecisionAttributes, _Mapping]] = ..., fail_workflow_execution_decision_attributes: _Optional[_Union[FailWorkflowExecutionDecisionAttributes, _Mapping]] = ..., request_cancel_activity_task_decision_attributes: _Optional[_Union[RequestCancelActivityTaskDecisionAttributes, _Mapping]] = ..., cancel_timer_decision_attributes: _Optional[_Union[CancelTimerDecisionAttributes, _Mapping]] = ..., cancel_workflow_execution_decision_attributes: _Optional[_Union[CancelWorkflowExecutionDecisionAttributes, _Mapping]] = ..., request_cancel_external_workflow_execution_decision_attributes: _Optional[_Union[RequestCancelExternalWorkflowExecutionDecisionAttributes, _Mapping]] = ..., record_marker_decision_attributes: _Optional[_Union[RecordMarkerDecisionAttributes, _Mapping]] = ..., continue_as_new_workflow_execution_decision_attributes: _Optional[_Union[ContinueAsNewWorkflowExecutionDecisionAttributes, _Mapping]] = ..., start_child_workflow_execution_decision_attributes: _Optional[_Union[StartChildWorkflowExecutionDecisionAttributes, _Mapping]] = ..., signal_external_workflow_execution_decision_attributes: _Optional[_Union[SignalExternalWorkflowExecutionDecisionAttributes, _Mapping]] = ..., upsert_workflow_search_attributes_decision_attributes: _Optional[_Union[UpsertWorkflowSearchAttributesDecisionAttributes, _Mapping]] = ...) -> None: ...
+    acquire_semaphore_decision_attributes: AcquireSemaphoreDecisionAttributes
+    release_semaphore_decision_attributes: ReleaseSemaphoreDecisionAttributes
+    def __init__(self, schedule_activity_task_decision_attributes: _Optional[_Union[ScheduleActivityTaskDecisionAttributes, _Mapping]] = ..., start_timer_decision_attributes: _Optional[_Union[StartTimerDecisionAttributes, _Mapping]] = ..., complete_workflow_execution_decision_attributes: _Optional[_Union[CompleteWorkflowExecutionDecisionAttributes, _Mapping]] = ..., fail_workflow_execution_decision_attributes: _Optional[_Union[FailWorkflowExecutionDecisionAttributes, _Mapping]] = ..., request_cancel_activity_task_decision_attributes: _Optional[_Union[RequestCancelActivityTaskDecisionAttributes, _Mapping]] = ..., cancel_timer_decision_attributes: _Optional[_Union[CancelTimerDecisionAttributes, _Mapping]] = ..., cancel_workflow_execution_decision_attributes: _Optional[_Union[CancelWorkflowExecutionDecisionAttributes, _Mapping]] = ..., request_cancel_external_workflow_execution_decision_attributes: _Optional[_Union[RequestCancelExternalWorkflowExecutionDecisionAttributes, _Mapping]] = ..., record_marker_decision_attributes: _Optional[_Union[RecordMarkerDecisionAttributes, _Mapping]] = ..., continue_as_new_workflow_execution_decision_attributes: _Optional[_Union[ContinueAsNewWorkflowExecutionDecisionAttributes, _Mapping]] = ..., start_child_workflow_execution_decision_attributes: _Optional[_Union[StartChildWorkflowExecutionDecisionAttributes, _Mapping]] = ..., signal_external_workflow_execution_decision_attributes: _Optional[_Union[SignalExternalWorkflowExecutionDecisionAttributes, _Mapping]] = ..., upsert_workflow_search_attributes_decision_attributes: _Optional[_Union[UpsertWorkflowSearchAttributesDecisionAttributes, _Mapping]] = ..., acquire_semaphore_decision_attributes: _Optional[_Union[AcquireSemaphoreDecisionAttributes, _Mapping]] = ..., release_semaphore_decision_attributes: _Optional[_Union[ReleaseSemaphoreDecisionAttributes, _Mapping]] = ...) -> None: ...
 
 class ScheduleActivityTaskDecisionAttributes(_message.Message):
     __slots__ = ("activity_id", "activity_type", "domain", "task_list", "input", "schedule_to_close_timeout", "schedule_to_start_timeout", "start_to_close_timeout", "heartbeat_timeout", "retry_policy", "header", "request_local_dispatch")
@@ -225,3 +229,17 @@ class UpsertWorkflowSearchAttributesDecisionAttributes(_message.Message):
     SEARCH_ATTRIBUTES_FIELD_NUMBER: _ClassVar[int]
     search_attributes: _common_pb2.SearchAttributes
     def __init__(self, search_attributes: _Optional[_Union[_common_pb2.SearchAttributes, _Mapping]] = ...) -> None: ...
+
+class AcquireSemaphoreDecisionAttributes(_message.Message):
+    __slots__ = ("semaphore_name", "wait_timeout")
+    SEMAPHORE_NAME_FIELD_NUMBER: _ClassVar[int]
+    WAIT_TIMEOUT_FIELD_NUMBER: _ClassVar[int]
+    semaphore_name: str
+    wait_timeout: _duration_pb2.Duration
+    def __init__(self, semaphore_name: _Optional[str] = ..., wait_timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+
+class ReleaseSemaphoreDecisionAttributes(_message.Message):
+    __slots__ = ("initiated_event_id",)
+    INITIATED_EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    initiated_event_id: int
+    def __init__(self, initiated_event_id: _Optional[int] = ...) -> None: ...

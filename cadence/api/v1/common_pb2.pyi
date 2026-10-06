@@ -157,20 +157,22 @@ class SupportedClientVersions(_message.Message):
     def __init__(self, go_sdk: _Optional[str] = ..., java_sdk: _Optional[str] = ...) -> None: ...
 
 class RetryPolicy(_message.Message):
-    __slots__ = ("initial_interval", "backoff_coefficient", "maximum_interval", "maximum_attempts", "non_retryable_error_reasons", "expiration_interval")
+    __slots__ = ("initial_interval", "backoff_coefficient", "maximum_interval", "maximum_attempts", "non_retryable_error_reasons", "expiration_interval", "jitter_coefficient")
     INITIAL_INTERVAL_FIELD_NUMBER: _ClassVar[int]
     BACKOFF_COEFFICIENT_FIELD_NUMBER: _ClassVar[int]
     MAXIMUM_INTERVAL_FIELD_NUMBER: _ClassVar[int]
     MAXIMUM_ATTEMPTS_FIELD_NUMBER: _ClassVar[int]
     NON_RETRYABLE_ERROR_REASONS_FIELD_NUMBER: _ClassVar[int]
     EXPIRATION_INTERVAL_FIELD_NUMBER: _ClassVar[int]
+    JITTER_COEFFICIENT_FIELD_NUMBER: _ClassVar[int]
     initial_interval: _duration_pb2.Duration
     backoff_coefficient: float
     maximum_interval: _duration_pb2.Duration
     maximum_attempts: int
     non_retryable_error_reasons: _containers.RepeatedScalarFieldContainer[str]
     expiration_interval: _duration_pb2.Duration
-    def __init__(self, initial_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., backoff_coefficient: _Optional[float] = ..., maximum_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., maximum_attempts: _Optional[int] = ..., non_retryable_error_reasons: _Optional[_Iterable[str]] = ..., expiration_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ...) -> None: ...
+    jitter_coefficient: float
+    def __init__(self, initial_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., backoff_coefficient: _Optional[float] = ..., maximum_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., maximum_attempts: _Optional[int] = ..., non_retryable_error_reasons: _Optional[_Iterable[str]] = ..., expiration_interval: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., jitter_coefficient: _Optional[float] = ...) -> None: ...
 
 class IsolationGroupPartition(_message.Message):
     __slots__ = ("name", "state")

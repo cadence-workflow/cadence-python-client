@@ -36,9 +36,10 @@ from cadence.api.v1.query_pb2 import (
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.context import ContextPropagator
+from cadence.metrics import MetricsEmitter
 from cadence.workflow import WorkflowDefinition, WorkflowInfo
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,6 +55,9 @@ class WorkflowEngine:
         workflow_definition: WorkflowDefinition,
         context_propagators: Sequence[ContextPropagator] = (),
         headers: Mapping[str, bytes] | None = None,
+        metrics_emitter: MetricsEmitter | None = None,
+        logger: logging.Logger | None = None,
+        enable_logging_in_replay: bool = False,
     ):
         self._event_loop = DeterministicEventLoop()
         self._decision_manager = DecisionManager(self._event_loop)
@@ -65,7 +69,14 @@ class WorkflowEngine:
         )
         self._context_propagators = tuple(context_propagators)
         self._headers = dict(headers) if headers is not None else {}
-        self._context = Context(info, self._decision_manager, self._context_propagators)
+        self._context = Context(
+            info,
+            self._decision_manager,
+            self._context_propagators,
+            metrics_emitter=metrics_emitter,
+            logger=logger,
+            enable_logging_in_replay=enable_logging_in_replay,
+        )
 
     def process_decision(
         self,
@@ -89,7 +100,7 @@ class WorkflowEngine:
             with self._context._activate() as ctx:
                 with extract_headers(self._context_propagators, self._headers):
                     # Log decision task processing start with full context (matches Java ReplayDecisionTaskHandler)
-                    logger.info(
+                    _logger.info(
                         "Processing decision task for workflow",
                         extra={
                             "workflow_type": ctx.info().workflow_type,
@@ -116,7 +127,7 @@ class WorkflowEngine:
         # TODO: reevaluate if this is needed to log error here or in the caller
         except Exception as e:
             # Log decision task failure with full context (matches Java ReplayDecisionTaskHandler)
-            logger.error(
+            _logger.error(
                 "Decision task processing failed",
                 extra={
                     "workflow_type": ctx.info().workflow_type,
@@ -166,7 +177,7 @@ class WorkflowEngine:
         # Check if there are any decision events to process
         for decision_events in events_iterator:
             # Log decision events batch processing (matches Go client patterns)
-            logger.debug(
+            _logger.debug(
                 "Processing decision events batch",
                 extra={
                     "workflow_id": ctx.info().workflow_id,
@@ -288,7 +299,7 @@ class WorkflowEngine:
     ) -> None:
         signal_def = self._workflow_definition.signals.get(attrs.signal_name)
         if signal_def is None:
-            logger.warning(
+            _logger.warning(
                 "Received signal '%s' but no handler registered, dropping",
                 attrs.signal_name,
             )
@@ -297,7 +308,7 @@ class WorkflowEngine:
         try:
             args = signal_def.params_from_payload(self._data_converter, attrs.input)
         except Exception as e:
-            logger.warning(
+            _logger.warning(
                 "Failed to decode payload for signal '%s', dropping: %s",
                 attrs.signal_name,
                 e,

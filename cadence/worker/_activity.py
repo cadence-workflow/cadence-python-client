@@ -70,6 +70,7 @@ class ActivityWorker:
             registry.get_activity,
             options["metrics_emitter"],
             context_propagators=options.get("context_propagators", ()),
+            logger=options.get("logger"),
         )
         self._poller = Poller[PollForActivityTaskResponse](
             self._num_pollers,

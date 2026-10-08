@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from google.protobuf.duration_pb2 import Duration
 
+from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
 from cadence._internal.workflow.context import Context
 from cadence.api.v1 import workflow_pb2
 from cadence.api.v1.common_pb2 import WorkflowExecution, WorkflowType
@@ -383,6 +384,7 @@ async def test_start_child_workflow_future_cancel():
         str,
         execution_start_to_close_timeout=timedelta(minutes=5),
     )
+    assert isinstance(future, ChildWorkflowFutureImpl)
     future._result_future = MagicMock()
     future._result_future.cancel = MagicMock(return_value=True)
 

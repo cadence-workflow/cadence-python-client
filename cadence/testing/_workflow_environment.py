@@ -62,6 +62,7 @@ from typing import (
 )
 
 from cadence._internal.activity._definition import BaseDefinition
+from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.search_attributes import search_attributes_to_proto
 from cadence._internal.workflow.versioning import (
@@ -934,7 +935,7 @@ class TestWorkflowEnvironment:
         loop = cast(DeterministicEventLoop, get_running_loop())
         result_future: "Future[Payload]" = loop.create_future()
         result_future.set_result(result_payload)
-        return ChildWorkflowFuture(
+        return ChildWorkflowFutureImpl(
             workflow_id=child_id,
             run_id=child_run_id,
             result_future=result_future,

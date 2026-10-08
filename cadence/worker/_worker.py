@@ -24,12 +24,21 @@ class Worker:
     ) -> None:
         self._client = client
         self._task_list = task_list
-        self._started = False  # flag to indicate if the worker has started
-        self._started_event = asyncio.Event()  # event to signal that worker has been
+
+        # Prevents a Worker instance from being started more than once.
+        self._started = False
+        # Signals that run() has scheduled all enabled internal worker tasks.
+        self._started_event = asyncio.Event()
+        # Wakes run() when close() requests a cooperative shutdown.
         self._close_requested = asyncio.Event()
+        # Signals that run() has finished cancelling and joining its tasks.
         self._close_complete = asyncio.Event()
+
+        # Reserves the context manager before its background run() task starts.
         self._context_entered = False
+        # Background run() wrapper created by __aenter__.
         self._context_run_task: asyncio.Task[None]
+        # Fatal run() error saved for propagation from __aexit__.
         self._context_run_error: BaseException | None = None
 
         options = WorkerOptions(**kwargs)

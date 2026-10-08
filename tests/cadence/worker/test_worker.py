@@ -47,7 +47,6 @@ async def test_worker():
         # Wait until both polled
         await both_waited.wait()
 
-    assert worker._options["disable_sticky_execution"] is True
     assert worker._options["sticky_schedule_to_start_timeout"] == timedelta(seconds=5)
     assert worker._options["sticky_cache_size"] == 10_000
 
@@ -102,13 +101,11 @@ async def test_worker_sends_task_list_activities_per_second():
         decision_task_pollers=1,
         identity="identity",
         task_list_activities_per_second=12.5,
-        disable_sticky_execution=False,
         sticky_schedule_to_start_timeout=timedelta(seconds=30),
         sticky_cache_size=500,
     ) as worker:
         await both_waited.wait()
 
-    assert worker._options["disable_sticky_execution"] is False
     assert worker._options["sticky_schedule_to_start_timeout"] == timedelta(seconds=30)
     assert worker._options["sticky_cache_size"] == 500
 

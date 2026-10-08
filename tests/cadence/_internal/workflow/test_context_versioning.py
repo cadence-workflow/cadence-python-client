@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cadence._internal.workflow.context import Context
+from cadence._internal.workflow.context import Context, _activate_workflow_context
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.statemachine.decision_state_machine import DecisionState
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
@@ -357,7 +357,7 @@ def test_in_memory_context_rejects_unserializable_search_attributes():
 def test_in_memory_context_rejects_reserved_change_version_search_attribute():
     context = _InMemoryWorkflowContext(MagicMock(), _info())
 
-    with context._activate():
+    with _activate_workflow_context(context):
         with pytest.raises(ValueError, match="reserved for workflow versioning"):
             upsert_search_attributes(
                 {CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: ["change-1"]}
@@ -395,7 +395,7 @@ def test_in_memory_context_requires_a_non_empty_string_change_id(change_id: obje
 def test_public_get_version_dispatches_through_context():
     context, _ = _context()
 
-    with context._activate():
+    with _activate_workflow_context(context):
         assert get_version("change", DEFAULT_VERSION, 2) == 2
 
 

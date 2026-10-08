@@ -80,7 +80,7 @@ from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.activity import ActivityContext, ActivityInfo
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
 from cadence.api.v1.query_pb2 import QueryRejectCondition
-from cadence.client import Client, ClientOptions, StartWorkflowOptions
+from cadence.client import Client, ClientOptions, StartWorkflowOptions, _identity
 from cadence.context import ContextPropagator
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.metrics import NoOpMetricsEmitter
@@ -94,7 +94,9 @@ from cadence.workflow import (
     WorkflowContext,
     WorkflowDefinition,
     WorkflowInfo,
+    WorkflowInterceptorFactory,
 )
+from cadence._internal.workflow.context import _activate_workflow_context
 from cadence.worker import Registry
 
 logger = logging.getLogger(__name__)
@@ -388,7 +390,9 @@ class _Execution:
         # execution owns the DataConverter and decodes inputs / encodes outputs
         # at the boundary (mirroring the production WorkflowEngine).
         self._instance = WorkflowInstance(self._loop, workflow_definition)
-        self._context = _InMemoryWorkflowContext(env, info)
+        self._context: WorkflowContext = env._workflow_interceptor_factory(
+            _InMemoryWorkflowContext(env, info)
+        )
         self._headers = dict(headers)
         self.completed: bool = False
         self.result_payload: Optional[Payload] = None
@@ -441,7 +445,7 @@ class _Execution:
         # loop) register on this heap, then activate the workflow context.
         self._env._driving_execution = self
         try:
-            with self._context._activate():
+            with _activate_workflow_context(self._context):
                 with extract_headers(self._env._context_propagators, self._headers):
                     yield
         finally:
@@ -469,7 +473,7 @@ class _Execution:
         self._collect_outcome()
 
     def run_query(self, query_type: str, args: Payload) -> Payload:
-        with self._context._activate():
+        with _activate_workflow_context(self._context):
             with extract_headers(self._env._context_propagators, self._headers):
                 query_def = self._definition.queries.get(query_type)
                 if query_def is None:
@@ -516,6 +520,7 @@ class _MockClient(Client):
             identity="test-workflow-environment",
             metrics_emitter=NoOpMetricsEmitter(),
             context_propagators=env._context_propagators,
+            workflow_interceptor_factory=env._workflow_interceptor_factory,
         )
 
     async def ready(self) -> None:
@@ -608,12 +613,14 @@ class TestWorkflowEnvironment:
         data_converter: Optional[DataConverter] = None,
         start_time: Optional[datetime] = None,
         context_propagators: Sequence[ContextPropagator] = (),
+        workflow_interceptor_factory: Optional[WorkflowInterceptorFactory] = None,
     ) -> None:
         self._registry = registry
         self._domain = domain
         self._default_task_list = task_list
         self._data_converter = data_converter or DefaultDataConverter()
         self._context_propagators = tuple(context_propagators)
+        self._workflow_interceptor_factory = workflow_interceptor_factory or _identity
         self._activity_mocks: dict[str, Union[_ValueMock, _FnMock]] = {}
         self._executions: dict[str, _Execution] = {}
         self._last_execution: Optional[_Execution] = None
@@ -958,8 +965,10 @@ class TestWorkflowEnvironment:
         async def _body() -> Any:
             instance = definition.cls()
             run_method = definition.get_run_method(instance)
-            child_ctx = _InMemoryWorkflowContext(self, info)
-            with child_ctx._activate():
+            child_ctx = self._workflow_interceptor_factory(
+                _InMemoryWorkflowContext(self, info)
+            )
+            with _activate_workflow_context(child_ctx):
                 with extract_headers(self._context_propagators, child_headers):
                     return await run_method(*run_args)
 

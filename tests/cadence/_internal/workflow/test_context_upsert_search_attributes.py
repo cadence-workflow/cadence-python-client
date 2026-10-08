@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cadence._internal.workflow.context import Context
+from cadence._internal.workflow.context import Context, _activate_workflow_context
 from cadence._internal.workflow.search_attributes import search_attributes_to_proto
 from cadence.data_converter import DefaultDataConverter
 from cadence.workflow import (
@@ -64,7 +64,7 @@ def test_upsert_search_attributes_rejects_empty():
 def test_upsert_search_attributes_rejects_reserved_change_version():
     ctx, dm = _make_ctx()
 
-    with ctx._activate():
+    with _activate_workflow_context(ctx):
         with pytest.raises(ValueError, match="reserved for workflow versioning"):
             upsert_search_attributes(
                 {CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE: ["change-1"]}

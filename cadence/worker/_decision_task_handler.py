@@ -205,6 +205,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             workflow_definition=workflow_definition,
             context_propagators=self._context_propagators,
             headers=header_to_dict(started_attrs.header),
+            workflow_interceptor_factory=self._client.workflow_interceptor_factory,
         )
 
         exec_start_ns = time.monotonic_ns()

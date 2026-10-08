@@ -36,7 +36,7 @@ class Worker:
 
         # fields used by context manager
         self._context_entered = False
-        self._context_task_group: asyncio.TaskGroup
+        self._context_task_group: asyncio.TaskGroup  # TODO: TaskGroup leaks owner cancel count on Py3.11/3.12 when run() fails in exit
 
         options = WorkerOptions(**kwargs)
         _validate_and_copy_defaults(client, task_list, options)
@@ -93,11 +93,6 @@ class Worker:
                     raise RuntimeError(f"{worker_name} worker was cancelled")
                 error = task.exception()
                 if error is not None:
-                    logger.error(
-                        "%s worker failed, closing",
-                        worker_name,
-                        exc_info=error,
-                    )
                     raise error
                 raise RuntimeError(f"{worker_name} worker exited unexpectedly")
         finally:
@@ -105,7 +100,12 @@ class Worker:
             for task in tasks:
                 task.cancel()
             try:
-                await asyncio.gather(*tasks, return_exceptions=True)
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in results[1:]:
+                    if isinstance(result, BaseException) and not isinstance(
+                        result, asyncio.CancelledError
+                    ):
+                        logger.error("Worker task failed", exc_info=result)
             finally:
                 self._close_complete.set()
 

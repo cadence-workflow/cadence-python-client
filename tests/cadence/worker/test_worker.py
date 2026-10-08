@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import timedelta
 
 import pytest
@@ -227,6 +228,94 @@ async def test_worker_run_propagates_background_failure() -> None:
 
     assert exc_info.value is failure
     assert worker._close_complete.is_set()
+
+
+@pytest.mark.asyncio
+async def test_worker_run_logs_all_failures(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(client, "task_list", Registry(), identity="identity")
+    workflow_failure = RuntimeError("workflow worker failed")
+    activity_failure = RuntimeError("activity worker failed")
+
+    with (
+        patch.object(
+            worker._decision_worker,
+            "run",
+            new=AsyncMock(side_effect=workflow_failure),
+        ),
+        patch.object(
+            worker._activity_worker,
+            "run",
+            new=AsyncMock(side_effect=activity_failure),
+        ),
+        caplog.at_level(logging.ERROR, logger="cadence.worker._worker"),
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        await worker.run()
+
+    assert exc_info.value in (workflow_failure, activity_failure)
+    failure_records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "Worker task failed"
+    ]
+    assert len(failure_records) == 2
+    assert {
+        record.exc_info[1] for record in failure_records if record.exc_info is not None
+    } == {workflow_failure, activity_failure}
+
+
+@pytest.mark.asyncio
+async def test_worker_run_logs_failure_raised_during_close(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(
+        client,
+        "task_list",
+        Registry(),
+        disable_activity_worker=True,
+        identity="identity",
+    )
+    worker_started = asyncio.Event()
+    close_failure = RuntimeError("workflow worker failed during close")
+
+    async def fail_during_close() -> None:
+        worker_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise close_failure
+
+    with patch.object(
+        worker._decision_worker,
+        "run",
+        new=fail_during_close,
+    ):
+        run_task = asyncio.create_task(worker.run())
+        await worker_started.wait()
+        with caplog.at_level(logging.ERROR, logger="cadence.worker._worker"):
+            await worker.close()
+            await run_task
+
+    failure_records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "Worker task failed"
+    ]
+    assert len(failure_records) == 1
+    assert failure_records[0].exc_info is not None
+    assert failure_records[0].exc_info[1] is close_failure
 
 
 @pytest.mark.asyncio

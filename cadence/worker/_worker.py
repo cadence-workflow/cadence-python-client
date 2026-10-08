@@ -27,19 +27,16 @@ class Worker:
 
         # Prevents a Worker instance from being started more than once.
         self._started = False
-        # Signals that run() has scheduled all enabled internal worker tasks.
-        self._started_event = asyncio.Event()
-        # Wakes run() when close() requests a cooperative shutdown.
+
+        # fields used by run, close
+        # run() exclusively owns, cancels, and joins internal worker tasks.
+        # close() only sends a cooperative request and waits for acknowledgment.
         self._close_requested = asyncio.Event()
-        # Signals that run() has finished cancelling and joining its tasks.
         self._close_complete = asyncio.Event()
 
-        # Reserves the context manager before its background run() task starts.
+        # fields used by context manager
         self._context_entered = False
-        # Background run() wrapper created by __aenter__.
-        self._context_run_task: asyncio.Task[None]
-        # Fatal run() error saved for propagation from __aexit__.
-        self._context_run_error: BaseException | None = None
+        self._context_task_group: asyncio.TaskGroup
 
         options = WorkerOptions(**kwargs)
         _validate_and_copy_defaults(client, task_list, options)
@@ -54,14 +51,6 @@ class Worker:
     @property
     def task_list(self) -> str:
         return self._task_list
-
-    @property
-    def is_running(self) -> bool:
-        return self._started and not self._close_complete.is_set()
-
-    @property
-    def is_closed(self) -> bool:
-        return self._close_complete.is_set()
 
     async def run(self) -> None:
         """Run until close is requested or an internal worker fails."""
@@ -90,7 +79,6 @@ class Worker:
 
         close_task = asyncio.create_task(wait_for_close())
         tasks = [close_task, *(task for _, task in worker_tasks)]
-        self._started_event.set()
 
         try:
             done, _ = await asyncio.wait(
@@ -132,26 +120,9 @@ class Worker:
             raise RuntimeError("Worker already started")
         self._context_entered = True
 
-        owner_task = asyncio.current_task()
-        if owner_task is None:
-            raise RuntimeError("Worker context must run inside an asyncio task")
-
-        async def run_worker() -> None:
-            try:
-                await self.run()
-            except BaseException as error:
-                self._context_run_error = error
-                owner_task.cancel()
-
-        self._context_run_task = asyncio.create_task(run_worker())
-        try:
-            await self._started_event.wait()
-        except asyncio.CancelledError:
-            if self._context_run_error is not None:
-                raise self._context_run_error
-            await self.close()
-            await self._context_run_task
-            raise
+        self._context_task_group = asyncio.TaskGroup()
+        await self._context_task_group.__aenter__()
+        self._context_task_group.create_task(self.run())
         return self
 
     async def __aexit__(
@@ -160,13 +131,19 @@ class Worker:
         _exc_val: BaseException | None,
         _exc_tb: TracebackType | None,
     ) -> None:
-        await self.close()
-        await self._context_run_task
-
-        if self._context_run_error is not None and (
-            exc_type is None or exc_type is asyncio.CancelledError
-        ):
-            raise self._context_run_error
+        self._close_requested.set()
+        try:
+            await self._context_task_group.__aexit__(None, None, None)
+        except BaseExceptionGroup as errors:
+            # If the context body raised an exception, do not raise the worker error here.
+            if exc_type is not None and exc_type is not asyncio.CancelledError:
+                return
+            # run() is the task group's only child, so expose its original error.
+            if len(errors.exceptions) == 1:
+                raise errors.exceptions[0]
+            raise RuntimeError(
+                f"Worker task group unexpectedly produced {len(errors.exceptions)} errors"
+            ) from errors
 
 
 def _validate_and_copy_defaults(

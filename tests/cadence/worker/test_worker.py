@@ -53,6 +53,10 @@ async def test_worker_context_propagates_background_failure(
         await fail_worker.wait()
         raise failure
 
+    owner_task = asyncio.current_task()
+    assert owner_task is not None
+    cancelling_before = owner_task.cancelling()
+
     with (
         patch.object(internal_worker, "run", new=run_internal_worker),
         pytest.raises(RuntimeError) as exc_info,
@@ -62,6 +66,7 @@ async def test_worker_context_propagates_background_failure(
             await asyncio.Event().wait()
 
     assert exc_info.value is failure
+    assert owner_task.cancelling() == cancelling_before
 
 
 @pytest.mark.asyncio
@@ -102,6 +107,43 @@ async def test_worker_context_propagates_failure_after_cancellation_is_swallowed
 
 
 @pytest.mark.asyncio
+async def test_worker_context_propagates_failure_during_exit() -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(
+        client,
+        "task_list",
+        Registry(),
+        disable_activity_worker=True,
+        identity="identity",
+    )
+    failure = RuntimeError("workflow worker failed during exit")
+    worker_started = asyncio.Event()
+
+    async def run_internal_worker() -> None:
+        worker_started.set()
+        await worker._close_requested.wait()
+        raise failure
+
+    owner_task = asyncio.current_task()
+    assert owner_task is not None
+    cancelling_before = owner_task.cancelling()
+
+    with (
+        patch.object(worker._decision_worker, "run", new=run_internal_worker),
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        async with worker:
+            await worker_started.wait()
+
+    assert exc_info.value is failure
+    assert owner_task.cancelling() == cancelling_before
+
+
+@pytest.mark.asyncio
 async def test_worker_run_blocks_until_close() -> None:
     client = Mock(spec=Client)
     type(client).domain = PropertyMock(return_value="domain")
@@ -118,16 +160,14 @@ async def test_worker_run_blocks_until_close() -> None:
     )
     run_task = asyncio.create_task(worker.run())
 
-    async with asyncio.timeout(1):
-        await worker._started_event.wait()
+    await asyncio.sleep(0)
 
     assert not run_task.done()
 
     await worker.close()
     await run_task
 
-    assert not worker.is_running
-    assert worker.is_closed
+    assert worker._close_complete.is_set()
 
     with pytest.raises(RuntimeError, match="already started"):
         await worker.run()
@@ -150,15 +190,13 @@ async def test_worker_run_cancellation_closes() -> None:
     )
     run_task = asyncio.create_task(worker.run())
 
-    async with asyncio.timeout(1):
-        await worker._started_event.wait()
+    await asyncio.sleep(0)
 
     run_task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await run_task
 
-    assert not worker.is_running
-    assert worker.is_closed
+    assert worker._close_complete.is_set()
 
 
 @pytest.mark.asyncio
@@ -188,7 +226,7 @@ async def test_worker_run_propagates_background_failure() -> None:
         await worker.run()
 
     assert exc_info.value is failure
-    assert worker.is_closed
+    assert worker._close_complete.is_set()
 
 
 @pytest.mark.asyncio

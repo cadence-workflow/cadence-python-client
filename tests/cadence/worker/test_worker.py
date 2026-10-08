@@ -3,7 +3,7 @@ from datetime import timedelta
 
 import pytest
 
-from unittest.mock import AsyncMock, Mock, PropertyMock
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskRequest,
@@ -14,6 +14,205 @@ from google.protobuf.wrappers_pb2 import DoubleValue
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind, TaskListMetadata
 from cadence.client import Client
 from cadence.worker import Worker, Registry
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worker_kind", ("decision", "activity"))
+async def test_worker_context_propagates_background_failure(
+    worker_kind: str,
+) -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    internal_worker: object
+    if worker_kind == "decision":
+        worker = Worker(
+            client,
+            "task_list",
+            Registry(),
+            disable_activity_worker=True,
+            identity="identity",
+        )
+        internal_worker = worker._decision_worker
+    else:
+        worker = Worker(
+            client,
+            "task_list",
+            Registry(),
+            disable_workflow_worker=True,
+            identity="identity",
+        )
+        internal_worker = worker._activity_worker
+
+    failure = RuntimeError(f"{worker_kind} worker failed")
+    fail_worker = asyncio.Event()
+
+    async def run_internal_worker() -> None:
+        await fail_worker.wait()
+        raise failure
+
+    with (
+        patch.object(internal_worker, "run", new=run_internal_worker),
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        async with worker:
+            fail_worker.set()
+            await asyncio.Event().wait()
+
+    assert exc_info.value is failure
+
+
+@pytest.mark.asyncio
+async def test_worker_context_propagates_failure_after_cancellation_is_swallowed() -> (
+    None
+):
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(
+        client,
+        "task_list",
+        Registry(),
+        disable_activity_worker=True,
+        identity="identity",
+    )
+    failure = RuntimeError("workflow worker failed")
+    fail_worker = asyncio.Event()
+
+    async def run_internal_worker() -> None:
+        await fail_worker.wait()
+        raise failure
+
+    with (
+        patch.object(worker._decision_worker, "run", new=run_internal_worker),
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        async with worker:
+            fail_worker.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                pass
+
+    assert exc_info.value is failure
+
+
+@pytest.mark.asyncio
+async def test_worker_run_blocks_until_close() -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(
+        client,
+        "task_list",
+        Registry(),
+        disable_workflow_worker=True,
+        disable_activity_worker=True,
+        identity="identity",
+    )
+    run_task = asyncio.create_task(worker.run())
+
+    async with asyncio.timeout(1):
+        await worker._started_event.wait()
+
+    assert not run_task.done()
+
+    await worker.close()
+    await run_task
+
+    assert not worker.is_running
+    assert worker.is_closed
+
+    with pytest.raises(RuntimeError, match="already started"):
+        await worker.run()
+
+
+@pytest.mark.asyncio
+async def test_worker_run_cancellation_closes() -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(
+        client,
+        "task_list",
+        Registry(),
+        disable_workflow_worker=True,
+        disable_activity_worker=True,
+        identity="identity",
+    )
+    run_task = asyncio.create_task(worker.run())
+
+    async with asyncio.timeout(1):
+        await worker._started_event.wait()
+
+    run_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+
+    assert not worker.is_running
+    assert worker.is_closed
+
+
+@pytest.mark.asyncio
+async def test_worker_run_propagates_background_failure() -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(
+        client,
+        "task_list",
+        Registry(),
+        disable_activity_worker=True,
+        identity="identity",
+    )
+    failure = RuntimeError("workflow worker failed")
+
+    with (
+        patch.object(
+            worker._decision_worker,
+            "run",
+            new=AsyncMock(side_effect=failure),
+        ),
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        await worker.run()
+
+    assert exc_info.value is failure
+    assert worker.is_closed
+
+
+@pytest.mark.asyncio
+async def test_worker_context_preserves_body_failure() -> None:
+    client = Mock(spec=Client)
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    worker = Worker(
+        client,
+        "task_list",
+        Registry(),
+        disable_workflow_worker=True,
+        disable_activity_worker=True,
+        identity="identity",
+    )
+    failure = RuntimeError("context body failed")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        async with worker:
+            raise failure
+
+    assert exc_info.value is failure
 
 
 @pytest.mark.asyncio

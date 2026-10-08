@@ -11,6 +11,11 @@ from cadence.metrics.constants import (
     TAG_ATTEMPT,
     TAG_WORKER_TYPE,
     CADENCE_METRICS_PREFIX,
+    STICKY_CACHE_HIT,
+    STICKY_CACHE_MISS,
+    STICKY_CACHE_EVICT,
+    STICKY_CACHE_STALL,
+    STICKY_CACHE_SIZE,
 )
 
 
@@ -27,3 +32,12 @@ class TestTagConstants:
 
     def test_metric_name_prefix(self):
         assert CADENCE_METRICS_PREFIX == "cadence-"
+
+
+class TestStickyCacheMetricConstants:
+    def test_sticky_cache_metric_names_match_go_sdk(self):
+        assert STICKY_CACHE_HIT == "cadence-sticky-cache-hit"
+        assert STICKY_CACHE_MISS == "cadence-sticky-cache-miss"
+        assert STICKY_CACHE_EVICT == "cadence-sticky-cache-evict"
+        assert STICKY_CACHE_STALL == "cadence-sticky-cache-stall"
+        assert STICKY_CACHE_SIZE == "cadence-sticky-cache-size"

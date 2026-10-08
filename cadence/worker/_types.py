@@ -18,6 +18,9 @@ class WorkerOptions(TypedDict, total=False):
     disable_workflow_worker: bool
     disable_activity_worker: bool
     identity: str
+    disable_sticky_execution: bool
+    sticky_schedule_to_start_timeout: timedelta
+    sticky_cache_size: int
     metrics_emitter: MetricsEmitter
     context_propagators: Sequence[ContextPropagator]
 
@@ -30,6 +33,9 @@ _DEFAULT_WORKER_OPTIONS: WorkerOptions = {
     "decision_task_pollers": 2,
     "disable_workflow_worker": False,
     "disable_activity_worker": False,
+    "disable_sticky_execution": True,
+    "sticky_schedule_to_start_timeout": timedelta(seconds=5),
+    "sticky_cache_size": 10_000,
     "context_propagators": (),
 }
 

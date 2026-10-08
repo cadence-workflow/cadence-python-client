@@ -95,6 +95,7 @@ from cadence.workflow import (
     WorkflowDefinition,
     WorkflowInfo,
 )
+from cadence._internal.workflow.context import _activate_workflow_context
 from cadence.worker import Registry
 
 logger = logging.getLogger(__name__)
@@ -441,7 +442,7 @@ class _Execution:
         # loop) register on this heap, then activate the workflow context.
         self._env._driving_execution = self
         try:
-            with self._context._activate():
+            with _activate_workflow_context(self._context):
                 with extract_headers(self._env._context_propagators, self._headers):
                     yield
         finally:
@@ -469,7 +470,7 @@ class _Execution:
         self._collect_outcome()
 
     def run_query(self, query_type: str, args: Payload) -> Payload:
-        with self._context._activate():
+        with _activate_workflow_context(self._context):
             with extract_headers(self._env._context_propagators, self._headers):
                 query_def = self._definition.queries.get(query_type)
                 if query_def is None:
@@ -959,7 +960,7 @@ class TestWorkflowEnvironment:
             instance = definition.cls()
             run_method = definition.get_run_method(instance)
             child_ctx = _InMemoryWorkflowContext(self, info)
-            with child_ctx._activate():
+            with _activate_workflow_context(child_ctx):
                 with extract_headers(self._context_propagators, child_headers):
                     return await run_method(*run_args)
 

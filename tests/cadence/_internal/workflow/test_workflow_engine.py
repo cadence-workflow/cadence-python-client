@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import Any, List, Mapping
 
 import pytest
 from cadence.api.v1.common_pb2 import ActivityType, Payload, WorkflowType
@@ -22,7 +22,15 @@ from cadence.api.v1.history_pb2 import (
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence import workflow
 from cadence.data_converter import DefaultDataConverter
-from cadence.workflow import WorkflowInfo, WorkflowDefinition, WorkflowDefinitionOptions
+from cadence.workflow import (
+    SearchAttributeType,
+    WorkflowContext,
+    WorkflowDefinition,
+    WorkflowDefinitionOptions,
+    WorkflowInfo,
+    WorkflowInterceptor,
+    WorkflowInterceptorFactory,
+)
 
 
 class TestWorkflow:
@@ -127,6 +135,18 @@ class UpsertThenWaitWorkflow:
         workflow.upsert_search_attributes({"CustomIntField": 1})
         await workflow.wait_condition(lambda: False)
         return "unreachable"
+
+
+class RewritingUpsertInterceptor(WorkflowInterceptor):
+    def __init__(self, delegate: WorkflowContext) -> None:
+        super().__init__(delegate)
+        self.calls: list[Mapping[str, Any]] = []
+
+    def upsert_search_attributes(
+        self, attributes: Mapping[str, SearchAttributeType | list[SearchAttributeType]]
+    ) -> None:
+        self.calls.append(attributes)
+        super().upsert_search_attributes({"CustomIntField": 2})
 
 
 class TestWorkflowEngine:
@@ -470,6 +490,46 @@ class TestWorkflowEngine:
             "CustomIntField": 1
         }
 
+    def test_interceptor_factory_receives_engine_context(self):
+        received: list[WorkflowContext] = []
+
+        def factory(ctx: WorkflowContext) -> WorkflowContext:
+            received.append(ctx)
+            return ctx
+
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                UpsertThenWaitWorkflow,
+                WorkflowDefinitionOptions(name="upsert_then_wait"),
+            ),
+            factory,
+        )
+
+        assert received == [workflow_engine._context]
+
+    def test_interceptor_wraps_workflow_calls(self):
+        interceptors: list[RewritingUpsertInterceptor] = []
+
+        def factory(ctx: WorkflowContext) -> WorkflowContext:
+            interceptors.append(RewritingUpsertInterceptor(ctx))
+            return interceptors[-1]
+
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                UpsertThenWaitWorkflow,
+                WorkflowDefinitionOptions(name="upsert_then_wait"),
+            ),
+            factory,
+        )
+        decision_result = workflow_engine.process_decision(_start_events())
+
+        assert interceptors[0].calls == [{"CustomIntField": 1}]
+        assert len(decision_result.decisions) == 1
+        indexed = decision_result.decisions[
+            0
+        ].upsert_workflow_search_attributes_decision_attributes.search_attributes.indexed_fields
+        assert indexed["CustomIntField"].data == b"2"
+
     def test_upsert_search_attributes_replay_does_not_reemit(self):
         workflow_engine = create_workflow_engine(
             WorkflowDefinition.wrap(
@@ -523,7 +583,10 @@ class TestWorkflowEngine:
         assert decision_result.decisions == []
 
 
-def create_workflow_engine(workflow_definition: WorkflowDefinition) -> WorkflowEngine:
+def create_workflow_engine(
+    workflow_definition: WorkflowDefinition,
+    workflow_interceptor_factory: WorkflowInterceptorFactory | None = None,
+) -> WorkflowEngine:
     """Create workflow engine."""
     return WorkflowEngine(
         info=WorkflowInfo(
@@ -535,7 +598,27 @@ def create_workflow_engine(workflow_definition: WorkflowDefinition) -> WorkflowE
             data_converter=DefaultDataConverter(),
         ),
         workflow_definition=workflow_definition,
+        workflow_interceptor_factory=workflow_interceptor_factory,
     )
+
+
+def _start_events() -> list[HistoryEvent]:
+    return [
+        _event(
+            1,
+            workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(),
+        ),
+        _event(
+            2,
+            decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+        ),
+        _event(
+            3,
+            decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                scheduled_event_id=2
+            ),
+        ),
+    ]
 
 
 def _event(event_id: int, **attributes) -> HistoryEvent:

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 
 import pytest
 
@@ -42,9 +43,12 @@ async def test_worker():
         activity_task_pollers=1,
         decision_task_pollers=1,
         identity="identity",
-    ):
+    ) as worker:
         # Wait until both polled
         await both_waited.wait()
+
+    assert worker._options["sticky_schedule_to_start_timeout"] == timedelta(seconds=5)
+    assert worker._options["sticky_cache_size"] == 10_000
 
     worker_stub.PollForDecisionTask.assert_called_once_with(
         PollForDecisionTaskRequest(
@@ -97,8 +101,13 @@ async def test_worker_sends_task_list_activities_per_second():
         decision_task_pollers=1,
         identity="identity",
         task_list_activities_per_second=12.5,
-    ):
+        sticky_schedule_to_start_timeout=timedelta(seconds=30),
+        sticky_cache_size=500,
+    ) as worker:
         await both_waited.wait()
+
+    assert worker._options["sticky_schedule_to_start_timeout"] == timedelta(seconds=30)
+    assert worker._options["sticky_cache_size"] == 500
 
     worker_stub.PollForActivityTask.assert_called_once_with(
         PollForActivityTaskRequest(

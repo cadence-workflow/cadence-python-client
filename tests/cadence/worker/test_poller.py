@@ -183,7 +183,6 @@ async def test_poller_execute_error():
 async def test_poller_backs_off_on_poll_errors():
     permits = asyncio.Semaphore(1)
 
-    done = asyncio.Event()
     results: list[str | Exception] = [
         RuntimeError("oh no"),
         RuntimeError("oh no"),
@@ -194,7 +193,8 @@ async def test_poller_backs_off_on_poll_errors():
 
     async def poll_func():
         if not results:
-            await done.wait()
+            # Nothing left to return, wait here until the poller is cancelled
+            await asyncio.Event().wait()
         result = results.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -204,14 +204,13 @@ async def test_poller_backs_off_on_poll_errors():
     poller = Poller(1, permits, poll_func, outgoing.put)
 
     with (
-        patch("cadence.worker._poller.asyncio.sleep", new_callable=AsyncMock) as sleep,
-        patch("cadence.worker._poller.random.uniform", side_effect=lambda _, high: high),
+        patch("asyncio.sleep", new_callable=AsyncMock) as sleep,
+        patch("random.uniform", side_effect=lambda _, high: high),
     ):
         task = asyncio.create_task(poller.run())
         assert await outgoing.get() == "foo"
         assert await outgoing.get() == "bar"
         task.cancel()
-        done.set()
 
     # Grows on consecutive errors and starts over after a successful poll
     delays = [c.args[0] for c in sleep.await_args_list]

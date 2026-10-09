@@ -1,9 +1,10 @@
 import asyncio
+from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from cadence.worker._poller import Poller
+from cadence.worker._poller import Poller, _next_poll_backoff
 
 
 @pytest.mark.asyncio
@@ -176,3 +177,55 @@ async def test_poller_execute_error():
 
     assert result == "second"
     task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_poller_backs_off_on_poll_errors():
+    permits = asyncio.Semaphore(1)
+
+    done = asyncio.Event()
+    results: list[str | Exception] = [
+        RuntimeError("oh no"),
+        RuntimeError("oh no"),
+        "foo",
+        RuntimeError("oh no"),
+        "bar",
+    ]
+
+    async def poll_func():
+        if not results:
+            await done.wait()
+        result = results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    outgoing = asyncio.Queue[str]()
+    poller = Poller(1, permits, poll_func, outgoing.put)
+
+    with (
+        patch("cadence.worker._poller.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        patch("cadence.worker._poller.random.uniform", side_effect=lambda _, high: high),
+    ):
+        task = asyncio.create_task(poller.run())
+        assert await outgoing.get() == "foo"
+        assert await outgoing.get() == "bar"
+        task.cancel()
+        done.set()
+
+    # Grows on consecutive errors and starts over after a successful poll
+    delays = [c.args[0] for c in sleep.await_args_list]
+    assert delays == pytest.approx([0.02, 0.04, 0.02])
+
+
+@pytest.mark.parametrize(
+    "current, expected",
+    [
+        (None, timedelta(milliseconds=20)),
+        (timedelta(milliseconds=20), timedelta(milliseconds=40)),
+        (timedelta(seconds=8), timedelta(seconds=10)),
+        (timedelta(seconds=10), timedelta(seconds=10)),
+    ],
+)
+def test_next_poll_backoff(current: timedelta | None, expected: timedelta):
+    assert _next_poll_backoff(current) == expected

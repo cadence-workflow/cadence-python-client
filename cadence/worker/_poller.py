@@ -1,11 +1,19 @@
 import asyncio
 import logging
+import random
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+# Polling never stops on errors, it only slows down.
+_POLL_BACKOFF_INITIAL_INTERVAL = timedelta(milliseconds=20)
+_POLL_BACKOFF_COEFFICIENT = 2.0
+_POLL_BACKOFF_MAX_INTERVAL = timedelta(seconds=10)
+_POLL_BACKOFF_JITTER = 0.2
 
 
 class Poller(Generic[T]):
@@ -23,6 +31,8 @@ class Poller(Generic[T]):
         self._callback = callback
         self._on_start = on_start
         self._background_tasks: set[asyncio.Task[None]] = set()
+        # Shared by all poll loops so they back off together
+        self._poll_backoff: timedelta | None = None
 
     async def run(self) -> None:
         try:
@@ -38,13 +48,17 @@ class Poller(Generic[T]):
         while True:
             try:
                 await self._poll_and_dispatch()
+                self._poll_backoff = None
             except asyncio.CancelledError as e:
                 raise e
             except Exception:
+                self._poll_backoff = _next_poll_backoff(self._poll_backoff)
                 logger.exception("Exception while polling")
 
     async def _poll_and_dispatch(self) -> None:
         await self._permits.acquire()
+        if self._poll_backoff is not None:
+            await asyncio.sleep(_with_jitter(self._poll_backoff))
         try:
             task = await self._poll()
         except Exception as e:
@@ -67,3 +81,15 @@ class Poller(Generic[T]):
             logger.exception("Exception during callback")
         finally:
             self._permits.release()
+
+
+def _next_poll_backoff(current: timedelta | None) -> timedelta:
+    if current is None:
+        return _POLL_BACKOFF_INITIAL_INTERVAL
+    return min(current * _POLL_BACKOFF_COEFFICIENT, _POLL_BACKOFF_MAX_INTERVAL)
+
+
+def _with_jitter(delay: timedelta) -> float:
+    delay_seconds = delay.total_seconds()
+    jitter_seconds = random.uniform(0, _POLL_BACKOFF_JITTER * delay_seconds)
+    return delay_seconds * (1 - _POLL_BACKOFF_JITTER) + jitter_seconds

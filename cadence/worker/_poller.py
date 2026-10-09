@@ -56,10 +56,10 @@ class Poller(Generic[T]):
                 logger.exception("Exception while polling")
 
     async def _poll_and_dispatch(self) -> None:
-        await self._permits.acquire()
         if self._poll_backoff is not None:
             backoff_seconds = _with_jitter(self._poll_backoff)
             await asyncio.sleep(backoff_seconds)
+        await self._permits.acquire()
         try:
             task = await self._poll()
         except Exception as e:

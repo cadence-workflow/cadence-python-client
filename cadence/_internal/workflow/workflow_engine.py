@@ -6,7 +6,7 @@ from functools import singledispatchmethod
 from typing import List, Mapping, Optional, Sequence
 
 from cadence._internal.context import extract_headers, set_header_from_dict
-from cadence._internal.workflow.context import Context
+from cadence._internal.workflow.context import Context, _activate_workflow_context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
@@ -36,7 +36,12 @@ from cadence.api.v1.query_pb2 import (
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.context import ContextPropagator
-from cadence.workflow import WorkflowDefinition, WorkflowInfo
+from cadence.workflow import (
+    WorkflowContext,
+    WorkflowDefinition,
+    WorkflowInfo,
+    WorkflowInterceptorFactory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +59,7 @@ class WorkflowEngine:
         workflow_definition: WorkflowDefinition,
         context_propagators: Sequence[ContextPropagator] = (),
         headers: Mapping[str, bytes] | None = None,
+        workflow_interceptor_factory: WorkflowInterceptorFactory | None = None,
     ):
         self._event_loop = DeterministicEventLoop()
         self._decision_manager = DecisionManager(self._event_loop)
@@ -66,6 +72,14 @@ class WorkflowEngine:
         self._context_propagators = tuple(context_propagators)
         self._headers = dict(headers) if headers is not None else {}
         self._context = Context(info, self._decision_manager, self._context_propagators)
+        # The context exposed to workflow code.
+        # WorkflowEngine uses _context instead as we have additional internal functions that
+        # aren't interceptable.
+        self._workflow_context: WorkflowContext = (
+            workflow_interceptor_factory(self._context)
+            if workflow_interceptor_factory
+            else self._context
+        )
 
     def process_decision(
         self,
@@ -86,15 +100,15 @@ class WorkflowEngine:
         """
         try:
             # Activate workflow context for the entire decision processing
-            with self._context._activate() as ctx:
+            with _activate_workflow_context(self._workflow_context):
                 with extract_headers(self._context_propagators, self._headers):
                     # Log decision task processing start with full context (matches Java ReplayDecisionTaskHandler)
                     logger.info(
                         "Processing decision task for workflow",
                         extra={
-                            "workflow_type": ctx.info().workflow_type,
-                            "workflow_id": ctx.info().workflow_id,
-                            "run_id": ctx.info().workflow_run_id,
+                            "workflow_type": self._context.info().workflow_type,
+                            "workflow_id": self._context.info().workflow_id,
+                            "run_id": self._context.info().workflow_run_id,
                             "query": query.query_type if query else None,
                         },
                     )
@@ -103,7 +117,7 @@ class WorkflowEngine:
                     events_iterator = DecisionEventsIterator(events)
 
                     # Process decision events using iterator-driven approach
-                    self._process_decision_events(ctx, events_iterator)
+                    self._process_decision_events(self._context, events_iterator)
 
                     if query:
                         return self._execute_query(query)
@@ -119,9 +133,9 @@ class WorkflowEngine:
             logger.error(
                 "Decision task processing failed",
                 extra={
-                    "workflow_type": ctx.info().workflow_type,
-                    "workflow_id": ctx.info().workflow_id,
-                    "run_id": ctx.info().workflow_run_id,
+                    "workflow_type": self._context.info().workflow_type,
+                    "workflow_id": self._context.info().workflow_id,
+                    "run_id": self._context.info().workflow_run_id,
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,

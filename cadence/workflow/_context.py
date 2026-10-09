@@ -1,12 +1,10 @@
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
     Any,
     Callable,
-    Iterator,
     Mapping,
     Type,
     Unpack,
@@ -138,14 +136,6 @@ class WorkflowContext(ABC):
     def inject_propagated_headers(self) -> dict[str, bytes]:
         """Return headers to attach to outbound workflow decisions."""
         return {}
-
-    @contextmanager
-    def _activate(self) -> Iterator["WorkflowContext"]:
-        token = WorkflowContext._var.set(self)
-        try:
-            yield self
-        finally:
-            WorkflowContext._var.reset(token)
 
     @staticmethod
     def is_set() -> bool:

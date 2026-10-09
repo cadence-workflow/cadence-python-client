@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cadence._internal.workflow.context import Context
+from cadence._internal.workflow.context import Context, _activate_workflow_context
 from cadence.api.v1.common_pb2 import Payload
 from cadence.data_converter import DefaultDataConverter
 from cadence.workflow import WorkflowInfo
@@ -124,7 +124,7 @@ def test_side_effect_module_level_dispatches_through_context():
     dc = _dc()
     dm.record_marker.return_value = dc.to_data([7])
 
-    with ctx._activate():
+    with _activate_workflow_context(ctx):
         result = workflow_module.side_effect(lambda: 7, int)
 
     assert result == 7
@@ -215,7 +215,7 @@ def test_mutable_side_effect_module_level_dispatches_through_context():
     dm.mutable_side_effect_value.return_value = (0, None, False)
     dm.record_mutable_side_effect.return_value = dc.to_data([7])
 
-    with ctx._activate():
+    with _activate_workflow_context(ctx):
         result = workflow_module.mutable_side_effect(
             "value", lambda: 7, int, lambda old, new: old != new
         )

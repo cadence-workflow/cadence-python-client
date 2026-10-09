@@ -58,7 +58,8 @@ class Poller(Generic[T]):
     async def _poll_and_dispatch(self) -> None:
         await self._permits.acquire()
         if self._poll_backoff is not None:
-            await asyncio.sleep(_with_jitter(self._poll_backoff))
+            backoff_seconds = _with_jitter(self._poll_backoff)
+            await asyncio.sleep(backoff_seconds)
         try:
             task = await self._poll()
         except Exception as e:
@@ -86,10 +87,12 @@ class Poller(Generic[T]):
 def _next_poll_backoff(current: timedelta | None) -> timedelta:
     if current is None:
         return _POLL_BACKOFF_INITIAL_INTERVAL
-    return min(current * _POLL_BACKOFF_COEFFICIENT, _POLL_BACKOFF_MAX_INTERVAL)
+    next_backoff = min(current * _POLL_BACKOFF_COEFFICIENT, _POLL_BACKOFF_MAX_INTERVAL)
+    return next_backoff
 
 
 def _with_jitter(delay: timedelta) -> float:
     delay_seconds = delay.total_seconds()
     jitter_seconds = random.uniform(0, _POLL_BACKOFF_JITTER * delay_seconds)
-    return delay_seconds * (1 - _POLL_BACKOFF_JITTER) + jitter_seconds
+    jittered_delay_seconds = delay_seconds * (1 - _POLL_BACKOFF_JITTER) + jitter_seconds
+    return jittered_delay_seconds

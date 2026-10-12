@@ -79,10 +79,8 @@ from cadence.workflow import (
 )
 
 
-# Default decision (task) start-to-close timeout applied to a schedule's
-# start-workflow action when the caller leaves it unset, mirroring the go-client
-# (defaultDecisionTaskTimeoutInSecs). Without this, an unset timeout serializes as
-# 0, which the server historically treated as "skip every fire" — silent data loss.
+# Mirrors defaultDecisionTaskTimeoutInSecs in the go-client. An unset decision
+# timeout serializes as 0, which the server treats as "skip every fire".
 _DEFAULT_DECISION_TASK_TIMEOUT_SECONDS = 10
 
 
@@ -629,8 +627,7 @@ class Client:
 
         Args:
             schedule_id: Unique identifier for the schedule within the domain.
-            spec: Required. Defines when the schedule fires; must carry a cron
-                expression (the schedule's only trigger mechanism).
+            spec: Required. Defines when the schedule fires; must set a cron expression.
             action: Required. The workflow to start on each fire.
             policies: Overlap, catch-up, and pause-on-failure policies.
             memo: Arbitrary key-value metadata attached to the schedule.
@@ -640,12 +637,8 @@ class Client:
                 call. ``state.pause_info.reason`` may carry a human-readable reason.
 
         Raises:
-            ValueError: If ``schedule_id`` is empty, ``spec`` is missing or has no
-                cron expression, ``action`` is missing, or the action's start-workflow
-                fields are incomplete (missing workflow type, task list, or a positive
-                execution timeout) or its decision timeout is negative. An unset
-                decision timeout is defaulted to
-                ``_DEFAULT_DECISION_TASK_TIMEOUT_SECONDS`` rather than sent as 0.
+            ValueError: If required fields are missing or invalid. An unset decision
+                timeout on the action is defaulted to 10s instead of being sent as 0.
         """
         if not schedule_id:
             raise ValueError("schedule_id is required")
@@ -818,17 +811,10 @@ class Client:
 def _validate_and_default_start_workflow_action(
     action: schedule_pb2.ScheduleAction,
 ) -> None:
-    """Validate a schedule's start-workflow action and apply client-side defaults.
+    """Validate a schedule action and apply client-side defaults.
 
-    Mirrors the go-client (``internal_schedule_convert_thrift.go``): the action must
-    set a workflow type, task list, and a positive execution timeout; the decision
-    (task) start-to-close timeout may not be negative and defaults to
-    ``_DEFAULT_DECISION_TASK_TIMEOUT_SECONDS`` when unset. Defaulting the decision
-    timeout here keeps it from serializing as 0, which the server historically
-    treated as "skip every fire" (silent data loss).
-
-    Mutates ``action`` in place to apply the default, so callers should pass the
-    request's own copy rather than the caller-supplied object.
+    Mirrors the go-client (internal_schedule_client.go). Mutates action in place,
+    so callers should pass the request's copy, not the caller-supplied object.
 
     Raises:
         ValueError: If start_workflow is unset or a required field is missing/invalid.

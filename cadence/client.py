@@ -730,10 +730,14 @@ class Client:
         """Update a schedule using a read-modify-write pattern.
 
         Fetches the current schedule state, passes it to ``updater`` for in-place
-        modification, then sends only the top-level fields the ``updater`` actually
-        changed. Untouched fields are omitted so the server preserves them via its
-        top-level merge, and an update that changes nothing issues no RPC. This
-        mirrors the go-client (``internal_schedule_client.go``).
+        modification, then sends only the updatable top-level fields the ``updater``
+        actually changed (``spec``, ``action``, ``policies``, ``search_attributes`` —
+        the only fields ``UpdateScheduleRequest`` carries). Changes the ``updater``
+        makes to ``state``, ``memo`` or ``info`` cannot be sent and are ignored; use
+        :meth:`pause_schedule`/:meth:`unpause_schedule` to change paused state.
+        Untouched fields are omitted so the server preserves them via its top-level
+        merge, and an update that changes nothing issues no RPC. This mirrors the
+        go-client (``internal_schedule_client.go``).
 
         Because clearing a field isn't expressible on the wire (an omitted field is
         preserved, not cleared), setting a field back to its empty value in the

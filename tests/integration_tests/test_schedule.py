@@ -22,6 +22,10 @@ def _make_schedule_action() -> schedule_pb2.ScheduleAction:
     return schedule_pb2.ScheduleAction(
         start_workflow=schedule_pb2.ScheduleAction.StartWorkflowAction(
             execution_start_to_close_timeout=timedelta(seconds=10),
+            # Set explicitly so describe round-trips it exactly; if left unset the
+            # client defaults it (to 10s) and the full-proto-equality asserts below
+            # would compare an unset value against the stored default.
+            task_start_to_close_timeout=timedelta(seconds=15),
             workflow_type=common_pb2.WorkflowType(
                 name="ScheduleIntegrationDummyWorkflow"
             ),

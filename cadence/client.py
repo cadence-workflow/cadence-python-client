@@ -79,8 +79,7 @@ from cadence.workflow import (
 )
 
 
-# Mirrors defaultDecisionTaskTimeoutInSecs in the go-client. An unset decision
-# timeout serializes as 0, which the server treats as "skip every fire".
+# An unset decision timeout serializes as 0, which the server treats as "skip every fire".
 _DEFAULT_DECISION_TASK_TIMEOUT_SECONDS = 10
 
 
@@ -813,8 +812,8 @@ def _validate_and_default_start_workflow_action(
 ) -> None:
     """Validate a schedule action and apply client-side defaults.
 
-    Mirrors the go-client (internal_schedule_client.go). Mutates action in place,
-    so callers should pass the request's copy, not the caller-supplied object.
+    Mutates action in place; callers should pass the request's copy, not the
+    caller-supplied object.
 
     Raises:
         ValueError: If start_workflow is unset or a required field is missing/invalid.

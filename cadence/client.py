@@ -122,7 +122,7 @@ def _validate_and_apply_defaults(
     # Apply default for task_start_to_close_timeout if not provided (matching Go/Java clients)
     task_timeout = options.get("task_start_to_close_timeout")
     if task_timeout is None:
-        options["task_start_to_close_timeout"] = timedelta(seconds=10)
+        options["task_start_to_close_timeout"] = timedelta(seconds=_DEFAULT_DECISION_TASK_TIMEOUT_SECONDS)
     elif task_timeout <= timedelta(0):
         raise ValueError("task_start_to_close_timeout must be greater than 0")
 

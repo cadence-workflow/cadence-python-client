@@ -1,0 +1,331 @@
+import inspect
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Optional,
+    Type,
+    TypeVar,
+    TypedDict,
+    Union,
+    cast,
+)
+
+from cadence._internal.fn_signature import FnSignature
+from cadence.query import QueryDefinition, QueryDefinitionOptions
+from cadence.signal import SignalDefinition, SignalDefinitionOptions
+
+_QUERY_TYPES_QUERY_NAME = "__query_types"
+
+
+T = TypeVar("T", bound=Callable[..., Any])
+C = TypeVar("C")
+
+
+class WorkflowDefinitionOptions(TypedDict, total=False):
+    """Options for defining a workflow."""
+
+    name: str
+
+
+class WorkflowDefinition(Generic[C]):
+    """
+    Definition of a workflow class with metadata.
+
+    Similar to ActivityDefinition but for workflow classes.
+    Provides type safety and metadata for workflow classes.
+    """
+
+    def __init__(
+        self,
+        cls: Type[C],
+        name: str,
+        run_method_name: str,
+        signals: dict[str, SignalDefinition[..., Any]],
+        queries: dict[str, QueryDefinition[..., Any]],
+        run_signature: FnSignature,
+    ):
+        self._cls: Type[C] = cls
+        self._name = name
+        self._run_method_name = run_method_name
+        self._signals = signals
+        self._queries = queries
+        self._run_signature = run_signature
+
+    @property
+    def signals(self) -> dict[str, SignalDefinition[..., Any]]:
+        """Get the signal definitions."""
+        return self._signals
+
+    @property
+    def queries(self) -> dict[str, QueryDefinition[..., Any]]:
+        """Get the query definitions."""
+        return self._queries
+
+    @property
+    def name(self) -> str:
+        """Get the workflow name."""
+        return self._name
+
+    @property
+    def cls(self) -> Type[C]:
+        """Get the workflow class."""
+        return self._cls
+
+    def get_run_method(self, instance: Any) -> Callable:
+        """Get the workflow run method from an instance of the workflow class."""
+        return cast(Callable, getattr(instance, self._run_method_name))
+
+    @property
+    def run_signature(self) -> FnSignature:
+        """The signature of the workflow run method."""
+        return self._run_signature
+
+    @staticmethod
+    def wrap(cls: Type, opts: WorkflowDefinitionOptions) -> "WorkflowDefinition":
+        """
+        Wrap a class as a WorkflowDefinition.
+
+        Args:
+            cls: The workflow class to wrap
+            opts: Options for the workflow definition
+
+        Returns:
+            A WorkflowDefinition instance
+
+        Raises:
+            ValueError: If no run method is found or multiple run methods exist
+        """
+        name = cls.__name__
+        if "name" in opts and opts["name"]:
+            name = opts["name"]
+
+        # Validate that the class has exactly one run method and find it
+        # Also validate that class does not have multiple signal/query methods with the same name
+        signals: dict[str, SignalDefinition[..., Any]] = {}
+        signal_names: dict[
+            str, str
+        ] = {}  # Map signal name to method name for duplicate detection
+        queries: dict[str, QueryDefinition[..., Any]] = {}
+        query_names: dict[str, str] = {}
+        run_method_name = None
+        run_signature = None
+        for attr_name in dir(cls):
+            if attr_name.startswith("_"):
+                continue
+
+            attr = getattr(cls, attr_name)
+            if not callable(attr):
+                continue
+
+            # Check for workflow run method
+            if hasattr(attr, "_workflow_run"):
+                if run_method_name is not None:
+                    raise ValueError(
+                        f"Multiple @workflow.run methods found in class {cls.__name__}"
+                    )
+                run_method_name = attr_name
+                run_signature = FnSignature.of(attr)
+
+            if hasattr(attr, "_workflow_signal"):
+                signal_name = getattr(attr, "_workflow_signal")
+                if signal_name in signal_names:
+                    raise ValueError(
+                        f"Multiple @workflow.signal methods found in class {cls.__name__} "
+                        f"with signal name '{signal_name}': '{attr_name}' and '{signal_names[signal_name]}'"
+                    )
+                # Create SignalDefinition from the decorated method
+                signal_def = SignalDefinition.wrap(
+                    attr, SignalDefinitionOptions(name=signal_name)
+                )
+                signals[signal_name] = signal_def
+                signal_names[signal_name] = attr_name
+
+            if hasattr(attr, "_workflow_query"):
+                query_name = getattr(attr, "_workflow_query")
+                if query_name in query_names:
+                    raise ValueError(
+                        f"Multiple @workflow.query methods found in class {cls.__name__} "
+                        f"with query name '{query_name}': '{attr_name}' and '{query_names[query_name]}'"
+                    )
+                query_def = QueryDefinition.wrap(
+                    attr, QueryDefinitionOptions(name=query_name)
+                )
+                queries[query_name] = query_def
+                query_names[query_name] = attr_name
+
+        if run_method_name is None or run_signature is None:
+            raise ValueError(f"No @workflow.run method found in class {cls.__name__}")
+
+        # Register the built-in __query_types query, which returns the names
+        # of all registered query handlers (including itself). The handler
+        # declares a `self` parameter so it matches the calling convention
+        # used by `WorkflowInstance.handle_query`; `FnSignature.of` filters
+        # `self` out so it is not decoded from the query payload.
+        def _query_types_handler(self: Any) -> list[str]:
+            return sorted(list(queries.keys()))
+
+        queries[_QUERY_TYPES_QUERY_NAME] = QueryDefinition.wrap(
+            _query_types_handler,
+            QueryDefinitionOptions(name=_QUERY_TYPES_QUERY_NAME),
+        )
+
+        return WorkflowDefinition(
+            cls, name, run_method_name, signals, queries, run_signature
+        )
+
+
+class WorkflowDecorator:
+    def __init__(
+        self,
+        options: WorkflowDefinitionOptions,
+        callback_fn: Callable[[WorkflowDefinition], None] | None = None,
+    ):
+        self._options = options
+        self._callback_fn = callback_fn
+
+    def __call__(self, cls: Type[C]) -> Type[C]:
+        workflow_opts = WorkflowDefinitionOptions(**self._options)
+        workflow_opts["name"] = self._options.get("name") or cls.__name__
+        workflow_def = WorkflowDefinition.wrap(cls, workflow_opts)
+        if self._callback_fn is not None:
+            self._callback_fn(workflow_def)
+
+        return cls
+
+
+def run(func: Optional[T] = None) -> Union[T, Callable[[T], T]]:
+    """
+    Decorator to mark a method as the main workflow run method.
+
+    Can be used with or without parentheses:
+        @workflow.run
+        async def my_workflow(self):
+            ...
+
+        @workflow.run()
+        async def my_workflow(self):
+            ...
+
+    Args:
+        func: The method to mark as the workflow run method
+
+    Returns:
+        The decorated method with workflow run metadata
+
+    Raises:
+        ValueError: If the function is not async
+    """
+
+    def decorator(f: T) -> T:
+        # Validate that the function is async
+        if not inspect.iscoroutinefunction(f):
+            raise ValueError(f"Workflow run method '{f.__name__}' must be async")
+
+        # Attach metadata to the function
+        setattr(f, "_workflow_run", None)
+        return f
+
+    # Support both @workflow.run and @workflow.run()
+    if func is None:
+        # Called with parentheses: @workflow.run()
+        return decorator
+    else:
+        # Called without parentheses: @workflow.run
+        return decorator(func)
+
+
+def signal(name: str | None = None) -> Callable[[T], T]:
+    """
+    Decorator to mark a method as a workflow signal handler.
+
+    Signal handlers mutate workflow state in response to signals delivered
+    via history.  Both synchronous (``def``) and asynchronous (``async def``)
+    handlers are supported; they always run on the workflow's deterministic
+    event loop, never on a real thread.
+
+    Example::
+
+        @workflow.signal(name="approval_channel")
+        def approve(self, approved: bool) -> None:
+            self.approved = approved
+
+        @workflow.signal(name="async_approval")
+        async def approve_async(self, approved: bool) -> None:
+            self.approved = approved
+            await workflow.execute_activity("notify", ...)
+
+    Concurrency constraints:
+        * Do **not** use native threads inside signal handlers — they are not
+          replay-safe.
+        * Avoid anything that depends on wall-clock time or real I/O —
+          ``asyncio.sleep``, ``asyncio.wait_for(timeout=...)``, ``asyncio.to_thread``.
+          Pure asyncio primitives such as ``asyncio.Event``, ``asyncio.Lock``, and
+          ``asyncio.Queue`` are safe when used on the workflow's deterministic
+          event loop.
+        * Do **not** rely on the GIL for thread-safety; CPython now
+          supports free-threaded builds where the GIL can be disabled.
+        * Signal handlers should return ``None``; any returned value is
+          discarded.
+
+    Args:
+        name: The name of the signal
+
+    Returns:
+        The decorated method with workflow signal metadata
+
+    Raises:
+        ValueError: If name is not provided
+
+    """
+    if name is None:
+        raise ValueError("name is required")
+
+    def decorator(f: T) -> T:
+        f._workflow_signal = name  # type: ignore
+        return f
+
+    return decorator
+
+
+def query(name: str | None = None) -> Callable[[T], T]:
+    """
+    Decorator to mark a method as a workflow query handler.
+
+    Query handlers allow external callers to read workflow state without
+    affecting execution. They must return a value (non-None return type)
+    and must be synchronous (not async).
+
+    Example::
+
+        @workflow.query(name="get_status")
+        def get_status(self) -> str:
+            return self.status
+
+        @workflow.query(name="get_count")
+        def get_count(self, prefix: str) -> int:
+            return self.counts.get(prefix, 0)
+
+    Constraints:
+        * Query handlers must have a non-None return type.
+        * Query handlers must be synchronous (not async).
+        * Query handlers must not mutate workflow state.
+        * A method can only be one of @workflow.run, @workflow.signal, or @workflow.query.
+
+    Args:
+        name: The name of the query type. If not provided, use the function name.
+
+    Returns:
+        The decorated method with workflow query metadata
+
+    Raises:
+        ValueError: If name is not provided
+    """
+    if name is None:
+        raise ValueError("name is required")
+
+    def decorator(f: T) -> T:
+        f._workflow_query = name  # type: ignore[attr-defined]
+        return f
+
+    return decorator

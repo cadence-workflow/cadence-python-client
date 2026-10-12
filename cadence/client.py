@@ -67,11 +67,21 @@ from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.data_converter import DataConverter, DefaultDataConverter
 from cadence.context import ContextPropagator
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics.constants import (
+    TAG_DOMAIN,
+    TAG_TASK_LIST,
+    TAG_WORKFLOW_TYPE,
+    WORKFLOW_SIGNAL_WITH_START_COUNTER,
+    WORKFLOW_START_COUNTER,
+)
 from cadence.workflow import (
     ActiveClusterSelectionPolicy,
     RetryPolicy,
     WorkflowDefinition,
 )
+
+
+_DEFAULT_DECISION_TASK_TIMEOUT_SECONDS = 10
 
 
 class StartWorkflowOptions(TypedDict, total=False):
@@ -114,7 +124,9 @@ def _validate_and_apply_defaults(
     # Apply default for task_start_to_close_timeout if not provided (matching Go/Java clients)
     task_timeout = options.get("task_start_to_close_timeout")
     if task_timeout is None:
-        options["task_start_to_close_timeout"] = timedelta(seconds=10)
+        options["task_start_to_close_timeout"] = timedelta(
+            seconds=_DEFAULT_DECISION_TASK_TIMEOUT_SECONDS
+        )
     elif task_timeout <= timedelta(0):
         raise ValueError("task_start_to_close_timeout must be greater than 0")
 
@@ -336,6 +348,19 @@ class Client:
 
         return request
 
+    def _emit_metric_with_tags(
+        self, key: str, request: StartWorkflowExecutionRequest
+    ) -> None:
+        if self.metrics_emitter:
+            self.metrics_emitter.counter(
+                key,
+                tags={
+                    TAG_DOMAIN: self.domain,
+                    TAG_TASK_LIST: request.task_list.name,
+                    TAG_WORKFLOW_TYPE: request.workflow_type.name,
+                },
+            )
+
     async def start_workflow(
         self,
         workflow: Union[str, WorkflowDefinition],
@@ -369,10 +394,7 @@ class Client:
                 await self.workflow_stub.StartWorkflowExecution(request)
             )
 
-            # Emit metrics if available
-            if self.metrics_emitter:
-                # TODO: Add workflow start metrics similar to Go client
-                pass
+            self._emit_metric_with_tags(WORKFLOW_START_COUNTER, request)
 
             execution = WorkflowExecution()
             execution.workflow_id = request.workflow_id
@@ -583,6 +605,10 @@ class Client:
                 await self.workflow_stub.SignalWithStartWorkflowExecution(request)
             )
 
+            self._emit_metric_with_tags(
+                WORKFLOW_SIGNAL_WITH_START_COUNTER, start_request
+            )
+
             execution = WorkflowExecution()
             execution.workflow_id = start_request.workflow_id
             execution.run_id = response.run_id
@@ -609,23 +635,33 @@ class Client:
 
         Args:
             schedule_id: Unique identifier for the schedule within the domain.
-            spec: Defines when the schedule fires (cron expression, intervals, etc.).
-            action: The workflow to start on each fire.
+            spec: Required. Defines when the schedule fires; must set a cron expression.
+            action: Required. The workflow to start on each fire.
             policies: Overlap, catch-up, and pause-on-failure policies.
             memo: Arbitrary key-value metadata attached to the schedule.
             search_attributes: Indexed attributes for schedule visibility queries.
             state: Optional initial state. Set ``state.paused = True`` to create
                 the schedule in a paused state without a subsequent PauseSchedule
                 call. ``state.pause_info.reason`` may carry a human-readable reason.
+
+        Raises:
+            ValueError: If required fields are missing or invalid. An unset decision
+                timeout on the action is defaulted to 10s instead of being sent as 0.
         """
+        if not schedule_id:
+            raise ValueError("schedule_id is required")
+        if spec is None or not spec.cron_expression:
+            raise ValueError("schedule spec with a cron_expression is required")
+        if action is None:
+            raise ValueError("schedule action is required")
+
         req = CreateScheduleRequest(
             domain=self.domain,
             schedule_id=schedule_id,
         )
-        if spec is not None:
-            req.spec.CopyFrom(spec)
-        if action is not None:
-            req.action.CopyFrom(action)
+        req.spec.CopyFrom(spec)
+        req.action.CopyFrom(action)
+        _validate_and_default_start_workflow_action(req.action)
         if policies is not None:
             req.policies.CopyFrom(policies)
         if memo is not None:
@@ -778,6 +814,42 @@ class Client:
             if not resp.next_page_token:
                 break
             next_page_token = resp.next_page_token
+
+
+def _validate_and_default_start_workflow_action(
+    action: schedule_pb2.ScheduleAction,
+) -> None:
+    """Validate a schedule action and apply client-side defaults.
+
+    Mutates action in place; callers should pass the request's copy, not the
+    caller-supplied object.
+
+    Raises:
+        ValueError: If start_workflow is unset or a required field is missing/invalid.
+    """
+    if not action.HasField("start_workflow"):
+        raise ValueError("schedule action must set start_workflow")
+    start = action.start_workflow
+    if not start.workflow_type.name:
+        raise ValueError("schedule action requires start_workflow.workflow_type.name")
+    if not start.task_list.name:
+        raise ValueError("schedule action requires start_workflow.task_list.name")
+    if start.execution_start_to_close_timeout.ToTimedelta() <= timedelta(0):
+        raise ValueError(
+            "schedule action requires a positive "
+            "start_workflow.execution_start_to_close_timeout"
+        )
+    decision_timeout = start.task_start_to_close_timeout.ToTimedelta()
+    if decision_timeout < timedelta(0):
+        raise ValueError(
+            "schedule action start_workflow.task_start_to_close_timeout "
+            "must not be negative"
+        )
+    if decision_timeout == timedelta(0):
+        start.task_start_to_close_timeout.seconds = (
+            _DEFAULT_DECISION_TASK_TIMEOUT_SECONDS
+        )
+        start.task_start_to_close_timeout.nanos = 0
 
 
 def _validate_and_copy_defaults(options: ClientOptions) -> ClientOptions:

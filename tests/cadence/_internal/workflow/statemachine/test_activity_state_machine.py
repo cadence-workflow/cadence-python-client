@@ -14,6 +14,7 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, Failure
 from cadence.api.v1.decision_pb2 import RequestCancelActivityTaskDecisionAttributes
+from cadence.api.v1.workflow_pb2 import TimeoutType
 from cadence.error import ActivityFailure
 
 ### These tests have to be async because they rely on the presence of an eventloop
@@ -82,16 +83,27 @@ async def test_activity_state_machine_timeout():
     m = ActivityStateMachine(attrs, completed)
 
     m.handle_scheduled(history.ActivityTaskScheduledEventAttributes(activity_id="a"))
+    heartbeat_details = Payload(data=b'{"progress": 42}')
     m.handle_timeout(
         history.ActivityTaskTimedOutEventAttributes(
-            details=Payload(data="error message".encode())
+            timeout_type=TimeoutType.TIMEOUT_TYPE_HEARTBEAT,
+            details=heartbeat_details,
+            last_failure=Failure(
+                reason="RuntimeError",
+                details=b"Traceback (most recent call last):\nRuntimeError: boom",
+            ),
         )
     )
 
     assert completed.done() is True
     assert m.get_decision() is None
-    with pytest.raises(ActivityFailure, match="error message"):
+    with pytest.raises(ActivityFailure, match="TIMEOUT_TYPE_HEARTBEAT") as exc_info:
         completed.result()
+    assert exc_info.value.failure_details == (
+        "Traceback (most recent call last):\nRuntimeError: boom"
+    )
+    assert exc_info.value.heartbeat_details == heartbeat_details
+    assert exc_info.value.heartbeat_details.data == b'{"progress": 42}'
 
 
 async def test_activity_state_machine_failed():
@@ -103,14 +115,22 @@ async def test_activity_state_machine_failed():
     m.handle_started(history.ActivityTaskStartedEventAttributes())
     m.handle_failed(
         history.ActivityTaskFailedEventAttributes(
-            failure=Failure(reason="error message")
+            failure=Failure(
+                reason="RuntimeError",
+                details=b"Traceback (most recent call last):\nRuntimeError: error message",
+            )
         )
     )
 
     assert completed.done() is True
     assert m.get_decision() is None
-    with pytest.raises(ActivityFailure, match="error message"):
+    with pytest.raises(
+        ActivityFailure, match="RuntimeError.*error message"
+    ) as exc_info:
         completed.result()
+    assert exc_info.value.failure_details == (
+        "Traceback (most recent call last):\nRuntimeError: error message"
+    )
 
 
 async def test_activity_state_machine_cancel_confirmed():

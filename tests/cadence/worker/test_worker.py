@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 
 import pytest
 
@@ -8,7 +9,9 @@ from cadence.api.v1.service_worker_pb2 import (
     PollForDecisionTaskRequest,
     PollForActivityTaskRequest,
 )
-from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
+from google.protobuf.wrappers_pb2 import DoubleValue
+
+from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind, TaskListMetadata
 from cadence.client import Client
 from cadence.worker import Worker, Registry
 
@@ -40,9 +43,12 @@ async def test_worker():
         activity_task_pollers=1,
         decision_task_pollers=1,
         identity="identity",
-    ):
+    ) as worker:
         # Wait until both polled
         await both_waited.wait()
+
+    assert worker._options["sticky_schedule_to_start_timeout"] == timedelta(seconds=5)
+    assert worker._options["sticky_cache_size"] == 10_000
 
     worker_stub.PollForDecisionTask.assert_called_once_with(
         PollForDecisionTaskRequest(
@@ -61,6 +67,57 @@ async def test_worker():
             identity="identity",
             task_list=TaskList(
                 name="task_list", kind=TaskListKind.TASK_LIST_KIND_NORMAL
+            ),
+        ),
+        timeout=60.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_sends_task_list_activities_per_second():
+    client = Mock(spec=Client)
+    done = asyncio.Event()
+    both_waited = asyncio.Barrier(3)
+
+    async def poll(_, timeout=0.0):
+        await both_waited.wait()
+        await done.wait()
+        return None
+
+    worker_stub = Mock()
+    worker_stub.PollForDecisionTask = AsyncMock(side_effect=poll)
+    worker_stub.PollForActivityTask = AsyncMock(side_effect=poll)
+
+    client.worker_stub = worker_stub
+    type(client).domain = PropertyMock(return_value="domain")
+    type(client).identity = PropertyMock(return_value="identity")
+    type(client).context_propagators = PropertyMock(return_value=())
+
+    async with Worker(
+        client,
+        "task_list",
+        Registry(),
+        activity_task_pollers=1,
+        decision_task_pollers=1,
+        identity="identity",
+        task_list_activities_per_second=12.5,
+        sticky_schedule_to_start_timeout=timedelta(seconds=30),
+        sticky_cache_size=500,
+    ) as worker:
+        await both_waited.wait()
+
+    assert worker._options["sticky_schedule_to_start_timeout"] == timedelta(seconds=30)
+    assert worker._options["sticky_cache_size"] == 500
+
+    worker_stub.PollForActivityTask.assert_called_once_with(
+        PollForActivityTaskRequest(
+            domain="domain",
+            identity="identity",
+            task_list=TaskList(
+                name="task_list", kind=TaskListKind.TASK_LIST_KIND_NORMAL
+            ),
+            task_list_metadata=TaskListMetadata(
+                max_tasks_per_second=DoubleValue(value=12.5)
             ),
         ),
         timeout=60.0,

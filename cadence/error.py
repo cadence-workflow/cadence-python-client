@@ -3,6 +3,8 @@ from typing import Any
 
 import grpc
 
+from cadence.api.v1.common_pb2 import Payload
+
 
 class ContinueAsNewError(Exception):
     def __init__(
@@ -24,8 +26,29 @@ class ContinueAsNewError(Exception):
 
 
 class ActivityFailure(Exception):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
+    """An activity failed or timed out.
+
+    ``failure_details`` contains UTF-8 diagnostics from a Cadence ``Failure``.
+    ``heartbeat_details`` is the raw, data-converter-encoded payload from the
+    activity's last heartbeat. Decode it with the same converter configured on
+    the client, for example::
+
+        values = data_converter.from_data(
+            exc.heartbeat_details, [ExpectedType]
+        )
+    """
+
+    def __init__(
+        self,
+        message: str,
+        failure_details: str | None = None,
+        heartbeat_details: Payload | None = None,
+    ) -> None:
+        super().__init__(
+            message if not failure_details else f"{message}\n{failure_details}"
+        )
+        self.failure_details = failure_details
+        self.heartbeat_details = heartbeat_details
 
 
 class ActivityCancelledError(Exception):

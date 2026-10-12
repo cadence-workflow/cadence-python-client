@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable, Mapping
 
+from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.memo import memo_to_proto
@@ -172,7 +173,7 @@ class Context(WorkflowContext):
             )
         )
         workflow_execution = await execution_future
-        return ChildWorkflowFuture(
+        return ChildWorkflowFutureImpl(
             workflow_id=workflow_execution.workflow_id,
             run_id=workflow_execution.run_id,
             result_future=result_future,

@@ -214,18 +214,22 @@ async def test_signal_child_workflow_rejects_empty_signal_name():
 
 @pytest.mark.asyncio
 async def test_child_workflow_future_signal_delegates_to_context():
+    from cadence._internal.workflow.child_workflow_future import (
+        ChildWorkflowFutureImpl,
+    )
     from cadence.workflow import ChildWorkflowFuture
 
     dc = DefaultDataConverter()
     result_future: asyncio.Future = asyncio.get_running_loop().create_future()
 
-    future = ChildWorkflowFuture(
+    future = ChildWorkflowFutureImpl(
         workflow_id="child-wf-1",
         run_id="",
         result_future=result_future,
         result_type=str,
         data_converter=dc,
     )
+    assert isinstance(future, ChildWorkflowFuture)
 
     mock_ctx = AsyncMock()
     with patch("cadence.workflow.WorkflowContext.get", return_value=mock_ctx):

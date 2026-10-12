@@ -79,7 +79,6 @@ from cadence.workflow import (
 )
 
 
-# An unset decision timeout serializes as 0, which the server treats as "skip every fire".
 _DEFAULT_DECISION_TASK_TIMEOUT_SECONDS = 10
 
 

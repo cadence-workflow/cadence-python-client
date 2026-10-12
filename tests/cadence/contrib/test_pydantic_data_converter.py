@@ -2,12 +2,12 @@ import dataclasses
 import enum
 import uuid
 from datetime import date, datetime, timezone
-from typing import Any, Optional, Type, TypedDict
+from typing import Any, Optional, Type
 
 import pytest
-from pydantic import BaseModel
-
-from msgspec import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, field_serializer
+from pydantic_core import PydanticSerializationError
+from typing_extensions import TypedDict
 
 from cadence._internal.fn_signature import FnSignature
 from cadence.api.v1.common_pb2 import Payload
@@ -40,6 +40,20 @@ class _TimedModel(BaseModel):
 
 class _UuidModel(BaseModel):
     id: uuid.UUID
+
+
+class _StrictUuidModel(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    id: uuid.UUID
+
+
+class _SerializedModel(BaseModel):
+    value: int
+
+    @field_serializer("value")
+    def serialize_value(self, value: int) -> str:
+        return f"value={value}"
 
 
 class _ItemDict(TypedDict):
@@ -170,6 +184,13 @@ def test_roundtrip_uuid() -> None:
     assert converter.from_data(payload, [_UuidModel]) == [value]
 
 
+def test_roundtrip_uses_pydantic_json_validation() -> None:
+    converter = PydanticDataConverter()
+    value = _StrictUuidModel(id=uuid.UUID("12345678-1234-5678-1234-567812345678"))
+    payload = converter.to_data([value])
+    assert converter.from_data(payload, [_StrictUuidModel]) == [value]
+
+
 def test_roundtrip_list_of_models() -> None:
     converter = PydanticDataConverter()
     values = [_TestModel(foo="a", bar=1), _TestModel(foo="b", bar=2)]
@@ -213,8 +234,35 @@ def test_to_data(values: list[Any], expected: str) -> None:
 
 def test_to_data_unserializable_raises() -> None:
     converter = PydanticDataConverter()
-    with pytest.raises(TypeError, match="unsupported"):
+    with pytest.raises(PydanticSerializationError):
         converter.to_data([object()])
+
+
+def test_to_data_uses_pydantic_field_serializers() -> None:
+    converter = PydanticDataConverter()
+    assert converter.to_data([_SerializedModel(value=3)]).data == b'{"value":"value=3"}'
+
+
+@pytest.mark.parametrize(
+    "exclude_unset,expected_data,expected_fields_set",
+    [
+        pytest.param(
+            False,
+            b'{"foo":"hello","bar":-1,"nested":null}',
+            {"foo", "bar", "nested"},
+            id="include unset",
+        ),
+        pytest.param(True, b'{"foo":"hello"}', {"foo"}, id="exclude unset"),
+    ],
+)
+def test_roundtrip_fields_set(
+    exclude_unset: bool, expected_data: bytes, expected_fields_set: set[str]
+) -> None:
+    converter = PydanticDataConverter(exclude_unset=exclude_unset)
+    payload = converter.to_data([_TestModel(foo="hello")])
+    assert payload.data == expected_data
+    decoded = converter.from_data(payload, [_TestModel])[0]
+    assert decoded.model_fields_set == expected_fields_set
 
 
 def _activity_with_defaults(model: _TestModel, flag: bool = True) -> None:

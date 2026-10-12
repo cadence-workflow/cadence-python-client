@@ -88,7 +88,7 @@ async def main():
         cadence.Client(
             domain="default",
             target="localhost:7833",
-            data_converter=PydanticDataConverter(),
+            data_converter=PydanticDataConverter(exclude_unset=True),
         ),
         "agent-task-list",
         cadence_registry,

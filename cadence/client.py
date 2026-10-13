@@ -729,17 +729,16 @@ class Client:
     ) -> None:
         """Update a schedule using a read-modify-write pattern.
 
-        Fetches the current schedule state, passes it to ``updater`` for in-place
-        modification, then sends only the top-level fields the ``updater`` actually
-        changed (``spec``, ``action``, ``policies``, ``search_attributes`` — the only
-        fields ``UpdateScheduleRequest`` carries). Changes to ``state``, ``memo``, or
-        ``info`` cannot be sent and are ignored; use ``pause_schedule`` /
-        ``unpause_schedule`` to change paused state. Untouched fields are omitted so
-        the server preserves them, and an update that changes nothing issues no RPC.
+        Fetches the current schedule state, calls ``updater`` to mutate it in place,
+        then sends only the fields that changed: ``spec``, ``action``, ``policies``,
+        and ``search_attributes``. Fields not carried by ``UpdateScheduleRequest``
+        (``state``, ``memo``, ``info``) are ignored; use ``pause_schedule`` or
+        ``unpause_schedule`` to change paused state. Unchanged fields are not sent,
+        so the server keeps their current values. If nothing changed, no RPC is made.
 
-        Because clearing a field isn't expressible on the wire (an omitted field is
-        preserved, not cleared), setting a top-level field back to its empty value in
-        the ``updater`` is treated as "no change" rather than "clear".
+        The server preserves any field that is absent from the request, so there is
+        no way to clear a field via update. Setting a top-level field to its empty
+        value in the updater is treated as no change.
 
         Args:
             schedule_id: The schedule to update.

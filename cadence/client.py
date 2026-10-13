@@ -730,18 +730,16 @@ class Client:
         """Update a schedule using a read-modify-write pattern.
 
         Fetches the current schedule state, passes it to ``updater`` for in-place
-        modification, then sends only the updatable top-level fields the ``updater``
-        actually changed (``spec``, ``action``, ``policies``, ``search_attributes`` —
-        the only fields ``UpdateScheduleRequest`` carries). Changes the ``updater``
-        makes to ``state``, ``memo`` or ``info`` cannot be sent and are ignored; use
-        :meth:`pause_schedule`/:meth:`unpause_schedule` to change paused state.
-        Untouched fields are omitted so the server preserves them via its top-level
-        merge, and an update that changes nothing issues no RPC. This mirrors the
-        go-client (``internal_schedule_client.go``).
+        modification, then sends only the top-level fields the ``updater`` actually
+        changed (``spec``, ``action``, ``policies``, ``search_attributes`` — the only
+        fields ``UpdateScheduleRequest`` carries). Changes to ``state``, ``memo``, or
+        ``info`` cannot be sent and are ignored; use ``pause_schedule`` /
+        ``unpause_schedule`` to change paused state. Untouched fields are omitted so
+        the server preserves them, and an update that changes nothing issues no RPC.
 
         Because clearing a field isn't expressible on the wire (an omitted field is
-        preserved, not cleared), setting a field back to its empty value in the
-        ``updater`` is treated as "no change" rather than "clear".
+        preserved, not cleared), setting a top-level field back to its empty value in
+        the ``updater`` is treated as "no change" rather than "clear".
 
         Args:
             schedule_id: The schedule to update.
@@ -749,8 +747,8 @@ class Client:
 
         Raises:
             ValueError: If the updated spec has an empty cron expression, or the
-                updated action fails start-workflow validation
-                (see :meth:`create_schedule`).
+                updated action fails start-workflow validation (see
+                ``create_schedule``).
         """
         current = await self.describe_schedule(schedule_id)
         # Snapshot the baseline before the updater mutates ``current`` so we can

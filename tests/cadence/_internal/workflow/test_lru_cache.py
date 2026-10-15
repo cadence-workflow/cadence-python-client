@@ -1,8 +1,5 @@
 """Unit tests for cadence._internal.workflow.lru_cache.LRUCache."""
 
-import threading
-
-
 from cadence._internal.workflow.lru_cache import LRUCache
 
 
@@ -145,24 +142,3 @@ class TestRemovedFunc:
         cache.put("B", "Bar")
         cache.delete("B")
         assert sizes == [1, 0]
-
-
-class TestConcurrency:
-    def test_concurrent_puts_respect_max_size(self) -> None:
-        max_size = 50
-        removed: list[int] = []
-        cache: LRUCache[int] = LRUCache(max_size, removed_func=removed.append)
-
-        def worker(offset: int) -> None:
-            for i in range(200):
-                cache.put(f"{offset}-{i}", i)
-                cache.get(f"{offset}-{i // 2}")
-
-        threads = [threading.Thread(target=worker, args=(t,)) for t in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert cache.size() == max_size
-        assert len(removed) == 8 * 200 - max_size

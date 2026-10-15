@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from json import JSONDecoder
-from typing import Any
+from types import NoneType, UnionType
+from typing import Annotated, Any, Union, get_args, get_origin
 
-from pydantic import TypeAdapter
+from pydantic import PydanticSchemaGenerationError, TypeAdapter
 from pydantic_core import SchemaSerializer, core_schema
 
 from cadence.api.v1.common_pb2 import Payload
@@ -58,9 +59,13 @@ class PydanticDataConverter(DataConverter):
             value, value_end = self._decoder.raw_decode(remaining)
             type_hint = type_hints[len(results)]
             if type_hint and type_hint is not Any:
-                value = self._type_adapter(type_hint).validate_json(
-                    remaining[:value_end]
-                )
+                try:
+                    type_adapter = self._type_adapter(type_hint)
+                except PydanticSchemaGenerationError:
+                    if value is not None or not self._allows_none(type_hint):
+                        raise
+                else:
+                    value = type_adapter.validate_json(remaining[:value_end])
             results.append(value)
             start += value_end + 1
 
@@ -97,3 +102,12 @@ class PydanticDataConverter(DataConverter):
         if type_hint is bool:
             return False
         return None
+
+    @staticmethod
+    def _allows_none(type_hint: Any) -> bool:
+        origin = get_origin(type_hint)
+        if origin is Annotated:
+            return PydanticDataConverter._allows_none(get_args(type_hint)[0])
+        return type_hint is NoneType or (
+            origin in (Union, UnionType) and NoneType in get_args(type_hint)
+        )

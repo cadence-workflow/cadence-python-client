@@ -1,14 +1,21 @@
-from typing import Type, cast
+from typing import Any, Type, cast
 
 import pytest
 
 pytest.importorskip("agents")
 
-from agents import ModelResponse, TResponseInputItem  # noqa: E402
+from agents import (  # noqa: E402
+    ModelResponse,
+    ModelSettings,
+    ModelTracing,
+    TResponseInputItem,
+)
 from agents.usage import Usage  # noqa: E402
 from openai._models import construct_type  # noqa: E402
 from openai.types.responses import Response  # noqa: E402
 
+from cadence._internal.fn_signature import FnSignature  # noqa: E402
+from cadence.contrib.openai.openai_activities import OpenAIActivities  # noqa: E402
 from cadence.contrib.pydantic import PydanticDataConverter  # noqa: E402
 
 # OpenAIActivities.invoke_model input annotation
@@ -30,6 +37,29 @@ def test_roundtrip_model_input(value: object) -> None:
     converter = PydanticDataConverter(exclude_unset=True)
     payload = converter.to_data([value])
     assert converter.from_data(payload, [_MODEL_INPUT_TYPE]) == [value]
+
+
+def test_roundtrip_complete_invoke_model_arguments_with_null_output_schema() -> None:
+    arguments: list[Any] = [
+        "gpt-5-nano",
+        None,
+        "Hello",
+        ModelSettings(),
+        [],
+        None,
+        [],
+        ModelTracing.DISABLED,
+        None,
+        None,
+        None,
+    ]
+    signature = FnSignature.of(OpenAIActivities.invoke_model)
+    converter = PydanticDataConverter(exclude_unset=True)
+
+    decoded = signature.params_from_payload(converter, converter.to_data(arguments))
+
+    assert len(signature.params) == 11
+    assert decoded == arguments
 
 
 def test_second_turn_model_input_after_model_response_roundtrip() -> None:

@@ -14,6 +14,7 @@ from openai.types.responses import ResponsePromptParam
 
 from cadence.contrib.openai.cadence_tool import to_cadence_tool
 from cadence.contrib.openai.cadence_handoff import to_cadence_handoff
+from cadence.contrib.openai.cadence_output_schema import to_cadence_output_schema
 from cadence.contrib.openai.openai_activities import OpenAIActivities
 
 
@@ -46,7 +47,7 @@ class CadenceModel(Model):
             input=input,
             model_settings=model_settings,
             tools=[to_cadence_tool(tool) for tool in tools],
-            output_schema=output_schema,
+            output_schema=to_cadence_output_schema(output_schema),
             handoffs=[to_cadence_handoff(h) for h in handoffs],
             tracing=tracing,
             previous_response_id=previous_response_id,

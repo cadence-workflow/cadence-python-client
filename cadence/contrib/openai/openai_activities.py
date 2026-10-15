@@ -5,13 +5,13 @@ from cadence import activity
 from agents import (
     TResponseInputItem,
     ModelSettings,
-    AgentOutputSchemaBase,
     ModelTracing,
     ModelResponse,
 )
 
 from cadence.contrib.openai.cadence_tool import CadenceTool, from_cadence_tool
 from cadence.contrib.openai.cadence_handoff import CadenceHandoff, from_cadence_handoff
+from cadence.contrib.openai.cadence_output_schema import CadenceOutputSchema
 
 
 class OpenAIActivities:
@@ -28,7 +28,7 @@ class OpenAIActivities:
         input: str | list[TResponseInputItem],
         model_settings: ModelSettings,
         tools: list[CadenceTool],
-        output_schema: AgentOutputSchemaBase | None,
+        output_schema: CadenceOutputSchema | None,
         handoffs: list[CadenceHandoff],
         tracing: ModelTracing,
         previous_response_id: str | None,

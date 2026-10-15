@@ -1,14 +1,18 @@
+from asyncio import CancelledError
+
 import pytest
 
 from cadence._internal.workflow.statemachine.child_workflow_execution_state_machine import (
     ChildWorkflowExecutionStateMachine,
 )
 from cadence.error import (
-    ChildWorkflowExecutionCanceled,
-    ChildWorkflowExecutionFailed,
-    ChildWorkflowExecutionTerminated,
-    ChildWorkflowExecutionTimedOut,
-    StartChildWorkflowExecutionFailed,
+    ApplicationError,
+    CadenceTimeoutError,
+    WorkflowCanceledError,
+    ChildWorkflowError,
+    StartChildWorkflowExecutionError,
+    TerminatedError,
+    TimeoutType,
 )
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionFuture,
@@ -19,6 +23,11 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Failure, Payload, WorkflowExecution, WorkflowType
+from cadence.api.v1.workflow_pb2 import (
+    CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_RUNNING,
+    TIMEOUT_TYPE_START_TO_CLOSE,
+)
+from cadence.data_converter import DefaultDataConverter
 
 ### These tests have to be async because they rely on the presence of an eventloop
 
@@ -38,7 +47,9 @@ def make_sm() -> tuple[
     )
     execution: DecisionFuture[WorkflowExecution] = DecisionFuture()
     result: DecisionFuture[Payload] = DecisionFuture()
-    sm = ChildWorkflowExecutionStateMachine(attrs, execution, result)
+    sm = ChildWorkflowExecutionStateMachine(
+        attrs, execution, result, DefaultDataConverter()
+    )
     return sm, execution, result
 
 
@@ -172,16 +183,25 @@ async def test_handle_initiation_failed_reuses_same_exception():
     sm.handle_initiation_failed(
         history.StartChildWorkflowExecutionFailedEventAttributes(
             workflow_id=WF_ID,
+            cause=CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_RUNNING,
         )
     )
 
     assert sm.state is DecisionState.COMPLETED
     assert execution.done() is True
     assert result.done() is True
-    with pytest.raises(StartChildWorkflowExecutionFailed, match="start child failed"):
+    with pytest.raises(StartChildWorkflowExecutionError):
         execution.result()
-    with pytest.raises(StartChildWorkflowExecutionFailed, match="start child failed"):
+    with pytest.raises(
+        StartChildWorkflowExecutionError, match="WORKFLOW_ALREADY_RUNNING$"
+    ) as exc_info:
         result.result()
+    assert exc_info.value.workflow_id == WF_ID
+    assert exc_info.value.workflow_type == "MyWorkflow"
+    assert (
+        exc_info.value.failure_cause
+        == CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_RUNNING
+    )
 
     # Both futures hold the identical exception object (not just equal ones).
     exc_execution = execution.exception()
@@ -235,16 +255,48 @@ async def test_handle_failed():
 
     sm.handle_failed(
         history.ChildWorkflowExecutionFailedEventAttributes(
-            failure=Failure(reason="boom")
+            workflow_type=WorkflowType(name="MyWorkflow"),
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-1"),
+            failure=Failure(reason="boom", details=b'{"code": 7}'),
         )
     )
 
     assert sm.state is DecisionState.COMPLETED
-    with pytest.raises(ChildWorkflowExecutionFailed, match="boom"):
+    with pytest.raises(ChildWorkflowError, match="boom") as exc_info:
+        result.result()
+    assert exc_info.value.workflow_id == WF_ID
+    assert exc_info.value.workflow_type == "MyWorkflow"
+    cause = exc_info.value.cause
+    assert isinstance(cause, ApplicationError)
+    assert cause.reason == "boom"
+    assert cause.details(dict) == [{"code": 7}]
+
+
+async def test_handle_canceled_after_cancel_requested_raises_cancelled_error():
+    sm, execution, result = make_sm()
+    sm.handle_initiated(history.StartChildWorkflowExecutionInitiatedEventAttributes())
+    sm.handle_started(
+        history.ChildWorkflowExecutionStartedEventAttributes(
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-1")
+        )
+    )
+    sm.request_cancel()
+    sm.handle_cancel_initiated(
+        history.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
+    )
+
+    sm.handle_canceled(
+        history.ChildWorkflowExecutionCanceledEventAttributes(
+            details=Payload(data=b'"cancel-details"')
+        )
+    )
+
+    assert sm.state is DecisionState.COMPLETED
+    with pytest.raises(CancelledError, match="cancel-details"):
         result.result()
 
 
-async def test_handle_canceled():
+async def test_handle_canceled_externally_raises_child_workflow_error():
     sm, execution, result = make_sm()
     sm.handle_initiated(history.StartChildWorkflowExecutionInitiatedEventAttributes())
     sm.handle_started(
@@ -255,13 +307,44 @@ async def test_handle_canceled():
 
     sm.handle_canceled(
         history.ChildWorkflowExecutionCanceledEventAttributes(
-            details=Payload(data=b"cancel-details")
+            workflow_type=WorkflowType(name="MyWorkflow"),
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-1"),
+            details=Payload(data=b'"cancel-details"'),
         )
     )
 
     assert sm.state is DecisionState.COMPLETED
-    with pytest.raises(ChildWorkflowExecutionCanceled, match="child workflow canceled"):
+    with pytest.raises(ChildWorkflowError, match="child workflow canceled") as exc_info:
         result.result()
+    assert exc_info.value.workflow_id == WF_ID
+    assert exc_info.value.workflow_type == "MyWorkflow"
+    cause = exc_info.value.cause
+    assert isinstance(cause, WorkflowCanceledError)
+    assert cause.details(str) == ["cancel-details"]
+
+
+async def test_handle_canceled_after_cancel_failed_raises_child_workflow_error():
+    sm, execution, result = make_sm()
+    sm.handle_initiated(history.StartChildWorkflowExecutionInitiatedEventAttributes())
+    sm.handle_started(
+        history.ChildWorkflowExecutionStartedEventAttributes(
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-1")
+        )
+    )
+    sm.request_cancel()
+    sm.handle_cancel_initiated(
+        history.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
+    )
+    sm.handle_cancel_failed(
+        history.RequestCancelExternalWorkflowExecutionFailedEventAttributes()
+    )
+
+    sm.handle_canceled(history.ChildWorkflowExecutionCanceledEventAttributes())
+
+    with pytest.raises(ChildWorkflowError) as exc_info:
+        result.result()
+    assert isinstance(exc_info.value.cause, WorkflowCanceledError)
+    assert not exc_info.value.cause.has_details()
 
 
 async def test_handle_timed_out():
@@ -273,13 +356,22 @@ async def test_handle_timed_out():
         )
     )
 
-    sm.handle_timed_out(history.ChildWorkflowExecutionTimedOutEventAttributes())
+    sm.handle_timed_out(
+        history.ChildWorkflowExecutionTimedOutEventAttributes(
+            workflow_type=WorkflowType(name="MyWorkflow"),
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-1"),
+            timeout_type=TIMEOUT_TYPE_START_TO_CLOSE,
+        )
+    )
 
     assert sm.state is DecisionState.COMPLETED
     with pytest.raises(
-        ChildWorkflowExecutionTimedOut, match="child workflow timed out"
-    ):
+        ChildWorkflowError, match="child workflow timed out"
+    ) as exc_info:
         result.result()
+    cause = exc_info.value.cause
+    assert isinstance(cause, CadenceTimeoutError)
+    assert cause.timeout_type is TimeoutType.START_TO_CLOSE
 
 
 async def test_handle_terminated():
@@ -291,11 +383,19 @@ async def test_handle_terminated():
         )
     )
 
-    sm.handle_terminated(history.ChildWorkflowExecutionTerminatedEventAttributes())
+    sm.handle_terminated(
+        history.ChildWorkflowExecutionTerminatedEventAttributes(
+            workflow_type=WorkflowType(name="MyWorkflow"),
+            workflow_execution=WorkflowExecution(workflow_id=WF_ID, run_id="run-1"),
+        )
+    )
 
     assert sm.state is DecisionState.COMPLETED
-    with pytest.raises(ChildWorkflowExecutionTerminated):
+    with pytest.raises(
+        ChildWorkflowError, match="child workflow terminated"
+    ) as exc_info:
         result.result()
+    assert isinstance(exc_info.value.cause, TerminatedError)
 
 
 async def test_cancel_initiated_transitions_to_cancellation_recorded():

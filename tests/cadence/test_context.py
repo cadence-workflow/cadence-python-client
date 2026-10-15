@@ -37,6 +37,7 @@ from cadence.client import (
 )
 from cadence.context import ContextVarPropagator
 from cadence.data_converter import DefaultDataConverter
+from cadence.error import ActivityError, ApplicationError
 from cadence.metrics import NoOpMetricsEmitter
 from cadence.testing import TestWorkflowEnvironment
 from cadence.worker._types import WorkerOptions
@@ -487,8 +488,10 @@ async def test_test_environment_activity_does_not_inherit_workflow_locals() -> N
 
     with TestWorkflowEnvironment(registry) as environment:
         await environment.client.start_workflow("Parent", task_list="test")
-        with pytest.raises(LookupError):
+        with pytest.raises(ActivityError) as exc_info:
             environment.get_workflow_result(str)
+        assert isinstance(exc_info.value.cause, ApplicationError)
+        assert exc_info.value.cause.reason == "LookupError"
 
 
 def _started_events(headers: Mapping[str, bytes]) -> list[HistoryEvent]:

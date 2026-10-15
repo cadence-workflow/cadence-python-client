@@ -10,6 +10,7 @@ from cadence._internal.workflow.deterministic_event_loop import (
     FatalDecisionError,
     fail_decision,
 )
+from cadence.error import ActivityError, ApplicationError, ChildWorkflowError
 from cadence.testing import TestWorkflowEnvironment
 from cadence.worker import Registry
 from cadence.workflow import (
@@ -89,6 +90,10 @@ class SignalWorkflow:
     def status(self) -> str:
         return "approved" if self._approved else "pending"
 
+    @workflow.signal(name="reject")
+    def reject(self, reason: str) -> None:
+        raise ValueError(f"rejected: {reason}")
+
 
 @registry.workflow
 class TimerWorkflow:
@@ -154,6 +159,44 @@ class SwallowedFatalWorkflow:
         except BaseException:
             pass
         return "unreachable"
+
+
+@registry.workflow
+class CatchActivityErrorWorkflow:
+    @workflow.run
+    async def run(self) -> None:
+        try:
+            await workflow.execute_activity(
+                "greet",
+                str,
+                "dave",
+                schedule_to_close_timeout=timedelta(seconds=10),
+            )
+        except ActivityError as e:
+            assert e.activity_type == "greet"
+            assert isinstance(e.cause, ApplicationError)
+            assert e.cause.reason == "not-found"
+            assert e.cause.details(dict) == [{"name": "dave"}]
+            return
+        raise RuntimeError("expected activity to fail")
+
+
+@registry.workflow
+class CatchChildErrorWorkflow:
+    @workflow.run
+    async def run(self) -> None:
+        try:
+            await workflow.execute_child_workflow(
+                "FailingWorkflow",
+                str,
+                execution_start_to_close_timeout=timedelta(seconds=30),
+            )
+        except ChildWorkflowError as e:
+            assert e.workflow_type == "FailingWorkflow"
+            assert isinstance(e.cause, ApplicationError)
+            assert e.cause.reason == "ValueError"
+            return
+        raise RuntimeError("expected child workflow to fail")
 
 
 @registry.workflow
@@ -329,6 +372,21 @@ async def test_signal_and_query(env: TestWorkflowEnvironment):
 
 
 @pytest.mark.asyncio
+async def test_failing_signal_handler_fails_decision(
+    env: TestWorkflowEnvironment,
+):
+    execution = await env.client.start_workflow("SignalWorkflow", task_list="tl")
+
+    await env.client.signal_workflow(execution.workflow_id, "", "reject", "nope")
+
+    assert env.is_workflow_completed(execution.workflow_id)
+    error = env.get_workflow_error(execution.workflow_id)
+    assert isinstance(error, FatalDecisionError)
+    assert isinstance(error.__cause__, ValueError)
+    assert str(error.__cause__) == "rejected: nope"
+
+
+@pytest.mark.asyncio
 async def test_signal_external_workflow(env: TestWorkflowEnvironment):
     await env.client.start_workflow(
         "SignalWorkflow", task_list="tl", workflow_id="target-1"
@@ -431,6 +489,26 @@ async def test_swallowed_fatal_decision_error_still_fails(
     await env.client.start_workflow("SwallowedFatalWorkflow", task_list="tl")
     assert env.is_workflow_completed()
     assert isinstance(env.get_workflow_error(), FatalDecisionError)
+
+
+@pytest.mark.asyncio
+async def test_activity_application_error_surfaces_as_activity_error(
+    env: TestWorkflowEnvironment,
+):
+    def fail(name: str) -> str:
+        raise ApplicationError("not-found", {"name": name})
+
+    env.on_activity("greet", fn=fail)
+    await env.client.start_workflow("CatchActivityErrorWorkflow", task_list="tl")
+    assert env.get_workflow_result(type(None)) is None
+
+
+@pytest.mark.asyncio
+async def test_child_workflow_failure_surfaces_as_child_workflow_error(
+    env: TestWorkflowEnvironment,
+):
+    await env.client.start_workflow("CatchChildErrorWorkflow", task_list="tl")
+    assert env.get_workflow_result(type(None)) is None
 
 
 @pytest.mark.asyncio

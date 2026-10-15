@@ -24,7 +24,7 @@ from typing import (
 )
 
 from cadence import Client
-from cadence.error import ActivityCancelledError
+from cadence.error import CancelRequestedError
 from cadence._internal.activity._definition import (
     AsyncImpl,
     SyncImpl,
@@ -87,27 +87,30 @@ def heartbeat_details(*types: Type) -> list[Any]:
 def is_cancelled() -> bool:
     """Return whether the server has requested cancellation for this activity.
 
+    A heartbeat that finds the activity no longer exists on the server (e.g. it
+    timed out or its workflow closed) is also treated as a cancellation request.
+
     For sync activities, poll this after each heartbeat and raise
-    ``ActivityCancelledError`` to report cancellation to the server::
+    ``CancelRequestedError`` to report cancellation to the server::
 
         def my_activity():
             for item in work:
                 if activity.is_cancelled():
                     # do cleanup
-                    raise ActivityCancelledError()
+                    raise CancelRequestedError()
                 process(item)
                 activity.heartbeat(item)
 
     For async activities, cancellation is delivered as ``asyncio.CancelledError``
     injected after a heartbeat observes the cancellation request.  Re-raise it (or
-    raise ``ActivityCancelledError``) to report cancellation; catch and swallow it to
+    raise ``CancelRequestedError``) to report cancellation; catch and swallow it to
     ignore the request and complete normally.
     """
     return ActivityContext.get().is_cancelled()
 
 
 def raise_if_cancelled() -> None:
-    """Raise ActivityCancelledError if the server has requested cancellation.
+    """Raise CancelRequestedError if the server has requested cancellation.
 
     A convenience for sync activities that want to bail out at natural
     checkpoints — especially around logging, metrics, or any Activity API
@@ -120,14 +123,14 @@ def raise_if_cancelled() -> None:
                 activity.heartbeat(item)
 
     Equivalent to Go's ``select { case <-ctx.Done(): return ..., ctx.Err() }``
-    non-blocking check. Has no effect on async activities (they receive
-    ``asyncio.CancelledError`` directly).
+    non-blocking check. Async activities receive ``asyncio.CancelledError``
+    first; this only raises in them if they suppress it and keep running.
 
     Raises:
-        ActivityCancelledError: If the server has requested cancellation.
+        CancelRequestedError: If the server has requested cancellation.
     """
     if ActivityContext.get().is_cancelled():
-        raise ActivityCancelledError()
+        raise CancelRequestedError()
 
 
 def wait_for_cancelled(timeout: timedelta | None = None) -> bool:

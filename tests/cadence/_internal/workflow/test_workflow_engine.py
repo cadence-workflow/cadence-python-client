@@ -4,9 +4,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, List, Mapping
 
 import pytest
-from cadence.api.v1.common_pb2 import ActivityType, Payload, WorkflowType
+from cadence.api.v1.common_pb2 import ActivityType, Failure, Payload, WorkflowType
 from cadence.api.v1.decision_pb2 import CancelWorkflowExecutionDecisionAttributes
 from cadence.api.v1.history_pb2 import (
+    ActivityTaskFailedEventAttributes,
     ActivityTaskScheduledEventAttributes,
     DecisionTaskCompletedEventAttributes,
     DecisionTaskScheduledEventAttributes,
@@ -637,6 +638,88 @@ class TestWorkflowEngine:
         )
 
         assert decision_result.decisions == []
+
+    def test_uncaught_activity_error_fails_workflow_with_wrapper_reason(self):
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                UncaughtActivityErrorWorkflow,
+                WorkflowDefinitionOptions(name="uncaught_activity_error_workflow"),
+            )
+        )
+
+        decision_result = workflow_engine.process_decision(
+            _history_with_activity_failure(Failure(reason="from-activity"))
+        )
+
+        assert len(decision_result.decisions) == 1
+        failure = decision_result.decisions[
+            0
+        ].fail_workflow_execution_decision_attributes.failure
+        assert failure.reason == "ActivityError"
+        assert "from-activity" in failure.details.decode()
+
+
+class UncaughtActivityErrorWorkflow:
+    @workflow.run
+    async def run(self):
+        return await workflow.execute_activity(
+            "act", str, schedule_to_close_timeout=timedelta(minutes=5)
+        )
+
+
+def _started_history() -> list[HistoryEvent]:
+    return [
+        _event(
+            1,
+            workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(),
+        ),
+        _event(
+            2,
+            decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+        ),
+        _event(
+            3,
+            decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                scheduled_event_id=2
+            ),
+        ),
+    ]
+
+
+def _history_with_activity_failure(failure: Failure) -> list[HistoryEvent]:
+    return [
+        *_started_history(),
+        _event(
+            4,
+            decision_task_completed_event_attributes=DecisionTaskCompletedEventAttributes(
+                scheduled_event_id=2, started_event_id=3
+            ),
+        ),
+        _event(
+            5,
+            activity_task_scheduled_event_attributes=ActivityTaskScheduledEventAttributes(
+                activity_id="0",
+                activity_type=ActivityType(name="act"),
+            ),
+        ),
+        _event(
+            6,
+            activity_task_failed_event_attributes=ActivityTaskFailedEventAttributes(
+                scheduled_event_id=5,
+                failure=failure,
+            ),
+        ),
+        _event(
+            7,
+            decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+        ),
+        _event(
+            8,
+            decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                scheduled_event_id=7
+            ),
+        ),
+    ]
 
 
 def create_workflow_engine(

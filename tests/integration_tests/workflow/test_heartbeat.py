@@ -4,7 +4,7 @@ from datetime import timedelta
 
 
 from cadence import workflow, Registry, activity
-from cadence.error import ActivityCancelledError
+from cadence.error import CancelRequestedError
 from cadence.api.v1.history_pb2 import EventFilterType
 from cadence.api.v1.service_workflow_pb2 import (
     GetWorkflowExecutionHistoryRequest,
@@ -51,7 +51,7 @@ def sync_wait_cancel_activity() -> str:
         activity.heartbeat("waiting")
         cancelled = activity.wait_for_cancelled(timedelta(milliseconds=300))
         if cancelled:
-            raise ActivityCancelledError("bye")
+            raise CancelRequestedError()
         time.sleep(0.05)
 
 

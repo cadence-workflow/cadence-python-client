@@ -9,10 +9,14 @@ from cadence._internal.workflow.statemachine.event_dispatcher import EventDispat
 from cadence._internal.workflow.statemachine.nondeterminism import (
     record_immediate_cancel,
 )
+from cadence._internal.workflow.deterministic_event_loop import (
+    FatalDecisionError,
+    fail_decision,
+)
+from cadence._internal.failure import activity_failed_error, activity_timed_out_error
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload
-from cadence.api.v1.workflow_pb2 import TimeoutType
-from cadence.error import ActivityFailure
+from cadence.data_converter import DataConverter
 
 activity_events = EventDispatcher("scheduled_event_id")
 
@@ -25,10 +29,12 @@ class ActivityStateMachine(BaseDecisionStateMachine):
         self,
         request: decision.ScheduleActivityTaskDecisionAttributes,
         completed: DecisionFuture[Payload],
+        data_converter: DataConverter,
     ) -> None:
         super().__init__()
         self.request = request
         self.completed = completed
+        self._data_converter = data_converter
 
     def get_id(self) -> DecisionId:
         return DecisionId(DecisionType.ACTIVITY, self.request.activity_id)
@@ -87,12 +93,9 @@ class ActivityStateMachine(BaseDecisionStateMachine):
     @activity_events.event()
     def handle_failed(self, event: history.ActivityTaskFailedEventAttributes) -> None:
         self._transition(DecisionState.COMPLETED)
-        failure_details = (
-            event.failure.details.decode("utf-8", errors="replace") or None
-        )
         self._resolve(
             self.completed,
-            exc=ActivityFailure(event.failure.reason, failure_details),
+            exc=activity_failed_error(event, self.request, self._data_converter),
         )
 
     @activity_events.event()
@@ -100,24 +103,28 @@ class ActivityStateMachine(BaseDecisionStateMachine):
         self, event: history.ActivityTaskTimedOutEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        failure_details = (
-            event.last_failure.details.decode("utf-8", errors="replace") or None
-        )
         self._resolve(
             self.completed,
-            exc=ActivityFailure(
-                TimeoutType.Name(event.timeout_type),
-                failure_details=failure_details,
-                heartbeat_details=event.details,
-            ),
+            exc=activity_timed_out_error(event, self.request, self._data_converter),
         )
 
     @activity_events.event()
-    def handle_canceled(
-        self, event: history.ActivityTaskCanceledEventAttributes
-    ) -> None:
+    def handle_canceled(self, _: history.ActivityTaskCanceledEventAttributes) -> None:
+        # An activity should only report a cancellation that the workflow
+        # requested. Cadence doesn't enforce this, but the Go and Java clients
+        # fail the decision task when it happens, so this does too.
+        if self.state not in (
+            DecisionState.CANCELED_AFTER_RECORDED,
+            DecisionState.CANCELLATION_RECORDED,
+        ):
+            fail_decision(
+                FatalDecisionError(
+                    f"activity {self.request.activity_id!r} canceled without a "
+                    "cancellation request"
+                )
+            )
         self._transition(DecisionState.COMPLETED)
-        self._force_cancel(event.details.data.decode())
+        self._force_cancel()
 
     @activity_events.event("activity_id")
     def handle_cancel_requested(

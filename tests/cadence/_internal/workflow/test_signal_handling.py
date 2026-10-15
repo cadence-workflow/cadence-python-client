@@ -24,7 +24,6 @@ from cadence._internal.workflow.deterministic_event_loop import (
 )
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence.data_converter import DefaultDataConverter
-from cadence.error import SignalFailure
 from cadence.workflow import WorkflowInfo, WorkflowDefinition, WorkflowDefinitionOptions
 
 
@@ -149,15 +148,18 @@ class ActivityCompletionAndSignalWorkflow:
 
 class FailingSignalWorkflow:
     def __init__(self):
-        self.signals_received: list[str] = []
+        self.signaled = False
 
     @workflow.run
     async def run(self):
-        await workflow.wait_condition(lambda: len(self.signals_received) >= 1)
-        return self.signals_received[0]
+        await workflow.wait_condition(lambda: self.signaled)
+        return await workflow.execute_activity(
+            "act", str, schedule_to_close_timeout=timedelta(seconds=10)
+        )
 
     @workflow.signal(name="bad_signal")
     def handle_signal(self, value: str):
+        self.signaled = True
         raise ValueError(f"handler failed on: {value}")
 
 
@@ -638,7 +640,8 @@ class TestSignalDelivery:
         assert DATA_CONVERTER.from_data(completion.result, [str]) == ["notified"]
 
     def test_signal_handler_exception_fails_decision(self):
-        """User exceptions in signal handlers fail the current decision task."""
+        """User exceptions in signal handlers fail the current decision task,
+        and workflow code can't schedule decisions after that."""
         engine = make_workflow_engine(FailingSignalWorkflow)
         events = [
             HistoryEvent(
@@ -660,11 +663,12 @@ class TestSignalDelivery:
             ),
         ]
 
-        with pytest.raises(SignalFailure) as err:
+        with pytest.raises(FatalDecisionError, match="bad_signal") as err:
             engine.process_decision(events)
 
-        assert err.value.signal_name == "bad_signal"
-        assert "handler failed on: boom" in str(err.value)
+        assert isinstance(err.value.__cause__, ValueError)
+        assert str(err.value.__cause__) == "handler failed on: boom"
+        assert engine._decision_manager.collect_pending_decisions() == []
 
     def test_signal_handler_fatal_decision_error_fails_decision(self):
         engine = make_workflow_engine(FatalSignalWorkflow)

@@ -62,6 +62,10 @@ from typing import (
 )
 
 from cadence._internal.activity._definition import BaseDefinition
+from cadence._internal.failure import (
+    activity_error_from_exception,
+    child_workflow_error_from_exception,
+)
 from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
@@ -86,6 +90,7 @@ from cadence.api.v1.query_pb2 import QueryRejectCondition
 from cadence.client import Client, ClientOptions, StartWorkflowOptions, _identity
 from cadence.context import ContextPropagator
 from cadence.data_converter import DataConverter, DefaultDataConverter
+from cadence.error import ContinueAsNewError
 from cadence.metrics import NoOpMetricsEmitter
 from cadence.workflow import (
     ActivityOptions,
@@ -497,11 +502,6 @@ class _Execution:
                 return self._data_converter.to_data([result])
 
     def _collect_outcome(self) -> None:
-        signal_failure = self._instance.get_signal_failure()
-        if signal_failure is not None:
-            self.completed = True
-            self.error = signal_failure
-            return
         if self._instance.is_done():
             self.completed = True
             try:
@@ -900,7 +900,11 @@ class TestWorkflowEnvironment:
                     )
             return result
 
-        result = await _run_in_fresh_context(_body)
+        try:
+            result = await _run_in_fresh_context(_body)
+        except Exception as e:
+            # Surface the failure the way a workflow sees it in production
+            raise activity_error_from_exception(e, name, str(uuid.uuid4()), dc)
 
         result_payload = dc.to_data([result])
         return cast(ResultType, dc.from_data(result_payload, [result_type])[0])
@@ -946,9 +950,17 @@ class TestWorkflowEnvironment:
         )
 
         input_payload = self._data_converter.to_data(list(args))
-        result_payload = await self._run_workflow_coro(
-            definition, child_info, input_payload, headers
-        )
+        try:
+            result_payload = await self._run_workflow_coro(
+                definition, child_info, input_payload, headers
+            )
+        except ContinueAsNewError:
+            raise
+        except Exception as e:
+            # Surface the failure the way a parent workflow sees it in production
+            raise child_workflow_error_from_exception(
+                e, definition.name, child_id, self._data_converter
+            )
 
         loop = cast(DeterministicEventLoop, get_running_loop())
         result_future: "Future[Payload]" = loop.create_future()

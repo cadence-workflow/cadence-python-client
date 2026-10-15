@@ -5,6 +5,11 @@ from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import RecordActivityTaskHeartbeatRequest
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 from cadence.data_converter import DataConverter
+from cadence.error import (
+    DomainNotActiveError,
+    EntityNotExistsError,
+    WorkflowExecutionAlreadyCompletedError,
+)
 
 _logger = getLogger(__name__)
 
@@ -39,6 +44,16 @@ class _HeartbeatSender:
             )
             self._previous_details = payload
             return bool(response.cancel_requested)
+        except (
+            EntityNotExistsError,
+            WorkflowExecutionAlreadyCompletedError,
+            DomainNotActiveError,
+        ):
+            # The activity is gone, so its result would be rejected. Like the Go
+            # client, treat this as a cancellation request. Reporting the
+            # cancellation will fail too, which is logged.
+            _logger.warning("Heartbeat failed, canceling activity", exc_info=True)
+            return True
         except Exception:
             _logger.warning("Heartbeat failed", exc_info=True)
             return False

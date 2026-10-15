@@ -40,6 +40,25 @@ class _StructuredOutput(BaseModel):
     answer: str
 
 
+def test_output_schema_conversion_handles_null_and_plain_text() -> None:
+    assert to_cadence_output_schema(None) is None
+
+    original = AgentOutputSchema(str)
+    transported = to_cadence_output_schema(original)
+
+    assert transported is not None
+    assert transported.name() == original.name()
+    assert transported.is_plain_text()
+    assert transported.is_strict_json_schema() == original.is_strict_json_schema()
+    with pytest.raises(ValueError, match="Plain-text output has no JSON schema"):
+        transported.json_schema()
+    with pytest.raises(
+        NotImplementedError,
+        match="Output validation runs in the workflow with the original schema",
+    ):
+        transported.validate_json('"answer"')
+
+
 def _invoke_model_arguments(output_schema: CadenceOutputSchema | None) -> list[Any]:
     return [
         "gpt-5-nano",

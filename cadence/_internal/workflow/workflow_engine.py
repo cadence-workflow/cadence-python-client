@@ -1,11 +1,11 @@
 import logging
-import traceback
 from asyncio import CancelledError, InvalidStateError
 from dataclasses import dataclass
 from functools import singledispatchmethod
 from typing import List, Mapping, Optional, Sequence
 
 from cadence._internal.context import extract_headers, set_header_from_dict
+from cadence._internal.failure import failure_from_exception
 from cadence._internal.workflow.context import Context, _activate_workflow_context
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.deterministic_event_loop import (
@@ -21,7 +21,7 @@ from cadence.api.v1.decision_pb2 import (
     CompleteWorkflowExecutionDecisionAttributes,
     ContinueAsNewWorkflowExecutionDecisionAttributes,
 )
-from cadence.api.v1.common_pb2 import Failure, Payload, WorkflowType
+from cadence.api.v1.common_pb2 import Payload, WorkflowType
 from cadence.api.v1.history_pb2 import (
     HistoryEvent,
     WorkflowExecutionCancelRequestedEventAttributes,
@@ -62,7 +62,7 @@ class WorkflowEngine:
         workflow_interceptor_factory: WorkflowInterceptorFactory | None = None,
     ):
         self._event_loop = DeterministicEventLoop()
-        self._decision_manager = DecisionManager(self._event_loop)
+        self._decision_manager = DecisionManager(self._event_loop, info.data_converter)
         self._data_converter = info.data_converter
         self._workflow_definition = workflow_definition
         self._workflow_instance = WorkflowInstance(
@@ -203,9 +203,12 @@ class WorkflowEngine:
 
                 # Signal handler failures fail the decision task, not the workflow.
                 if (
-                    signal_failure := self._workflow_instance.get_signal_failure()
+                    signal_error := self._workflow_instance.get_signal_handler_error()
                 ) is not None:
-                    raise signal_failure
+                    signal_name, exc = signal_error
+                    raise FatalDecisionError(
+                        f"signal handler {signal_name!r} failed: {exc!r}"
+                    ) from exc
 
                 if decision := self._maybe_complete_workflow():
                     self._decision_manager.complete_workflow(decision)
@@ -260,7 +263,9 @@ class WorkflowEngine:
         except ExceptionGroup as e:
             if e.subgroup((InvalidStateError, FatalDecisionError)):
                 raise
-            failure = _failure_from_exception(e)
+            failure = failure_from_exception(
+                e, self._data_converter, include_options=False
+            )
 
             return Decision(
                 fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes(
@@ -269,7 +274,9 @@ class WorkflowEngine:
             )
 
         except Exception as e:
-            failure = _failure_from_exception(e)
+            failure = failure_from_exception(
+                e, self._data_converter, include_options=False
+            )
             return Decision(
                 fail_workflow_execution_decision_attributes=FailWorkflowExecutionDecisionAttributes(
                     failure=failure
@@ -341,14 +348,3 @@ def _outcome_from_decision(decision: Decision) -> Optional[str]:
     if attr == "continue_as_new_workflow_execution_decision_attributes":
         return "continue_as_new"
     return None
-
-
-def _failure_from_exception(e: Exception) -> Failure:
-    stacktrace = "".join(traceback.format_exception(e))
-
-    details = f"message: {str(e)}\nstacktrace: {stacktrace}"
-
-    return Failure(
-        reason=type(e).__name__,
-        details=details.encode("utf-8"),
-    )

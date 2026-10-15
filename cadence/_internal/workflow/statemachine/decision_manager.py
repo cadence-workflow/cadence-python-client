@@ -61,6 +61,7 @@ from cadence._internal.workflow.statemachine.upsert_search_attributes_state_mach
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
+from cadence.data_converter import DataConverter, DefaultDataConverter
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +126,15 @@ class DecisionManager:
         }
     )
 
-    def __init__(self, event_loop: asyncio.AbstractEventLoop):
+    def __init__(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        data_converter: DataConverter | None = None,
+    ):
         self._event_loop = event_loop
+        self._data_converter = (
+            data_converter if data_converter is not None else DefaultDataConverter()
+        )
         self._id_counter = 0
         self._determinism_tracker = DeterminismTracker()
         self._replaying = False
@@ -148,7 +156,7 @@ class DecisionManager:
             self._determinism_tracker.validate_action(attrs)
         decision_id = DecisionId(DecisionType.ACTIVITY, attrs.activity_id)
         future: DecisionFuture[Payload] = self._create_future(decision_id)
-        machine = ActivityStateMachine(attrs, future)
+        machine = ActivityStateMachine(attrs, future, self._data_converter)
         self._add_state_machine(machine)
 
         return future
@@ -184,7 +192,9 @@ class DecisionManager:
         execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
         execution.add_done_callback(_consume_future_exception)
         result: DecisionFuture[Payload] = self._create_future(decision_id)
-        machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
+        machine = ChildWorkflowExecutionStateMachine(
+            attrs, execution, result, self._data_converter
+        )
         self._add_state_machine(machine)
         return execution, result
 

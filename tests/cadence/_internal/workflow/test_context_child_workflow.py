@@ -12,7 +12,7 @@ from cadence.api.v1.common_pb2 import WorkflowExecution, WorkflowType
 from cadence.api.v1.decision_pb2 import StartChildWorkflowExecutionDecisionAttributes
 from cadence.api.v1.tasklist_pb2 import TaskList, TaskListKind
 from cadence.data_converter import DefaultDataConverter
-from cadence.error import ChildWorkflowExecutionFailed
+from cadence.error import ChildWorkflowError
 from cadence.workflow import WorkflowInfo
 
 
@@ -304,10 +304,12 @@ async def test_execute_child_workflow_deserializes_result():
 @pytest.mark.asyncio
 async def test_execute_child_workflow_propagates_errors():
     ctx, dm = _make_ctx()
-    failure = ChildWorkflowExecutionFailed("child failed", failure=None)
+    failure = ChildWorkflowError(
+        "child failed", workflow_id="child-1", workflow_type="ChildWf"
+    )
     _setup_schedule_mock_error(dm, failure)
 
-    with pytest.raises(ChildWorkflowExecutionFailed, match="child failed"):
+    with pytest.raises(ChildWorkflowError, match="child failed"):
         await ctx.execute_child_workflow(
             "ChildWf",
             str,
@@ -439,7 +441,9 @@ async def test_start_child_workflow_future_propagates_errors():
     )
     result_future: asyncio.Future = loop.create_future()
     result_future.set_exception(
-        ChildWorkflowExecutionFailed("child failed", failure=None)
+        ChildWorkflowError(
+            "child failed", workflow_id="child-1", workflow_type="ChildWf"
+        )
     )
     dm.schedule_child_workflow = MagicMock(
         return_value=(execution_future, result_future)
@@ -450,5 +454,5 @@ async def test_start_child_workflow_future_propagates_errors():
         str,
         execution_start_to_close_timeout=timedelta(minutes=5),
     )
-    with pytest.raises(ChildWorkflowExecutionFailed, match="child failed"):
+    with pytest.raises(ChildWorkflowError, match="child failed"):
         await future

@@ -6,6 +6,7 @@ from typing import Any, Type, Unpack
 import pytest
 
 from cadence import workflow
+from cadence.error import ActivityError, ApplicationError, ChildWorkflowError
 from cadence.testing import TestWorkflowEnvironment
 from cadence.worker import Registry
 from cadence.workflow import (
@@ -85,6 +86,10 @@ class SignalWorkflow:
     def status(self) -> str:
         return "approved" if self._approved else "pending"
 
+    @workflow.signal(name="reject")
+    def reject(self, reason: str) -> None:
+        raise ValueError(f"rejected: {reason}")
+
 
 @registry.workflow
 class TimerWorkflow:
@@ -139,6 +144,34 @@ class FailingWorkflow:
     @workflow.run
     async def run(self) -> str:
         raise ValueError("boom")
+
+
+@registry.workflow
+class CatchActivityErrorWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        try:
+            await workflow.execute_activity(
+                "greet",
+                str,
+                "dave",
+                schedule_to_close_timeout=timedelta(seconds=10),
+            )
+        except ActivityError as e:
+            assert isinstance(e.cause, ApplicationError)
+            return f"{e.activity_type}:{e.cause.reason}:{e.cause.details(dict)[0]}"
+        return "unreachable"
+
+
+@registry.workflow
+class FailingChildParentWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        return await workflow.execute_child_workflow(
+            "FailingWorkflow",
+            str,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
 
 
 @registry.workflow
@@ -314,6 +347,20 @@ async def test_signal_and_query(env: TestWorkflowEnvironment):
 
 
 @pytest.mark.asyncio
+async def test_failing_signal_handler_surfaces_original_error(
+    env: TestWorkflowEnvironment,
+):
+    execution = await env.client.start_workflow("SignalWorkflow", task_list="tl")
+
+    await env.client.signal_workflow(execution.workflow_id, "", "reject", "nope")
+
+    assert env.is_workflow_completed(execution.workflow_id)
+    error = env.get_workflow_error(execution.workflow_id)
+    assert isinstance(error, ValueError)
+    assert str(error) == "rejected: nope"
+
+
+@pytest.mark.asyncio
 async def test_signal_external_workflow(env: TestWorkflowEnvironment):
     await env.client.start_workflow(
         "SignalWorkflow", task_list="tl", workflow_id="target-1"
@@ -407,6 +454,45 @@ async def test_failing_workflow(env: TestWorkflowEnvironment):
     assert isinstance(error, ValueError)
     with pytest.raises(ValueError):
         env.get_workflow_result()
+
+
+@pytest.mark.asyncio
+async def test_activity_application_error_surfaces_as_activity_error(
+    env: TestWorkflowEnvironment,
+):
+    def fail(name: str) -> str:
+        raise ApplicationError("not-found", {"name": name})
+
+    env.on_activity("greet", fn=fail)
+    await env.client.start_workflow("CatchActivityErrorWorkflow", task_list="tl")
+    assert env.get_workflow_result(str) == "greet:not-found:{'name': 'dave'}"
+
+
+@pytest.mark.asyncio
+async def test_activity_exception_surfaces_with_application_error_cause(
+    env: TestWorkflowEnvironment,
+):
+    def fail(name: str) -> str:
+        raise ValueError("boom")
+
+    env.on_activity("greet", fn=fail)
+    await env.client.start_workflow("ActivityWorkflow", "erin", task_list="tl")
+    error = env.get_workflow_error()
+    assert isinstance(error, ActivityError)
+    assert isinstance(error.cause, ApplicationError)
+    assert error.cause.reason == "ValueError"
+    assert "boom" in str(error.cause)
+
+
+@pytest.mark.asyncio
+async def test_child_workflow_failure_surfaces_as_child_workflow_error(
+    env: TestWorkflowEnvironment,
+):
+    await env.client.start_workflow("FailingChildParentWorkflow", task_list="tl")
+    error = env.get_workflow_error()
+    assert isinstance(error, ChildWorkflowError)
+    assert isinstance(error.cause, ApplicationError)
+    assert error.cause.reason == "ValueError"
 
 
 @pytest.mark.asyncio

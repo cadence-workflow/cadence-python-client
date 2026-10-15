@@ -2,7 +2,6 @@ import asyncio
 from datetime import timedelta
 
 from cadence import Registry, workflow
-from cadence.error import ChildWorkflowExecutionCanceled
 from cadence.workflow import WorkflowContext
 
 from tests.canary.constants import (
@@ -39,6 +38,6 @@ class CancellationWorkflow:
 
         try:
             await handle
-        except (asyncio.CancelledError, ChildWorkflowExecutionCanceled):
+        except asyncio.CancelledError:
             return
         raise RuntimeError("child workflow completed without being cancelled")

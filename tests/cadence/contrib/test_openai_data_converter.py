@@ -1,5 +1,5 @@
 from typing import Any, Type, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ pytest.importorskip("agents")
 
 from agents import (  # noqa: E402
     AgentOutputSchema,
+    FunctionTool,
     ModelResponse,
     ModelSettings,
     ModelTracing,
@@ -28,6 +29,7 @@ from cadence.contrib.openai.cadence_output_schema import (  # noqa: E402
     CadenceOutputSchema,
     to_cadence_output_schema,
 )
+from cadence.contrib.openai.cadence_tool import CadenceFunctionTool  # noqa: E402
 from cadence.contrib.pydantic import PydanticDataConverter  # noqa: E402
 
 # OpenAIActivities.invoke_model input annotation
@@ -149,6 +151,50 @@ async def test_cadence_model_transports_structured_output_metadata(
     assert isinstance(transported, CadenceOutputSchema)
     assert transported.name() == original.name()
     assert transported.json_schema() == original.json_schema()
+
+
+@pytest.mark.asyncio
+async def test_worker_activity_reconstructs_model_inputs_without_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    activities = OpenAIActivities()
+    model = Mock()
+    model.get_response = AsyncMock(
+        return_value=ModelResponse(output=[], usage=Usage(), response_id=None)
+    )
+    provider = Mock()
+    provider.get_model.return_value = model
+    setattr(activities, "_openai_provider", provider)
+    output_schema = to_cadence_output_schema(AgentOutputSchema(_StructuredOutput))
+    assert output_schema is not None
+
+    result = await activities.invoke_model(
+        model_name="gpt-5-nano",
+        system_instructions=None,
+        input="Hello",
+        model_settings=ModelSettings(),
+        tools=[
+            CadenceFunctionTool(
+                name="lookup",
+                description="Look up a value",
+                params_json_schema={"type": "object", "properties": {}},
+            )
+        ],
+        output_schema=output_schema,
+        handoffs=[],
+        tracing=ModelTracing.DISABLED,
+        previous_response_id=None,
+        conversation_id=None,
+        prompt=None,
+    )
+
+    provider.get_model.assert_called_once_with("gpt-5-nano")
+    assert result.response_id is None
+    assert model.get_response.await_args is not None
+    call = model.get_response.await_args.kwargs
+    assert isinstance(call["tools"][0], FunctionTool)
+    assert call["output_schema"] == output_schema
 
 
 def test_second_turn_model_input_after_model_response_roundtrip() -> None:

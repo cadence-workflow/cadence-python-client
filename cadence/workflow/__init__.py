@@ -23,6 +23,7 @@ from ._definition import (
     run,
     signal,
 )
+from ._interceptor import WorkflowInterceptor, WorkflowInterceptorFactory
 from ._types import (
     CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE,
     DEFAULT_VERSION,
@@ -53,6 +54,8 @@ __all__ = [
     "WorkflowDefinition",
     "WorkflowDefinitionOptions",
     "WorkflowInfo",
+    "WorkflowInterceptor",
+    "WorkflowInterceptorFactory",
     "continue_as_new",
     "execute_activity",
     "execute_child_workflow",

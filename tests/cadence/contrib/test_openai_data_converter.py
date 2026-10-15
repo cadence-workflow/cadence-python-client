@@ -13,6 +13,10 @@ from agents import (  # noqa: E402
     ModelTracing,
     TResponseInputItem,
 )
+from agents.models.chatcmpl_converter import (  # noqa: E402
+    Converter as ChatCompletionsConverter,
+)
+from agents.models.openai_responses import Converter as ResponsesConverter  # noqa: E402
 from agents.usage import Usage  # noqa: E402
 from openai._models import construct_type  # noqa: E402
 from openai.types.responses import Response  # noqa: E402
@@ -95,6 +99,24 @@ def test_roundtrip_complete_invoke_model_arguments_with_structured_output() -> N
     assert decoded_schema.is_plain_text() == original.is_plain_text()
     assert decoded_schema.json_schema() == original.json_schema()
     assert decoded_schema.is_strict_json_schema() == original.is_strict_json_schema()
+
+
+@pytest.mark.parametrize("strict_json_schema", [True, False])
+def test_transported_schema_preserves_provider_request_format(
+    strict_json_schema: bool,
+) -> None:
+    original = AgentOutputSchema(
+        _StructuredOutput, strict_json_schema=strict_json_schema
+    )
+    transported = to_cadence_output_schema(original)
+    assert transported is not None
+
+    assert ResponsesConverter.get_response_format(
+        transported
+    ) == ResponsesConverter.get_response_format(original)
+    assert ChatCompletionsConverter.convert_response_format(
+        transported
+    ) == ChatCompletionsConverter.convert_response_format(original)
 
 
 @pytest.mark.asyncio

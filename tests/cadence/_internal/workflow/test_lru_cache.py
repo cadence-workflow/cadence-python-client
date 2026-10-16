@@ -1,144 +1,156 @@
-"""Unit tests for cadence._internal.workflow.lru_cache.LRUCache."""
+"""Unit tests for cadence._internal.workflow.lru_cache.LRUCacheWithHooks."""
 
-from cadence._internal.workflow.lru_cache import LRUCache
+from typing import Any, Hashable
 
-
-class TestBasicOperations:
-    def test_get_miss_returns_none(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        assert cache.get("missing") is None
-
-    def test_put_then_get(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        assert cache.put("A", "Foo") is None
-        assert cache.get("A") == "Foo"
-
-    def test_put_returns_previous_value_and_overwrites(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        cache.put("A", "Foo")
-        assert cache.put("A", "Bar") == "Foo"
-        assert cache.get("A") == "Bar"
-        assert cache.size() == 1
-
-    def test_exist(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        assert not cache.exist("A")
-        cache.put("A", "Foo")
-        assert cache.exist("A")
-
-    def test_delete(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        cache.put("A", "Foo")
-        cache.delete("A")
-        assert cache.get("A") is None
-        assert cache.size() == 0
-
-    def test_delete_missing_key_is_noop(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        cache.delete("missing")
-        assert cache.size() == 0
-
-    def test_size(self) -> None:
-        cache: LRUCache[int] = LRUCache(5)
-        for i in range(3):
-            cache.put(str(i), i)
-        assert cache.size() == 3
+from cadence._internal.workflow.lru_cache import LRUCacheWithHooks
 
 
-class TestPutIfNotExist:
-    def test_inserts_when_absent(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        assert cache.put_if_not_exist("A", "Foo") == "Foo"
-        assert cache.get("A") == "Foo"
+def key(*args: Any, **kwargs: Any) -> Hashable:
+    return (args, tuple(sorted(kwargs.items())))
 
-    def test_does_not_overwrite(self) -> None:
-        cache: LRUCache[str] = LRUCache(5)
-        cache.put_if_not_exist("A", "Foo")
-        assert cache.put_if_not_exist("A", "Bar") == "Foo"
-        assert cache.get("A") == "Foo"
 
-    def test_refreshes_recency_of_existing(self) -> None:
-        cache: LRUCache[str] = LRUCache(2)
-        cache.put("A", "Foo")
-        cache.put("B", "Bar")
-        cache.put_if_not_exist("A", "ignored")
-        cache.put("C", "Baz")
-        assert cache.exist("A")
-        assert not cache.exist("B")
+class TestMemoization:
+    def test_miss_calls_function(self) -> None:
+        calls: list[str] = []
+
+        @LRUCacheWithHooks(maxsize=5)
+        def load(run_id: str) -> str:
+            calls.append(run_id)
+            return f"ctx-{run_id}"
+
+        assert load("a") == "ctx-a"
+        assert calls == ["a"]
+
+    def test_hit_returns_cached_value_without_calling_function(self) -> None:
+        calls: list[str] = []
+
+        @LRUCacheWithHooks(maxsize=5)
+        def load(run_id: str) -> str:
+            calls.append(run_id)
+            return f"ctx-{run_id}"
+
+        load("a")
+        assert load("a") == "ctx-a"
+        assert calls == ["a"]
+
+    def test_key_includes_kwargs_independent_of_order(self) -> None:
+        calls: list[tuple[int, int]] = []
+
+        @LRUCacheWithHooks(maxsize=5)
+        def add(x: int, y: int) -> int:
+            calls.append((x, y))
+            return x + y
+
+        assert add(x=1, y=2) == 3
+        assert add(y=2, x=1) == 3
+        assert calls == [(1, 2)]
+
+    def test_preserves_function_metadata(self) -> None:
+        @LRUCacheWithHooks(maxsize=5)
+        def load(run_id: str) -> str:
+            """Load a context."""
+            return run_id
+
+        assert load.__name__ == "load"
+        assert load.__doc__ == "Load a context."
+
+    def test_exception_is_not_cached(self) -> None:
+        calls: list[str] = []
+        cache = LRUCacheWithHooks(maxsize=5)
+
+        @cache
+        def load(run_id: str) -> str:
+            calls.append(run_id)
+            raise ValueError("boom")
+
+        for _ in range(2):
+            try:
+                load("a")
+            except ValueError:
+                pass
+        assert calls == ["a", "a"]
+        assert len(cache.cache) == 0
 
 
 class TestEviction:
-    def test_holds_exactly_max_size_entries(self) -> None:
-        cache: LRUCache[int] = LRUCache(3)
-        for i in range(3):
-            cache.put(str(i), i)
-        assert cache.size() == 3
-        assert all(cache.exist(str(i)) for i in range(3))
+    def test_holds_exactly_maxsize_entries(self) -> None:
+        cache = LRUCacheWithHooks(maxsize=3)
 
-    def test_evicts_least_recently_inserted(self) -> None:
-        cache: LRUCache[int] = LRUCache(3)
+        @cache
+        def load(i: int) -> int:
+            return i
+
+        for i in range(3):
+            load(i)
+        assert list(cache.cache) == [key(0), key(1), key(2)]
+
+    def test_evicts_least_recently_used(self) -> None:
+        cache = LRUCacheWithHooks(maxsize=3)
+
+        @cache
+        def load(i: int) -> int:
+            return i
+
         for i in range(4):
-            cache.put(str(i), i)
-        assert cache.size() == 3
-        assert not cache.exist("0")
-        assert all(cache.exist(str(i)) for i in range(1, 4))
+            load(i)
+        assert list(cache.cache) == [key(1), key(2), key(3)]
 
-    def test_get_refreshes_recency(self) -> None:
-        cache: LRUCache[int] = LRUCache(3)
+    def test_hit_refreshes_recency(self) -> None:
+        cache = LRUCacheWithHooks(maxsize=3)
+
+        @cache
+        def load(i: int) -> int:
+            return i
+
         for i in range(3):
-            cache.put(str(i), i)
-        cache.get("0")
-        cache.put("3", 3)
-        assert cache.exist("0")
-        assert not cache.exist("1")
+            load(i)
+        load(0)
+        load(3)
+        assert list(cache.cache) == [key(2), key(0), key(3)]
 
-    def test_put_existing_refreshes_recency(self) -> None:
-        cache: LRUCache[int] = LRUCache(3)
-        for i in range(3):
-            cache.put(str(i), i)
-        cache.put("0", 100)
-        cache.put("3", 3)
-        assert cache.get("0") == 100
-        assert not cache.exist("1")
+    def test_cache_clear(self) -> None:
+        evicted: list[Hashable] = []
+        cache = LRUCacheWithHooks(maxsize=3, on_evict=lambda k, v: evicted.append(k))
 
-    def test_exist_does_not_refresh_recency(self) -> None:
-        cache: LRUCache[int] = LRUCache(2)
-        cache.put("0", 0)
-        cache.put("1", 1)
-        cache.exist("0")
-        cache.put("2", 2)
-        assert not cache.exist("0")
+        @cache
+        def load(i: int) -> int:
+            return i
+
+        load(0)
+        cache.cache_clear()
+        assert len(cache.cache) == 0
+        assert evicted == []
 
 
-class TestRemovedFunc:
-    def test_called_on_eviction(self) -> None:
-        removed: list[str] = []
-        cache: LRUCache[str] = LRUCache(2, removed_func=removed.append)
-        cache.put("A", "Foo")
-        cache.put("B", "Bar")
-        assert removed == []
-        cache.put_if_not_exist("C", "Baz")
-        assert removed == ["Foo"]
+class TestHooks:
+    def test_hooks_called_on_events(self) -> None:
+        events: list[tuple[Any, ...]] = []
+        cache = LRUCacheWithHooks(
+            maxsize=2,
+            on_hit=lambda k: events.append(("hit", k)),
+            on_miss=lambda k: events.append(("miss", k)),
+            on_evict=lambda k, v: events.append(("evict", k, v)),
+        )
 
-    def test_called_on_delete(self) -> None:
-        removed: list[str] = []
-        cache: LRUCache[str] = LRUCache(2, removed_func=removed.append)
-        cache.put("A", "Foo")
-        cache.delete("A")
-        assert removed == ["Foo"]
+        @cache
+        def load(run_id: str) -> str:
+            return f"ctx-{run_id}"
 
-    def test_not_called_on_overwrite(self) -> None:
-        removed: list[str] = []
-        cache: LRUCache[str] = LRUCache(2, removed_func=removed.append)
-        cache.put("A", "Foo")
-        cache.put("A", "Bar")
-        assert removed == []
+        for run_id in ["a", "b", "a", "c"]:
+            load(run_id)
 
-    def test_can_reenter_cache(self) -> None:
-        cache: LRUCache[str] = LRUCache(1)
-        sizes: list[int] = []
-        cache._removed_func = lambda _: sizes.append(cache.size())
-        cache.put("A", "Foo")
-        cache.put("B", "Bar")
-        cache.delete("B")
-        assert sizes == [1, 0]
+        assert events == [
+            ("miss", key("a")),
+            ("miss", key("b")),
+            ("hit", key("a")),
+            ("miss", key("c")),
+            ("evict", key("b"), "ctx-b"),
+        ]
+
+    def test_hooks_are_optional(self) -> None:
+        @LRUCacheWithHooks(maxsize=1)
+        def load(run_id: str) -> str:
+            return run_id
+
+        for run_id in ["a", "a", "b"]:
+            load(run_id)

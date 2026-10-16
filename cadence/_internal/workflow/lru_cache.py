@@ -1,81 +1,68 @@
 """Bounded LRU cache used for the sticky workflow cache."""
 
 from collections import OrderedDict
-from typing import Callable, Generic, TypeVar
+from functools import wraps
+from typing import Any, Callable, Hashable, ParamSpec, TypeVar
 
-V = TypeVar("V")
+P = ParamSpec("P")
+R = TypeVar("R")
 
-RemovedFunc = Callable[[V], None]
 
+class LRUCacheWithHooks:
+    """Decorator that memoizes a function in a fixed size LRU cache.
 
-class LRUCache(Generic[V]):
-    """Fixed size cache that evicts entries in LRU order.
+    The cache key is built from the decorated function's arguments. On a miss
+    the function is called and its result is cached; on a hit the cached result
+    is returned without calling the function. When the cache is full, the least
+    recently used entry is evicted to make room.
+
+    Optional hooks are invoked on cache events, e.g. to emit metrics:
+    ``on_hit(key)``, ``on_miss(key)`` and ``on_evict(key, value)``.
 
     Not thread-safe: it is expected to be used only from the worker's event loop.
-
-    ``removed_func``, if provided, is called with the value of every entry that
-    is evicted or deleted. It is invoked after the entry has been removed, so it
-    may safely call back into the cache.
-
-    Values must never be ``None``: ``None`` is used to signal a missing value.
     """
 
     def __init__(
-        self, max_size: int, removed_func: RemovedFunc[V] | None = None
+        self,
+        maxsize: int,
+        on_hit: Callable[[Hashable], None] | None = None,
+        on_miss: Callable[[Hashable], None] | None = None,
+        on_evict: Callable[[Hashable, Any], None] | None = None,
     ) -> None:
+        self.maxsize = maxsize
         # Ordered least recently used first, most recently used last.
-        self._entries: OrderedDict[str, V] = OrderedDict()
-        self._max_size = max_size
-        self._removed_func = removed_func
+        self.cache: OrderedDict[Hashable, Any] = OrderedDict()
+        self.on_hit = on_hit
+        self.on_miss = on_miss
+        self.on_evict = on_evict
 
-    def exist(self, key: str) -> bool:
-        """Check if a given key exists in the cache without updating recency."""
-        return key in self._entries
+    def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            key = (args, tuple(sorted(kwargs.items())))
 
-    def get(self, key: str) -> V | None:
-        """Retrieve the value stored under the given key, or None if absent."""
-        if key not in self._entries:
-            return None
-        self._entries.move_to_end(key)
-        return self._entries[key]
+            if key in self.cache:
+                if self.on_hit:
+                    self.on_hit(key)
+                self.cache.move_to_end(key)
+                cached: R = self.cache[key]
+                return cached
 
-    def put(self, key: str, value: V) -> V | None:
-        """Put a value under the given key, returning the previous value (if present)."""
-        return self._put_internal(key, value, allow_update=True)
+            if self.on_miss:
+                self.on_miss(key)
 
-    def put_if_not_exist(self, key: str, value: V) -> V:
-        """Put a value under the given key if it does not exist.
+            result = func(*args, **kwargs)
 
-        Returns the value now stored in the cache: the existing one if the key
-        was present, otherwise ``value``.
-        """
-        existing = self._put_internal(key, value, allow_update=False)
-        return value if existing is None else existing
+            if len(self.cache) >= self.maxsize:
+                evicted_key, evicted_value = self.cache.popitem(last=False)
+                if self.on_evict:
+                    self.on_evict(evicted_key, evicted_value)
 
-    def delete(self, key: str) -> None:
-        """Delete the entry associated with the given key, if present."""
-        if key not in self._entries:
-            return
-        self._notify_removed(self._entries.pop(key))
+            self.cache[key] = result
+            return result
 
-    def size(self) -> int:
-        """Return the number of entries currently in the cache."""
-        return len(self._entries)
+        return wrapper
 
-    def _put_internal(self, key: str, value: V, allow_update: bool) -> V | None:
-        if key in self._entries:
-            existing = self._entries[key]
-            if allow_update:
-                self._entries[key] = value
-            self._entries.move_to_end(key)
-            return existing
-
-        self._entries[key] = value
-        if len(self._entries) > self._max_size:
-            _, oldest = self._entries.popitem(last=False)
-            self._notify_removed(oldest)
-        return None
-
-    def _notify_removed(self, value: V) -> None:
-        if self._removed_func is not None:
-            self._removed_func(value)
+    def cache_clear(self) -> None:
+        """Remove all entries from the cache without invoking ``on_evict``."""
+        self.cache.clear()

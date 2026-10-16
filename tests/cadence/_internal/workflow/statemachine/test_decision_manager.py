@@ -3,7 +3,11 @@ from asyncio import CancelledError
 
 import pytest
 
-from cadence.error import ChildWorkflowError, StartChildWorkflowExecutionFailed
+from cadence.error import (
+    ChildWorkflowError,
+    SignalExternalWorkflowError,
+    StartChildWorkflowExecutionError,
+)
 from cadence._internal.workflow.statemachine.cancellation import CANCEL_MARKER_NAME
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.event_dispatcher import (
@@ -16,9 +20,6 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
     mutable_side_effect_marker_info,
 )
 from cadence._internal.workflow.statemachine.nondeterminism import NonDeterminismError
-from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
-    SignalExternalWorkflowFailed,
-)
 from cadence.api.v1 import history, decision
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 
@@ -556,7 +557,7 @@ async def test_child_workflow_initiation_failed_dispatch():
 
     assert execution.done() is True
     assert result.done() is True
-    with pytest.raises(StartChildWorkflowExecutionFailed):
+    with pytest.raises(StartChildWorkflowExecutionError):
         result.result()
 
 
@@ -843,7 +844,7 @@ async def test_signal_external_workflow_failed_dispatch():
     decisions.handle_history_event(signal_failed(2, initiated_event_id=1))
 
     assert future.done() is True
-    with pytest.raises(SignalExternalWorkflowFailed):
+    with pytest.raises(SignalExternalWorkflowError):
         future.result()
 
 

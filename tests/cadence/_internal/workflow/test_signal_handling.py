@@ -18,9 +18,9 @@ from cadence.api.v1.history_pb2 import (
     WorkflowExecutionStartedEventAttributes,
     WorkflowExecutionSignaledEventAttributes,
 )
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence.data_converter import DefaultDataConverter
-from cadence.error import SignalFailure
 from cadence.workflow import WorkflowInfo, WorkflowDefinition, WorkflowDefinitionOptions
 
 
@@ -643,11 +643,11 @@ class TestSignalDelivery:
             ),
         ]
 
-        with pytest.raises(SignalFailure) as err:
+        with pytest.raises(FatalDecisionError, match="bad_signal") as err:
             engine.process_decision(events)
 
-        assert err.value.signal_name == "bad_signal"
-        assert "handler failed on: boom" in str(err.value)
+        assert isinstance(err.value.__cause__, ValueError)
+        assert "handler failed on: boom" in str(err.value.__cause__)
 
     def test_signal_with_invalid_payload_drops_signal(self, caplog):
         """Malformed signal payloads are logged as warnings and dropped."""

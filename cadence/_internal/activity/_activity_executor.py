@@ -3,16 +3,16 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from logging import getLogger
 import time
-from traceback import format_exception
 from typing import Any, Callable, Optional, Sequence, Union, cast
 from google.protobuf.duration import to_timedelta
 from google.protobuf.timestamp import to_datetime
 from cadence._internal.activity._context import _Context, _SyncContext
 from cadence._internal.context import header_to_dict
+from cadence._internal.failure import failure_from_exception
 from cadence._internal.activity._definition import BaseDefinition, ExecutionStrategy
 from cadence._internal.activity._heartbeat import _HeartbeatSender
 from cadence.activity import ActivityInfo, ActivityDefinition
-from cadence.api.v1.common_pb2 import Failure, Payload
+from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.service_worker_pb2 import (
     PollForActivityTaskResponse,
     RespondActivityTaskCanceledRequest,
@@ -41,7 +41,7 @@ from cadence.metrics.constants import (
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
 )
-from cadence.error import ActivityCancelledError
+from cadence.error import ActivityCancelledError, ApplicationError, FailureCategory
 
 _logger = getLogger(__name__)
 
@@ -118,7 +118,11 @@ class ActivityExecutor:
             )
         if error is not None:
             emitter.counter(ACTIVITY_EXECUTION_FAILED_COUNTER)
-            _logger.error("Activity failed", exc_info=error)
+            if _is_failure_category_poll(error):
+                # An expected failure, so it isn't logged as an activity error
+                _logger.debug("Activity failed", exc_info=error)
+            else:
+                _logger.error("Activity failed", exc_info=error)
             await self._report_failure(task, error, emitter, e2e_latency)
         else:
             await self._report_success(task, result, emitter, e2e_latency)
@@ -172,7 +176,9 @@ class ActivityExecutor:
             await self._client.worker_stub.RespondActivityTaskFailed(
                 RespondActivityTaskFailedRequest(
                     task_token=task.task_token,
-                    failure=_to_failure(error),
+                    failure=failure_from_exception(
+                        error, self._data_converter, include_options=True
+                    ),
                     identity=self._identity,
                 )
             )
@@ -261,10 +267,8 @@ class ActivityExecutor:
         )
 
 
-def _to_failure(exception: Exception) -> Failure:
-    stacktrace = "".join(format_exception(exception))
-
-    return Failure(
-        reason=type(exception).__name__,
-        details=stacktrace.encode(),
+def _is_failure_category_poll(error: Exception) -> bool:
+    return (
+        isinstance(error, ApplicationError)
+        and error.failure_category is FailureCategory.POLL
     )

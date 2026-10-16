@@ -6,7 +6,6 @@ from typing import Any, Optional, Callable, Awaitable
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
 )
-from cadence.error import SignalFailure
 from cadence.query import QueryDefinition
 from cadence.signal import SignalDefinition
 from cadence.workflow import WorkflowCancellationInfo, WorkflowDefinition
@@ -34,10 +33,11 @@ class WorkflowInstance:
         # Strong references to in-flight async signal handler tasks.
         self._signal_tasks: set[Task[Any]] = set()
         # Fail the decision task if a signal handler raises an exception.
-        self._signal_failure: Optional[SignalFailure] = None
+        self._signal_handler_error: Optional[tuple[str, Exception]] = None
 
-    def get_signal_failure(self) -> Optional[SignalFailure]:
-        return self._signal_failure
+    def get_signal_handler_error(self) -> Optional[tuple[str, Exception]]:
+        """Return the name of the first signal whose handler raised, and its exception."""
+        return self._signal_handler_error
 
     def start(self, args: list[Any]) -> None:
         if self._task is None:
@@ -119,5 +119,5 @@ class WorkflowInstance:
         if task.cancelled():
             return
         exc = task.exception()
-        if isinstance(exc, Exception) and self._signal_failure is None:
-            self._signal_failure = SignalFailure(str(exc) or None, signal_name)
+        if isinstance(exc, Exception) and self._signal_handler_error is None:
+            self._signal_handler_error = (signal_name, exc)

@@ -3,8 +3,9 @@ import logging
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, Type, ClassVar, List, Iterator
+from typing import Any, Dict, Type, ClassVar, List, Iterator, cast
 
+from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
 from cadence._internal.workflow.statemachine.activity_state_machine import (
     activity_events,
     ActivityStateMachine,
@@ -19,6 +20,7 @@ from cadence._internal.workflow.statemachine.completion_state_machine import (
 )
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     CancelFn,
+    ConverterFn,
     DecisionId,
     DecisionState,
     DecisionStateMachine,
@@ -61,6 +63,8 @@ from cadence._internal.workflow.statemachine.upsert_search_attributes_state_mach
 )
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
+from cadence.data_converter import DataConverter
+from cadence.workflow import ChildWorkflowFuture, ResultType, WorkflowFuture
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +74,18 @@ DecisionAlias = tuple[DecisionType, str | int]
 def _consume_future_exception(future: asyncio.Future[Any]) -> None:
     if not future.cancelled():
         future.exception()
+
+
+def _payload_converter(
+    decision_id: DecisionId, converter: DataConverter, result_type: Type[T]
+) -> ConverterFn[T]:
+    def convert(payload: Payload) -> T:
+        try:
+            return cast(T, converter.from_data(payload, [result_type])[0])
+        except Exception as e:
+            raise RuntimeError(f"Failed to convert result for {decision_id}") from e
+
+    return convert
 
 
 @dataclass(frozen=True)
@@ -141,13 +157,18 @@ class DecisionManager:
     # ----- Activity API -----
 
     def schedule_activity(
-        self, attrs: decision.ScheduleActivityTaskDecisionAttributes
-    ) -> asyncio.Future[Payload]:
+        self,
+        attrs: decision.ScheduleActivityTaskDecisionAttributes,
+        converter: DataConverter,
+        result_type: Type[ResultType],
+    ) -> WorkflowFuture[ResultType]:
         attrs.activity_id = self._next_id()
         if self._replaying:
             self._determinism_tracker.validate_action(attrs)
         decision_id = DecisionId(DecisionType.ACTIVITY, attrs.activity_id)
-        future: DecisionFuture[Payload] = self._create_future(decision_id)
+        future: DecisionFuture[ResultType] = self._create_future(
+            decision_id, _payload_converter(decision_id, converter, result_type)
+        )
         machine = ActivityStateMachine(attrs, future)
         self._add_state_machine(machine)
 
@@ -157,7 +178,7 @@ class DecisionManager:
 
     def start_timer(
         self, attrs: decision.StartTimerDecisionAttributes
-    ) -> asyncio.Future[None]:
+    ) -> WorkflowFuture[None]:
         attrs.timer_id = self._next_id()
         if self._replaying:
             self._determinism_tracker.validate_action(attrs)
@@ -172,9 +193,11 @@ class DecisionManager:
     def schedule_child_workflow(
         self,
         attrs: decision.StartChildWorkflowExecutionDecisionAttributes,
+        converter: DataConverter,
+        result_type: Type[ResultType],
         *,
         parent_workflow_run_id: str,
-    ) -> tuple[DecisionFuture[WorkflowExecution], DecisionFuture[Payload]]:
+    ) -> ChildWorkflowFuture[ResultType]:
 
         if not attrs.workflow_id:
             attrs.workflow_id = f"{parent_workflow_run_id}_{self._next_id()}"
@@ -183,17 +206,23 @@ class DecisionManager:
         decision_id = DecisionId(DecisionType.CHILD_WORKFLOW, attrs.workflow_id)
         execution: DecisionFuture[WorkflowExecution] = self._create_future(decision_id)
         execution.add_done_callback(_consume_future_exception)
-        result: DecisionFuture[Payload] = self._create_future(decision_id)
+        result = ChildWorkflowFutureImpl[ResultType](
+            self._event_loop,
+            self._create_cancel_callback(decision_id),
+            _payload_converter(decision_id, converter, result_type),
+            workflow_id=attrs.workflow_id,
+            execution=execution,
+        )
         machine = ChildWorkflowExecutionStateMachine(attrs, execution, result)
         self._add_state_machine(machine)
-        return execution, result
+        return result
 
     # ----- Signal External Workflow API -----
 
     def signal_external_workflow(
         self,
         attrs: decision.SignalExternalWorkflowExecutionDecisionAttributes,
-    ) -> asyncio.Future[None]:
+    ) -> WorkflowFuture[None]:
         signal_id = self._next_id()
         attrs.control = signal_id.encode("utf-8")
         if self._replaying:
@@ -575,10 +604,13 @@ class DecisionManager:
 
         return decisions
 
-    def _create_future(self, decision_id: DecisionId) -> DecisionFuture[T]:
+    def _create_future(
+        self, decision_id: DecisionId, converter: ConverterFn[T] | None = None
+    ) -> DecisionFuture[T]:
         return DecisionFuture[T](
             self._event_loop,
             self._create_cancel_callback(decision_id),
+            converter,
         )
 
     def _create_cancel_callback(self, decision_id: DecisionId) -> CancelFn:

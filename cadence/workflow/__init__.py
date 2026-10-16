@@ -35,6 +35,7 @@ from ._types import (
     ResultType,
     RetryPolicy,
     SearchAttributeType,
+    WorkflowFuture,
 )
 
 __all__ = [
@@ -53,6 +54,7 @@ __all__ = [
     "WorkflowDecorator",
     "WorkflowDefinition",
     "WorkflowDefinitionOptions",
+    "WorkflowFuture",
     "WorkflowInfo",
     "WorkflowInterceptor",
     "WorkflowInterceptorFactory",

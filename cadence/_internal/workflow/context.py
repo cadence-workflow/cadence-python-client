@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from math import ceil
 from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable, Mapping
 
-from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.memo import memo_to_proto
@@ -51,6 +50,7 @@ from cadence.workflow import (
     SearchAttributeType,
     WorkflowCancellationInfo,
     WorkflowContext,
+    WorkflowFuture,
     WorkflowInfo,
     DEFAULT_VERSION,
 )
@@ -83,13 +83,13 @@ class Context(WorkflowContext):
     def data_converter(self) -> DataConverter:
         return self.info().data_converter
 
-    async def execute_activity(
+    def execute_activity(
         self,
         activity: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
-    ) -> ResultType:
+    ) -> WorkflowFuture[ResultType]:
         opts: ActivityOptions = {**_DEFAULT_ACTIVITY_OPTIONS, **kwargs}
         if "schedule_to_close_timeout" not in opts and (
             "schedule_to_start_timeout" not in opts
@@ -137,26 +137,11 @@ class Context(WorkflowContext):
         )
         set_header(schedule_attributes, self._context_propagators)
 
-        future = self._decision_manager.schedule_activity(schedule_attributes)
-        result_payload = await future
-
-        result = self.data_converter().from_data(result_payload, [result_type])[0]
-
-        return cast(ResultType, result)
-
-    async def execute_child_workflow(
-        self,
-        workflow_type: str,
-        result_type: Type[ResultType],
-        *args: Any,
-        **kwargs: Unpack[ChildWorkflowOptions],
-    ) -> ResultType:
-        future = await self.start_child_workflow(
-            workflow_type, result_type, *args, **kwargs
+        return self._decision_manager.schedule_activity(
+            schedule_attributes, self.data_converter(), result_type
         )
-        return await future
 
-    async def start_child_workflow(
+    def execute_child_workflow(
         self,
         workflow_type: str,
         result_type: Type[ResultType],
@@ -166,19 +151,11 @@ class Context(WorkflowContext):
         schedule_attributes = self._build_child_workflow_attrs(
             workflow_type, *args, **kwargs
         )
-        execution_future, result_future = (
-            self._decision_manager.schedule_child_workflow(
-                schedule_attributes,
-                parent_workflow_run_id=self._info.workflow_run_id,
-            )
-        )
-        workflow_execution = await execution_future
-        return ChildWorkflowFutureImpl(
-            workflow_id=workflow_execution.workflow_id,
-            run_id=workflow_execution.run_id,
-            result_future=result_future,
-            result_type=result_type,
-            data_converter=self.data_converter(),
+        return self._decision_manager.schedule_child_workflow(
+            schedule_attributes,
+            self.data_converter(),
+            result_type,
+            parent_workflow_run_id=self._info.workflow_run_id,
         )
 
     def _build_child_workflow_attrs(
@@ -244,39 +221,40 @@ class Context(WorkflowContext):
 
         return schedule_attributes
 
-    async def signal_child_workflow(
+    def signal_child_workflow(
         self,
         child_workflow_id: str,
         signal_name: str,
         *args: Any,
-    ) -> None:
+    ) -> WorkflowFuture[None]:
         if not child_workflow_id:
             raise ValueError("child_workflow_id must not be empty")
-        await self._signal_workflow(
+        return self._signal_workflow(
             child_workflow_id, signal_name, args, child_workflow_only=True
         )
 
-    async def signal_external_workflow(
+    def signal_external_workflow(
         self,
         workflow_id: str,
         signal_name: str,
         *args: Any,
         run_id: str = "",
         domain: str = "",
-    ) -> None:
+    ) -> WorkflowFuture[None]:
         if not workflow_id:
             raise ValueError("workflow_id must not be empty")
-        await self._signal_workflow(
+        return self._signal_workflow(
             workflow_id, signal_name, args, run_id=run_id, domain=domain
         )
 
-    async def start_timer(self, duration: timedelta):
+    def start_timer(self, duration: timedelta) -> WorkflowFuture[None]:
         if duration.total_seconds() <= 0:  # shortcut
-            return
+            res = WorkflowFuture[None]()
+            res.set_result(None)
+            return res
         attributes = StartTimerDecisionAttributes()
         attributes.start_to_fire_timeout.FromTimedelta(duration)
-        future = self._decision_manager.start_timer(attributes)
-        await future
+        return self._decision_manager.start_timer(attributes)
 
     def set_replay_mode(self, replay: bool) -> None:
         """Set whether the workflow is currently in replay mode."""
@@ -413,9 +391,9 @@ class Context(WorkflowContext):
         """Get the current replay timestamp."""
         return self._replay_current_time
 
-    async def wait_condition(self, predicate: Callable[[], bool]) -> None:
+    def wait_condition(self, predicate: Callable[[], bool]) -> WorkflowFuture[None]:
         loop = cast(DeterministicEventLoop, get_running_loop())
-        await loop.create_waiter(predicate)
+        return loop.create_waiter(predicate)
 
     def request_cancel(
         self, attrs: WorkflowExecutionCancelRequestedEventAttributes
@@ -433,7 +411,7 @@ class Context(WorkflowContext):
     def inject_propagated_headers(self) -> dict[str, bytes]:
         return inject_headers(self._context_propagators)
 
-    async def _signal_workflow(
+    def _signal_workflow(
         self,
         workflow_id: str,
         signal_name: str,
@@ -442,7 +420,7 @@ class Context(WorkflowContext):
         run_id: str = "",
         domain: str = "",
         child_workflow_only: bool = False,
-    ) -> None:
+    ) -> WorkflowFuture[None]:
         if not signal_name:
             raise ValueError("signal_name must not be empty")
         attrs = SignalExternalWorkflowExecutionDecisionAttributes(
@@ -455,7 +433,7 @@ class Context(WorkflowContext):
             input=self.data_converter().to_data(list(args)),
             child_workflow_only=child_workflow_only,
         )
-        await self._decision_manager.signal_external_workflow(attrs)
+        return self._decision_manager.signal_external_workflow(attrs)
 
 
 def _round_to_nearest_second(delta: timedelta) -> timedelta:

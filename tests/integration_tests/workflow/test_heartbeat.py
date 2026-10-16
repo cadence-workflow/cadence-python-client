@@ -59,19 +59,17 @@ def sync_wait_cancel_activity() -> str:
 class SyncWaitForCancelledWorkflow:
     @workflow.run
     async def run(self) -> str:
-        activity_task = asyncio.create_task(
-            sync_wait_cancel_activity.with_options(
-                schedule_to_close_timeout=timedelta(seconds=30),
-                start_to_close_timeout=timedelta(seconds=30),
-                heartbeat_timeout=timedelta(seconds=2),
-            ).execute()
-        )
+        activity_future = sync_wait_cancel_activity.with_options(
+            schedule_to_close_timeout=timedelta(seconds=30),
+            start_to_close_timeout=timedelta(seconds=30),
+            heartbeat_timeout=timedelta(seconds=2),
+        ).execute()
 
         await workflow.sleep(timedelta(seconds=1))
-        activity_task.cancel()
+        activity_future.cancel()
 
         try:
-            await activity_task
+            await activity_future
         except asyncio.CancelledError:
             return "activity cancelled"
 
@@ -82,19 +80,17 @@ class SyncWaitForCancelledWorkflow:
 class ActivityCancellationWorkflow:
     @workflow.run
     async def run(self) -> str:
-        activity_task = asyncio.create_task(
-            cancellable_heartbeat_activity.with_options(
-                schedule_to_close_timeout=timedelta(seconds=30),
-                start_to_close_timeout=timedelta(seconds=30),
-                heartbeat_timeout=timedelta(seconds=2),
-            ).execute()
-        )
+        activity_future = cancellable_heartbeat_activity.with_options(
+            schedule_to_close_timeout=timedelta(seconds=30),
+            start_to_close_timeout=timedelta(seconds=30),
+            heartbeat_timeout=timedelta(seconds=2),
+        ).execute()
 
         await workflow.sleep(timedelta(seconds=1))
-        activity_task.cancel()
+        activity_future.cancel()
 
         try:
-            await activity_task
+            await activity_future
         except asyncio.CancelledError:
             return "activity cancelled"
 

@@ -56,9 +56,8 @@ class TestMemoization:
 
     def test_exception_is_not_cached(self) -> None:
         calls: list[str] = []
-        cache = LRUCacheWithHooks(maxsize=5)
 
-        @cache
+        @LRUCacheWithHooks(maxsize=5)
         def load(run_id: str) -> str:
             calls.append(run_id)
             raise ValueError("boom")
@@ -69,36 +68,30 @@ class TestMemoization:
             except ValueError:
                 pass
         assert calls == ["a", "a"]
-        assert len(cache.cache) == 0
+        assert len(load.cache) == 0  # type: ignore[attr-defined]
 
 
 class TestEviction:
     def test_holds_exactly_maxsize_entries(self) -> None:
-        cache = LRUCacheWithHooks(maxsize=3)
-
-        @cache
+        @LRUCacheWithHooks(maxsize=3)
         def load(i: int) -> int:
             return i
 
         for i in range(3):
             load(i)
-        assert list(cache.cache) == [key(0), key(1), key(2)]
+        assert list(load.cache) == [key(0), key(1), key(2)]  # type: ignore[attr-defined]
 
     def test_evicts_least_recently_used(self) -> None:
-        cache = LRUCacheWithHooks(maxsize=3)
-
-        @cache
+        @LRUCacheWithHooks(maxsize=3)
         def load(i: int) -> int:
             return i
 
         for i in range(4):
             load(i)
-        assert list(cache.cache) == [key(1), key(2), key(3)]
+        assert list(load.cache) == [key(1), key(2), key(3)]  # type: ignore[attr-defined]
 
     def test_hit_refreshes_recency(self) -> None:
-        cache = LRUCacheWithHooks(maxsize=3)
-
-        @cache
+        @LRUCacheWithHooks(maxsize=3)
         def load(i: int) -> int:
             return i
 
@@ -106,19 +99,18 @@ class TestEviction:
             load(i)
         load(0)
         load(3)
-        assert list(cache.cache) == [key(2), key(0), key(3)]
+        assert list(load.cache) == [key(2), key(0), key(3)]  # type: ignore[attr-defined]
 
     def test_cache_clear(self) -> None:
         evicted: list[Hashable] = []
-        cache = LRUCacheWithHooks(maxsize=3, on_evict=lambda k, v: evicted.append(k))
 
-        @cache
+        @LRUCacheWithHooks(maxsize=3, on_evict=lambda k, v: evicted.append(k))
         def load(i: int) -> int:
             return i
 
         load(0)
-        cache.cache_clear()
-        assert len(cache.cache) == 0
+        load.cache_clear()  # type: ignore[attr-defined]
+        assert len(load.cache) == 0  # type: ignore[attr-defined]
         assert evicted == []
 
 

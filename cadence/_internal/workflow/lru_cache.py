@@ -61,8 +61,7 @@ class LRUCacheWithHooks:
             self.cache[key] = result
             return result
 
+        # Expose cache utilities similar to functools.lru_cache
+        wrapper.cache_clear = self.cache.clear  # type: ignore[attr-defined]
+        wrapper.cache = self.cache  # type: ignore[attr-defined]
         return wrapper
-
-    def cache_clear(self) -> None:
-        """Remove all entries from the cache without invoking ``on_evict``."""
-        self.cache.clear()

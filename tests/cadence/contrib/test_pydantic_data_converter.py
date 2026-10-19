@@ -2,10 +2,16 @@ import dataclasses
 import enum
 import uuid
 from datetime import date, datetime, timezone
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, cast
 
 import pytest
-from pydantic import BaseModel, ConfigDict, ValidationError, field_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    PydanticSchemaGenerationError,
+    ValidationError,
+    field_serializer,
+)
 from pydantic_core import PydanticSerializationError
 from typing_extensions import TypedDict
 
@@ -59,6 +65,10 @@ class _SerializedModel(BaseModel):
 class _ItemDict(TypedDict):
     name: str
     count: int
+
+
+class _UnsupportedType:
+    pass
 
 
 @pytest.mark.parametrize(
@@ -153,6 +163,15 @@ def test_from_data_invalid_payload_raises() -> None:
     converter = PydanticDataConverter()
     with pytest.raises(ValidationError):
         converter.from_data(Payload(data=b'"not-an-int"'), [int])
+
+
+def test_from_data_rejects_non_null_unsupported_type() -> None:
+    converter = PydanticDataConverter()
+    with pytest.raises(PydanticSchemaGenerationError):
+        converter.from_data(
+            Payload(data=b"{}"),
+            [cast(Type, _UnsupportedType | None)],
+        )
 
 
 def test_default_converter_cannot_encode_pydantic_model() -> None:

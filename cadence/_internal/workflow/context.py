@@ -433,14 +433,6 @@ class Context(WorkflowContext):
     def inject_propagated_headers(self) -> dict[str, bytes]:
         return inject_headers(self._context_propagators)
 
-    @contextmanager
-    def _activate(self) -> Iterator["Context"]:
-        token = WorkflowContext._var.set(self)
-        try:
-            yield self
-        finally:
-            WorkflowContext._var.reset(token)
-
     async def _signal_workflow(
         self,
         workflow_id: str,
@@ -468,3 +460,12 @@ class Context(WorkflowContext):
 
 def _round_to_nearest_second(delta: timedelta) -> timedelta:
     return timedelta(seconds=ceil(delta.total_seconds()))
+
+
+@contextmanager
+def _activate_workflow_context(ctx: WorkflowContext) -> Iterator[WorkflowContext]:
+    token = WorkflowContext._var.set(ctx)
+    try:
+        yield ctx
+    finally:
+        WorkflowContext._var.reset(token)

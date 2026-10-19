@@ -75,7 +75,9 @@ from cadence.metrics.constants import (
 from cadence.workflow import (
     ActiveClusterSelectionPolicy,
     RetryPolicy,
+    WorkflowContext,
     WorkflowDefinition,
+    WorkflowInterceptorFactory,
 )
 
 
@@ -179,6 +181,11 @@ class ClientOptions(TypedDict, total=False):
     metrics_emitter: MetricsEmitter
     interceptors: list[ClientInterceptor]
     context_propagators: Sequence[ContextPropagator]
+    workflow_interceptor_factory: WorkflowInterceptorFactory
+
+
+def _identity(ctx: WorkflowContext) -> WorkflowContext:
+    return ctx
 
 
 _DEFAULT_OPTIONS: ClientOptions = {
@@ -192,6 +199,7 @@ _DEFAULT_OPTIONS: ClientOptions = {
     "metrics_emitter": NoOpMetricsEmitter(),
     "interceptors": [],
     "context_propagators": (),
+    "workflow_interceptor_factory": _identity,
 }
 
 
@@ -239,6 +247,10 @@ class Client:
     @property
     def context_propagators(self) -> tuple[ContextPropagator, ...]:
         return tuple(self._options["context_propagators"])
+
+    @property
+    def workflow_interceptor_factory(self) -> WorkflowInterceptorFactory:
+        return self._options["workflow_interceptor_factory"]
 
     async def ready(self) -> None:
         await self._channel.channel_ready()

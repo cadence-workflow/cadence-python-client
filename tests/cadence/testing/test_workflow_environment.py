@@ -1,13 +1,20 @@
 import asyncio
 from collections.abc import Iterator
 from datetime import timedelta
+from typing import Any, Type, Unpack
 
 import pytest
 
 from cadence import workflow
 from cadence.testing import TestWorkflowEnvironment
 from cadence.worker import Registry
-from cadence.workflow import WorkflowContext
+from cadence.workflow import (
+    ActivityOptions,
+    ChildWorkflowOptions,
+    ResultType,
+    WorkflowContext,
+    WorkflowInterceptor,
+)
 
 
 # --- Sample workflows and activities -------------------------------------
@@ -162,6 +169,46 @@ class ChildSignalerWorkflow:
     async def run(self, target_id: str, value: str) -> str:
         await WorkflowContext.get().signal_child_workflow(target_id, "approve", value)
         return "signaled"
+
+
+@registry.workflow
+class ParentOfActivityWorkflow:
+    @workflow.run
+    async def run(self, value: str) -> str:
+        return await workflow.execute_child_workflow(
+            "ActivityWorkflow",
+            str,
+            value,
+            execution_start_to_close_timeout=timedelta(seconds=30),
+        )
+
+
+def _prefix(args: tuple[Any, ...]) -> tuple[Any, ...]:
+    return tuple(f"intercepted-{a}" if isinstance(a, str) else a for a in args)
+
+
+class PrefixingInterceptor(WorkflowInterceptor):
+    async def execute_activity(
+        self,
+        activity: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ActivityOptions],
+    ) -> ResultType:
+        return await super().execute_activity(
+            activity, result_type, *_prefix(args), **kwargs
+        )
+
+    async def execute_child_workflow(
+        self,
+        workflow_type: str,
+        result_type: Type[ResultType],
+        *args: Any,
+        **kwargs: Unpack[ChildWorkflowOptions],
+    ) -> ResultType:
+        return await super().execute_child_workflow(
+            workflow_type, result_type, *_prefix(args), **kwargs
+        )
 
 
 # --- Fixtures -------------------------------------------------------------
@@ -367,3 +414,19 @@ async def test_context_manager_closes():
     with TestWorkflowEnvironment(registry) as env:
         await env.client.start_workflow("EchoWorkflow", "ctx", task_list="tl")
         assert env.get_workflow_result(str) == "echo: ctx"
+
+
+@pytest.mark.asyncio
+async def test_workflow_interceptor_wraps_root_and_child_workflows():
+    with TestWorkflowEnvironment(
+        registry, workflow_interceptor_factory=PrefixingInterceptor
+    ) as env:
+        assert env.client.workflow_interceptor_factory is PrefixingInterceptor
+
+        await env.client.start_workflow("ParentOfActivityWorkflow", "x", task_list="tl")
+
+        # The parent rewrites the child's argument, then the child rewrites
+        # the activity's argument.
+        assert (
+            env.get_workflow_result(str) == "workflow:hello intercepted-intercepted-x"
+        )

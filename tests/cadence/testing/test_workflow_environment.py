@@ -6,6 +6,10 @@ from typing import Any, Type, Unpack
 import pytest
 
 from cadence import workflow
+from cadence._internal.workflow.deterministic_event_loop import (
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence.testing import TestWorkflowEnvironment
 from cadence.worker import Registry
 from cadence.workflow import (
@@ -139,6 +143,31 @@ class FailingWorkflow:
     @workflow.run
     async def run(self) -> str:
         raise ValueError("boom")
+
+
+destroyed_workflow_ids: list[str] = []
+
+
+@registry.workflow
+class BlockedWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        try:
+            await workflow.wait_condition(lambda: False)
+        finally:
+            destroyed_workflow_ids.append(WorkflowContext.get().info().workflow_id)
+        return "unreachable"
+
+
+@registry.workflow
+class SwallowedFatalWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        try:
+            fail_decision(FatalDecisionError("fatal"))
+        except BaseException:
+            pass
+        return "unreachable"
 
 
 @registry.workflow
@@ -407,6 +436,29 @@ async def test_failing_workflow(env: TestWorkflowEnvironment):
     assert isinstance(error, ValueError)
     with pytest.raises(ValueError):
         env.get_workflow_result()
+
+
+@pytest.mark.asyncio
+async def test_close_unwinds_blocked_workflow():
+    destroyed_workflow_ids.clear()
+    env = TestWorkflowEnvironment(registry)
+    await env.client.start_workflow(
+        "BlockedWorkflow", task_list="tl", workflow_id="blocked"
+    )
+    assert destroyed_workflow_ids == []
+
+    env.close()
+
+    assert destroyed_workflow_ids == ["blocked"]
+
+
+@pytest.mark.asyncio
+async def test_swallowed_fatal_decision_error_still_fails(
+    env: TestWorkflowEnvironment,
+):
+    await env.client.start_workflow("SwallowedFatalWorkflow", task_list="tl")
+    assert env.is_workflow_completed()
+    assert isinstance(env.get_workflow_error(), FatalDecisionError)
 
 
 @pytest.mark.asyncio

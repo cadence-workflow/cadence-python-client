@@ -1,4 +1,4 @@
-import asyncio
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 
 from cadence._internal.workflow.decision_events_iterator import DecisionEventsIterator
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
@@ -11,7 +11,7 @@ from cadence.api.v1.common_pb2 import Header, Payload
 
 
 async def test_replay_marker_event_is_preloaded_before_marker_decision_exists():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     marker_attrs = decision.RecordMarkerDecisionAttributes(
         marker_name="SideEffect",
         details=Payload(data=b"recorded-value"),
@@ -34,7 +34,7 @@ async def test_replay_marker_event_is_preloaded_before_marker_decision_exists():
 
 
 async def test_current_decision_task_emits_record_marker_decision():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     decision_events = next(iter(DecisionEventsIterator(_current_decision_history())))
     marker_attrs = decision.RecordMarkerDecisionAttributes(
         marker_name="MutableSideEffect",
@@ -53,7 +53,7 @@ async def test_current_decision_task_emits_record_marker_decision():
 
 
 async def test_multiple_replayed_marker_outputs_complete_in_decision_order():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     first_attrs = decision.RecordMarkerDecisionAttributes(
         marker_name="SideEffect",
         details=Payload(data=b"first"),
@@ -86,7 +86,7 @@ async def test_multiple_replayed_marker_outputs_complete_in_decision_order():
 async def test_version_marker_added_on_replay_is_not_nondeterministic():
     # Version markers are exempt from non-determinism tracking (same as Go SDK).
     # A history containing a Version marker followed by a SideEffect must replay without error.
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     decision_events = next(
         iter(DecisionEventsIterator(_history_with_version_and_side_effect()))
     )

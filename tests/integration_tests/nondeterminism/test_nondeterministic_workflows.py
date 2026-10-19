@@ -520,7 +520,6 @@ def test_nondeterministic_changes(
     workflow_class: Type[Any],
     expected: NonDeterminismError | None,
 ) -> None:
-    # pytest.raises is awkward with ExceptionGroups, use try/except instead
     try:
         decisions = replay_with_history(helper, workflow_class)
         if expected is not None:
@@ -536,15 +535,6 @@ def test_nondeterministic_changes(
         if expected is not None:
             # Compare everything past the message
             assert e.args[1:] == expected.args[1:]
-        else:
-            raise e
-    except ExceptionGroup as e:
-        # Only look at the first NonDeterminismError
-        if expected is not None:
-            subgroup = e.subgroup(NonDeterminismError)
-            assert subgroup is not None
-            errors = subgroup.exceptions
-            assert errors[0].args[1:] == expected.args[1:]
         else:
             raise e
 
@@ -565,6 +555,9 @@ def replay_with_history(helper: CadenceHelper, clazz: Type[Any]) -> DecisionResu
         ),
         workflow_def,
     )
-    result = engine.process_decision(list(history.events))
-    assert engine.is_done()
-    return result
+    try:
+        result = engine.process_decision(list(history.events))
+        assert engine.is_done()
+        return result
+    finally:
+        engine.destroy()

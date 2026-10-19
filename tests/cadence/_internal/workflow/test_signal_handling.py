@@ -18,6 +18,10 @@ from cadence.api.v1.history_pb2 import (
     WorkflowExecutionStartedEventAttributes,
     WorkflowExecutionSignaledEventAttributes,
 )
+from cadence._internal.workflow.deterministic_event_loop import (
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence.data_converter import DefaultDataConverter
 from cadence.error import SignalFailure
@@ -155,6 +159,19 @@ class FailingSignalWorkflow:
     @workflow.signal(name="bad_signal")
     def handle_signal(self, value: str):
         raise ValueError(f"handler failed on: {value}")
+
+
+class FatalSignalWorkflow:
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: False)
+
+    @workflow.signal(name="fatal_signal")
+    def handle_signal(self, value: str):
+        try:
+            fail_decision(FatalDecisionError(f"fatal: {value}"))
+        except BaseException:
+            pass
 
 
 class FailingPredicateWorkflow:
@@ -648,6 +665,31 @@ class TestSignalDelivery:
 
         assert err.value.signal_name == "bad_signal"
         assert "handler failed on: boom" in str(err.value)
+
+    def test_signal_handler_fatal_decision_error_fails_decision(self):
+        engine = make_workflow_engine(FatalSignalWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "fatal_signal", "boom"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        with pytest.raises(FatalDecisionError, match="fatal: boom"):
+            engine.process_decision(events)
 
     def test_signal_with_invalid_payload_drops_signal(self, caplog):
         """Malformed signal payloads are logged as warnings and dropped."""

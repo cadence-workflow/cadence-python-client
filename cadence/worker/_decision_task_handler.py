@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 from typing import Optional, Sequence
 
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.context import header_to_dict
 from cadence._internal.workflow.memo import memo_from_proto
@@ -17,7 +18,9 @@ from cadence.api.v1.service_worker_pb2 import (
     RespondDecisionTaskFailedRequest,
     RespondQueryTaskCompletedRequest,
 )
+from cadence.api.v1.history_pb2 import HistoryEvent
 from cadence.api.v1.query_pb2 import (
+    WorkflowQuery,
     WorkflowQueryResult,
     QUERY_RESULT_TYPE_FAILED,
 )
@@ -61,6 +64,19 @@ _WORKFLOW_OUTCOME_COUNTERS = {
     "canceled": WORKFLOW_CANCELED_COUNTER,
     "continue_as_new": WORKFLOW_CONTINUE_AS_NEW_COUNTER,
 }
+
+
+def _process_and_destroy(
+    engine: WorkflowEngine,
+    events: list[HistoryEvent],
+    query: Optional[WorkflowQuery],
+) -> DecisionResult:
+    # Engines aren't cached yet, so destroy after every task.
+    # With a sticky cache, destroy on eviction or failure instead.
+    try:
+        return engine.process_decision(events, query)
+    finally:
+        engine.destroy()
 
 
 class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
@@ -212,11 +228,12 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         try:
             decision_result = await asyncio.get_running_loop().run_in_executor(
                 self._executor,
-                workflow_engine.process_decision,
+                _process_and_destroy,
+                workflow_engine,
                 workflow_events,
                 task.query if is_query_task else None,
             )
-        except Exception:
+        except (Exception, FatalDecisionError):
             emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
             emitter.counter(DECISION_TASK_PANIC_COUNTER)
             raise
@@ -251,7 +268,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         )
 
     async def handle_task_failure(
-        self, task: PollForDecisionTaskResponse, error: Exception
+        self, task: PollForDecisionTaskResponse, error: BaseException
     ) -> None:
         """
         Handle decision task processing failure.

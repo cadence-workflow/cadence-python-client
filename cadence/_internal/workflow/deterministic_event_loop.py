@@ -1,11 +1,22 @@
+import inspect
 import traceback
-from asyncio import AbstractEventLoop, Handle, TimerHandle, futures, tasks, Future, Task
-from contextvars import Context
+import weakref
+from asyncio import (
+    AbstractEventLoop,
+    CancelledError,
+    Handle,
+    TimerHandle,
+    futures,
+    tasks,
+    Future,
+    Task,
+)
+from contextvars import Context, copy_context
 import logging
 import collections
 import asyncio.events as events
 import threading
-from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator
+from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator, NoReturn
 from typing_extensions import Unpack, TypeVarTuple
 
 from cadence._internal.workflow.waiter import Waiter
@@ -13,9 +24,35 @@ from cadence._internal.workflow.waiter import Waiter
 logger = logging.getLogger(__name__)
 
 
-class FatalDecisionError(Exception):
+class FatalDecisionError(BaseException):
+    """Fails the decision task rather than the workflow.
+
+    Extends BaseException so that ``except Exception`` in workflow code doesn't
+    swallow it.
+    """
+
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+
+class DecisionAbortedError(FatalDecisionError):
+    """Raised in workflow code once the decision has failed or the loop is closing.
+
+    Its ``__cause__`` is the original failure, if any. The original is never raised
+    inside workflow code, so its traceback and context are reported unchanged.
+    """
+
+
+def fail_decision(error: FatalDecisionError) -> NoReturn:
+    """Mark the running decision as failed and raise error.
+
+    The DeterministicEventLoop stops running workflow code and re-raises error,
+    so the decision task fails even if workflow code catches it.
+    """
+    loop = events._get_running_loop()
+    if isinstance(loop, DeterministicEventLoop):
+        loop.fail_decision(error)
+    raise error
 
 
 _Ts = TypeVarTuple("_Ts")
@@ -37,15 +74,45 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._waiters: list[Waiter] = []
         self._stopping: bool = False
         self._closed: bool = False
+        self._decision_failure: FatalDecisionError | None = None
+        # Insertion-ordered so close() unwinds tasks deterministically.
+        self._tasks: weakref.WeakValueDictionary[int, _DeterministicTask[Any]] = (
+            weakref.WeakValueDictionary()
+        )
+        self._task_seq: int = 0
 
     def run_until_yield(self):
-        """Run until stop() is called."""
+        """Run until there is no ready work.
+
+        Raises the FatalDecisionError passed to fail_decision(), if any.
+        """
         self._run_forever_setup()
         try:
-            while self._ready:
+            while self._ready and self._decision_failure is None:
                 self._run_once()
         finally:
             self._run_forever_cleanup()
+        if self._decision_failure is not None:
+            raise self._decision_failure
+
+    def fail_decision(self, error: FatalDecisionError) -> None:
+        """Stop running workflow code and fail the decision with error."""
+        if self._decision_failure is None:
+            self._decision_failure = error
+
+    def abort_if_decision_failed(self) -> None:
+        """Raise a DecisionAbortedError in workflow code if the decision has failed
+        or the loop is closed."""
+        if self._closed or self._decision_failure is not None:
+            raise self._abort_error()
+
+    def _abort_error(self) -> DecisionAbortedError:
+        failure = self._decision_failure
+        if failure is None:
+            return DecisionAbortedError("workflow destroyed")
+        error = DecisionAbortedError("decision already failed")
+        error.__cause__ = failure
+        return error
 
     # Event Loop APIs
     def call_soon(
@@ -78,10 +145,12 @@ class DeterministicEventLoop(AbstractEventLoop):
         try:
             while True:
                 self._run_once()
-                if self._stopping:
+                if self._stopping or self._decision_failure is not None:
                     break
         finally:
             self._run_forever_cleanup()
+        if self._decision_failure is not None:
+            raise self._decision_failure
 
     def run_until_complete(
         self, future: Generator[Any, None, _T] | Awaitable[_T]
@@ -126,19 +195,23 @@ class DeterministicEventLoop(AbstractEventLoop):
 
         Return a task object.
         """
-        self._check_closed()
+        if self._closed or self._decision_failure is not None:
+            # The loop won't run again, so the task could never start.
+            if inspect.iscoroutine(coro):
+                coro.close()
+            raise self._abort_error()
 
         # NOTE: eager_start is not supported for deterministic event loop
-        if kwargs.get("eager_start", False):
+        if kwargs.pop("eager_start", False):
+            if inspect.iscoroutine(coro):
+                coro.close()
             raise RuntimeError(
                 "eager_start in create_task is not supported for deterministic event loop"
             )
 
-        task = tasks.Task(coro, loop=self, **kwargs)
-        # We intentionally destroy pending tasks when shutting down the event loop.
-        # If our asyncio implementation supports it, disable the logs
-        if hasattr(task, "_log_destroy_pending"):
-            setattr(task, "_log_destroy_pending", False)
+        task = _DeterministicTask(coro, loop=self, **kwargs)
+        self._tasks[self._task_seq] = task
+        self._task_seq += 1
         return task
 
     def create_future(self) -> Future[Any]:
@@ -158,6 +231,8 @@ class DeterministicEventLoop(AbstractEventLoop):
             if handle._cancelled:
                 continue
             handle._run()
+            if self._decision_failure is not None:
+                return
 
         # Poll waiters; only stop early if settling one schedules new work,
         # so remaining waiters are not skipped.
@@ -165,7 +240,10 @@ class DeterministicEventLoop(AbstractEventLoop):
         while i < len(self._waiters):
             w = self._waiters[i]
             ready_before = len(self._ready)
-            if w.poll():
+            settled = w.poll()
+            if self._decision_failure is not None:
+                return
+            if settled:
                 del self._waiters[i]
                 if len(self._ready) > ready_before:
                     return
@@ -175,6 +253,9 @@ class DeterministicEventLoop(AbstractEventLoop):
     def _run_forever_setup(self) -> None:
         self._check_closed()
         self._check_running()
+        self._set_running()
+
+    def _set_running(self) -> None:
         self._thread_id = threading.get_ident()
         events._set_running_loop(self)
 
@@ -188,7 +269,7 @@ class DeterministicEventLoop(AbstractEventLoop):
 
     def _check_closed(self) -> None:
         if self._closed:
-            raise RuntimeError("Event loop is closed")
+            raise self._abort_error()
 
     def _check_running(self) -> None:
         if self.is_running():
@@ -202,8 +283,12 @@ class DeterministicEventLoop(AbstractEventLoop):
         return self._thread_id is not None
 
     def close(self) -> None:
-        """Close the event loop.
-        The event loop must not be running.
+        """Close the loop and unwind every pending coroutine.
+
+        The event loop must not be running. Coroutines are unwound directly rather
+        than by running the loop, so each finally block runs once and no other
+        workflow code is scheduled. Once closed, interacting with the loop raises
+        DecisionAbortedError.
         """
         if self.is_running():
             raise RuntimeError("Cannot close a running event loop")
@@ -211,9 +296,21 @@ class DeterministicEventLoop(AbstractEventLoop):
             return
         if self._debug:
             logger.debug("Close %r", self)
+        self._check_running()
         self._closed = True
-        self._ready.clear()
-        self._waiters.clear()
+        # Mark the loop as running so get_running_loop() works in finally blocks.
+        self._set_running()
+        try:
+            # create_task() refuses new tasks once the loop is closed, so finally
+            # blocks can't add to this snapshot.
+            for task in reversed(list(self._tasks.values())):
+                task.destroy(self._abort_error)
+        finally:
+            self._run_forever_cleanup()
+            # Callbacks scheduled while unwinding are dropped on purpose: every
+            # task they would wake has already been unwound.
+            self._ready.clear()
+            self._waiters.clear()
 
     def is_closed(self) -> bool:
         """Returns True if the event loop was closed."""
@@ -545,6 +642,78 @@ class DeterministicEventLoop(AbstractEventLoop):
         raise NotImplementedError(
             "Socket operations not supported in deterministic event loop"
         )
+
+
+# Bounds how long workflow code that keeps catching the error can delay close().
+_MAX_DESTROY_THROWS = 100
+
+
+class _DeterministicTask(Task[_T]):
+    """A Task that keeps its Context so close() can unwind it in that Context."""
+
+    def __init__(
+        self,
+        coro: Generator[Any, None, _T] | Coroutine[Any, Any, _T],
+        *,
+        loop: AbstractEventLoop,
+        name: str | None = None,
+        context: Context | None = None,
+    ) -> None:
+        if context is None:
+            context = copy_context()
+        super().__init__(coro, loop=loop, name=name, context=context)
+        self._destroy_context = context
+        # close() unwinds coroutines directly, so tasks are never marked done.
+        # Disable the "Task was destroyed but it is pending!" log for them.
+        if hasattr(self, "_log_destroy_pending"):
+            setattr(self, "_log_destroy_pending", False)
+
+    def destroy(self, abort_error: Callable[[], DecisionAbortedError]) -> None:
+        if self.done():
+            if isinstance(getattr(self, "_exception", None), FatalDecisionError):
+                # Already surfaced as the decision failure, don't log it again
+                # as "Task exception was never retrieved". Other exceptions are
+                # left alone so unretrieved user errors are still reported.
+                self._log_traceback = False
+            return
+        coro = self.get_coro()
+        if not inspect.iscoroutine(coro):
+            return
+        state = inspect.getcoroutinestate(coro)
+        if state == inspect.CORO_CREATED:
+            # Never started: closing runs no workflow code.
+            coro.close()
+            return
+        if state != inspect.CORO_SUSPENDED:
+            return
+        # Each async context manager whose __aexit__ awaits (e.g. a TaskGroup waiting on
+        # its children) yields once while handling the error, so throw again at each new
+        # await point until the coroutine finishes. close() can't do this: awaiting while
+        # handling GeneratorExit fails and leaves the coroutine for the garbage collector.
+        for _ in range(_MAX_DESTROY_THROWS):
+            try:
+                self._destroy_context.run(coro.throw, abort_error())
+            except (StopIteration, FatalDecisionError):
+                return
+            except BaseExceptionGroup as e:
+                if e.split(FatalDecisionError)[1] is not None:
+                    logger.warning(
+                        "Workflow code raised while being destroyed", exc_info=True
+                    )
+                return
+            except (Exception, CancelledError):
+                logger.warning(
+                    "Workflow code raised while being destroyed", exc_info=True
+                )
+                return
+        try:
+            self._destroy_context.run(coro.close)
+        except (Exception, CancelledError):
+            logger.error(
+                "Workflow coroutine could not be destroyed, it will be finalized by "
+                "the garbage collector",
+                exc_info=True,
+            )
 
 
 def _run_until_complete_cb(fut: Future[Any]) -> None:

@@ -9,7 +9,10 @@ from typing import Iterator, Optional, Any, Unpack, Type, cast, Callable, Mappin
 
 from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
 from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
-from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.deterministic_event_loop import (
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence._internal.workflow.memo import memo_to_proto
 from cadence._internal.workflow.retry_policy import retry_policy_to_proto
 from cadence._internal.workflow.search_attributes import search_attributes_to_proto
@@ -401,9 +404,11 @@ class Context(WorkflowContext):
         try:
             return decode_version_marker_details(details)
         except ValueError as exc:
-            raise FatalDecisionError(
+            error = FatalDecisionError(
                 f"Unable to decode Version marker for change_id {change_id!r}"
-            ) from exc
+            )
+            error.__cause__ = exc
+            fail_decision(error)
 
     def set_replay_current_time(self, current_time: datetime) -> None:
         """Set the current replay timestamp."""

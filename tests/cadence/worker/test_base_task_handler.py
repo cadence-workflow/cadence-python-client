@@ -12,7 +12,7 @@ class ConcreteTaskHandler(BaseTaskHandler[str]):
         self._handle_task_implementation_called = False
         self._handle_task_failure_called = False
         self._last_task: str = ""
-        self._last_error: Exception | None = None
+        self._last_error: BaseException | None = None
 
     async def _handle_task_implementation(self, task: str) -> None:
         """Test implementation of task handling."""
@@ -21,7 +21,7 @@ class ConcreteTaskHandler(BaseTaskHandler[str]):
         if task == "raise_error":
             raise ValueError("Test error")
 
-    async def handle_task_failure(self, task: str, error: Exception) -> None:
+    async def handle_task_failure(self, task: str, error: BaseException) -> None:
         """Test implementation of task failure handling."""
         self._handle_task_failure_called = True
         self._last_task = task
@@ -85,7 +85,9 @@ class TestBaseTaskHandler:
             async def _handle_task_implementation(self, task: str) -> None:
                 raise NotImplementedError()
 
-            async def handle_task_failure(self, task: str, error: Exception) -> None:
+            async def handle_task_failure(
+                self, task: str, error: BaseException
+            ) -> None:
                 raise NotImplementedError()
 
         handler = IncompleteHandler(client, "test_task_list", "test_identity")
@@ -105,7 +107,9 @@ class TestBaseTaskHandler:
             async def _handle_task_implementation(self, task: int) -> None:
                 pass
 
-            async def handle_task_failure(self, task: int, error: Exception) -> None:
+            async def handle_task_failure(
+                self, task: int, error: BaseException
+            ) -> None:
                 pass
 
         handler = IntHandler(client, "test_task_list", "test_identity")

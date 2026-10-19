@@ -1,4 +1,4 @@
-import asyncio
+from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
 from asyncio import CancelledError
 
 import pytest
@@ -24,7 +24,7 @@ from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
 
 
 async def test_activity_dispatch():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes()
@@ -38,7 +38,7 @@ async def test_activity_dispatch():
 
 
 async def test_simple_cancellation():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes()
@@ -50,7 +50,7 @@ async def test_simple_cancellation():
 
 
 async def test_cancellation_not_immediate():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes()
@@ -64,7 +64,7 @@ async def test_cancellation_not_immediate():
 
 
 async def test_cancellation_with_message_cancels_future_immediately():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes()
@@ -80,7 +80,7 @@ async def test_cancellation_with_message_cancels_future_immediately():
 
 
 async def test_cancellation_completed():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     activity_result = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes()
@@ -111,7 +111,7 @@ async def test_cancellation_completed():
 
 
 async def test_collect_decisions():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     activity1 = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes()
@@ -138,7 +138,7 @@ async def test_collect_decisions():
 
 
 async def test_collect_decisions_ignore_empty():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     _ = decisions.schedule_activity(decision.ScheduleActivityTaskDecisionAttributes())
     decisions.handle_history_event(activity_scheduled(1, "0"))
@@ -148,7 +148,7 @@ async def test_collect_decisions_ignore_empty():
 
 async def test_collect_pending_decisions_timer_cancel_before_complete():
     """User-initiated timer cancel must still emit CancelTimer when workflow completes."""
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     timer_fut = decisions.start_timer(decision.StartTimerDecisionAttributes())
     decisions.handle_history_event(
         history.HistoryEvent(
@@ -177,7 +177,7 @@ async def test_collect_pending_decisions_timer_cancel_before_complete():
 
 async def test_collection_decisions_reordering():
     # Decisions should be emitted in the order that they happened within the workflow
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     activity1 = decisions.schedule_activity(
         decision.ScheduleActivityTaskDecisionAttributes()
@@ -223,7 +223,7 @@ async def test_collection_decisions_reordering():
 
 
 async def test_record_marker_collects_in_workflow_order():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     marker_attrs = decision.RecordMarkerDecisionAttributes(
         marker_name="SideEffect", details=Payload(data=b"marker")
     )
@@ -249,7 +249,7 @@ async def test_record_marker_collects_in_workflow_order():
 
 
 async def test_record_marker_history_clears_pending_decision():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     marker_attrs = decision.RecordMarkerDecisionAttributes(
         marker_name="SideEffect", details=Payload(data=b"marker")
     )
@@ -264,7 +264,7 @@ async def test_record_marker_history_clears_pending_decision():
 
 
 async def test_replayed_marker_returns_recorded_details():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = marker_recorded(
         1, "SideEffect", Payload(data=b"history-value"), context_id="0"
     )
@@ -280,7 +280,7 @@ async def test_replayed_marker_returns_recorded_details():
 
 
 async def test_replayed_marker_name_mismatch_is_nondeterministic():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = marker_recorded(
         1, "SideEffect", Payload(data=b"history-value"), context_id="0"
     )
@@ -293,7 +293,7 @@ async def test_replayed_marker_name_mismatch_is_nondeterministic():
 
 
 async def test_replayed_marker_order_mismatch_is_nondeterministic():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     first = marker_recorded(1, "SideEffect", Payload(data=b"first"), context_id="0")
     second = marker_recorded(
         2, "LocalActivity", Payload(data=b"second"), context_id="1"
@@ -309,7 +309,7 @@ async def test_replayed_marker_order_mismatch_is_nondeterministic():
 
 
 async def test_replayed_marker_missing_from_workflow_is_nondeterministic():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = marker_recorded(
         1, "SideEffect", Payload(data=b"history-value"), context_id="0"
     )
@@ -320,7 +320,7 @@ async def test_replayed_marker_missing_from_workflow_is_nondeterministic():
 
 
 async def test_replayed_marker_without_context_id_is_nondeterministic():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     # Raw details with no length-prefix encoding — treated as produced by another SDK.
     recorded = marker_recorded(1, "SideEffect", Payload(data=b"history-value"))
 
@@ -332,7 +332,7 @@ async def test_replayed_marker_without_context_id_is_nondeterministic():
 
 
 async def test_record_marker_ids_are_sequential():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     decisions.record_marker(
         decision.RecordMarkerDecisionAttributes(marker_name="SideEffect")
@@ -347,7 +347,7 @@ async def test_record_marker_ids_are_sequential():
 
 
 async def test_record_marker_requires_marker_name():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     with pytest.raises(ValueError, match="marker_name is required"):
         decisions.record_marker(decision.RecordMarkerDecisionAttributes())
@@ -356,7 +356,7 @@ async def test_record_marker_requires_marker_name():
 
 
 async def test_mutable_side_effect_records_metadata_and_caches_value():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     access_count, stored, has_history_update = decisions.mutable_side_effect_value(
         "config"
     )
@@ -375,7 +375,7 @@ async def test_mutable_side_effect_records_metadata_and_caches_value():
 
 
 async def test_mutable_side_effect_does_not_shift_other_decision_ids_on_replay():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = marker_recorded(
         1,
         "MutableSideEffect",
@@ -395,7 +395,7 @@ async def test_mutable_side_effect_does_not_shift_other_decision_ids_on_replay()
 
 
 async def test_mutable_side_effect_replay_applies_marker_at_matching_access_count():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = marker_recorded(
         1,
         "MutableSideEffect",
@@ -425,7 +425,7 @@ async def test_cancel_marker_is_not_logged_as_unknown_marker_name(caplog):
     # The immediate-cancellation marker (cancellation.py) is Python-specific and encodes
     # a JSON object in Details, not a [context_id, user_data] pair. It must not be mistaken
     # for an unrecognized marker_name and warned about.
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     cancel_marker = history.HistoryEvent(
         event_id=1,
         marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
@@ -444,7 +444,7 @@ async def test_version_marker_is_not_flagged_as_nondeterministic():
     # Version markers are exempt from non-determinism tracking.
     # History that includes a Version marker must replay without error, and the
     # Version expectation is never added so complete_replay doesn't fail either.
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     version_recorded = marker_recorded(
         1, "Version", Payload(data=b"v1"), context_id="0"
     )
@@ -465,7 +465,7 @@ async def test_version_marker_is_not_flagged_as_nondeterministic():
 
 async def test_replayed_marker_details_come_from_history_not_current_value():
     # Ensure the historical value is returned even when the current call passes different data.
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = marker_recorded(
         1, "SideEffect", Payload(data=b"history-value"), context_id="0"
     )
@@ -481,7 +481,7 @@ async def test_replayed_marker_details_come_from_history_not_current_value():
 
 
 async def test_child_workflow_dispatch():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     execution, result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
@@ -508,7 +508,7 @@ async def test_child_workflow_dispatch():
 
 
 async def test_schedule_child_workflow_generates_workflow_id():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     attrs = decision.StartChildWorkflowExecutionDecisionAttributes(
         workflow_id="",
@@ -532,7 +532,7 @@ async def test_schedule_child_workflow_generates_workflow_id():
 
 
 async def test_child_workflow_initiation_failed_dispatch():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     execution, result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
@@ -561,7 +561,7 @@ async def test_child_workflow_initiation_failed_dispatch():
 
 
 async def test_child_workflow_cancel_dispatch():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     _execution, result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
@@ -605,7 +605,7 @@ async def test_child_workflow_cancel_dispatch():
 
 async def test_child_workflow_errors_are_child_workflow_error():
     """All child workflow errors share a common base class."""
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     _execution, result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
@@ -743,7 +743,7 @@ def marker_recorded(
 
 
 async def test_signal_external_workflow_creates_machine():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     future = decisions.signal_external_workflow(
         decision.SignalExternalWorkflowExecutionDecisionAttributes(
@@ -764,7 +764,7 @@ async def test_signal_external_workflow_creates_machine():
 
 
 async def test_signal_external_workflow_sets_control():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     attrs = decision.SignalExternalWorkflowExecutionDecisionAttributes(
         domain="test-domain",
@@ -778,7 +778,7 @@ async def test_signal_external_workflow_sets_control():
 
 
 async def test_signal_external_workflow_multiple_signals():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     future1 = decisions.signal_external_workflow(
         decision.SignalExternalWorkflowExecutionDecisionAttributes(
@@ -809,7 +809,7 @@ async def test_signal_external_workflow_multiple_signals():
 
 
 async def test_signal_external_workflow_dispatch():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     future = decisions.signal_external_workflow(
         decision.SignalExternalWorkflowExecutionDecisionAttributes(
@@ -828,7 +828,7 @@ async def test_signal_external_workflow_dispatch():
 
 
 async def test_signal_external_workflow_failed_dispatch():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     future = decisions.signal_external_workflow(
         decision.SignalExternalWorkflowExecutionDecisionAttributes(
@@ -894,7 +894,7 @@ def _upsert_recorded(event_id: int, fields: dict[str, bytes]) -> history.History
 
 
 async def test_upsert_search_attributes_collects_decision():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     attrs = _upsert_attrs({"CustomIntField": b"1"})
 
     decisions.upsert_search_attributes(attrs)
@@ -906,7 +906,7 @@ async def test_upsert_search_attributes_collects_decision():
 
 
 async def test_upsert_search_attributes_history_clears_pending_decision():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     attrs = _upsert_attrs({"CustomIntField": b"1"})
 
     decisions.upsert_search_attributes(attrs)
@@ -916,7 +916,7 @@ async def test_upsert_search_attributes_history_clears_pending_decision():
 
 
 async def test_upsert_search_attributes_multiple_match_in_order():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     first = _upsert_attrs({"CustomIntField": b"1"})
     second = _upsert_attrs({"CustomKeywordField": b'"seattle"'})
 
@@ -935,7 +935,7 @@ async def test_upsert_search_attributes_multiple_match_in_order():
 
 
 async def test_replayed_upsert_matches_history():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = _upsert_recorded(1, {"CustomIntField": b"1"})
 
     with decisions.track_nondeterminism(True, [recorded]):
@@ -943,7 +943,7 @@ async def test_replayed_upsert_matches_history():
 
 
 async def test_replayed_upsert_is_not_checked_for_nondeterminism():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
     recorded = _upsert_recorded(1, {"CustomIntField": b"1"})
 
     with decisions.track_nondeterminism(True, [recorded]):
@@ -951,7 +951,7 @@ async def test_replayed_upsert_is_not_checked_for_nondeterminism():
 
 
 async def test_upsert_history_without_requested_machine_is_ignored():
-    decisions = DecisionManager(asyncio.get_event_loop())
+    decisions = DecisionManager(DeterministicEventLoop())
 
     decisions.handle_history_event(_upsert_recorded(1, {"CustomIntField": b"1"}))
 

@@ -29,7 +29,7 @@ class ConcreteHandler(BaseTaskHandler[str]):
     async def _handle_task_implementation(self, task: str) -> None:
         pass
 
-    async def handle_task_failure(self, task: str, error: Exception) -> None:
+    async def handle_task_failure(self, task: str, error: BaseException) -> None:
         pass
 
 

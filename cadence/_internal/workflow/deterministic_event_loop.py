@@ -5,7 +5,7 @@ import logging
 import collections
 import asyncio.events as events
 import threading
-from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator
+from typing import Callable, Any, TypeVar, Coroutine, Awaitable, Generator, NoReturn
 from typing_extensions import Unpack, TypeVarTuple
 
 from cadence._internal.workflow.waiter import Waiter
@@ -13,9 +13,35 @@ from cadence._internal.workflow.waiter import Waiter
 logger = logging.getLogger(__name__)
 
 
-class FatalDecisionError(Exception):
+class FatalDecisionError(BaseException):
+    """Fails the decision task rather than the workflow.
+
+    Extends BaseException so that ``except Exception`` in workflow code doesn't
+    swallow it.
+    """
+
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+
+class DecisionAbortedError(FatalDecisionError):
+    """Raised in workflow code once the decision has failed.
+
+    Its ``__cause__`` is the original failure. The original is never raised
+    inside workflow code, so its traceback and context are reported unchanged.
+    """
+
+
+def fail_decision(error: FatalDecisionError) -> NoReturn:
+    """Mark the running decision as failed and raise error.
+
+    The DeterministicEventLoop re-raises error once it yields, so the decision
+    task fails even if workflow code catches it.
+    """
+    loop = events._get_running_loop()
+    if isinstance(loop, DeterministicEventLoop):
+        loop.fail_decision(error)
+    raise error
 
 
 _Ts = TypeVarTuple("_Ts")
@@ -37,15 +63,36 @@ class DeterministicEventLoop(AbstractEventLoop):
         self._waiters: list[Waiter] = []
         self._stopping: bool = False
         self._closed: bool = False
+        self._decision_failure: FatalDecisionError | None = None
 
     def run_until_yield(self):
-        """Run until stop() is called."""
+        """Run until there is no ready work.
+
+        Raises the FatalDecisionError passed to fail_decision(), if any.
+        """
         self._run_forever_setup()
         try:
             while self._ready:
                 self._run_once()
         finally:
             self._run_forever_cleanup()
+        if self._decision_failure is not None:
+            raise self._decision_failure
+
+    def fail_decision(self, error: FatalDecisionError) -> None:
+        """Record the first failure. run_until_yield raises it once the loop yields."""
+        if self._decision_failure is None:
+            self._decision_failure = error
+
+    def abort_if_decision_failed(self) -> None:
+        """Raise a DecisionAbortedError in workflow code if the decision has failed."""
+        if self._decision_failure is not None:
+            raise self._abort_error(self._decision_failure)
+
+    def _abort_error(self, failure: FatalDecisionError) -> DecisionAbortedError:
+        error = DecisionAbortedError("decision already failed")
+        error.__cause__ = failure
+        return error
 
     # Event Loop APIs
     def call_soon(
@@ -82,6 +129,8 @@ class DeterministicEventLoop(AbstractEventLoop):
                     break
         finally:
             self._run_forever_cleanup()
+        if self._decision_failure is not None:
+            raise self._decision_failure
 
     def run_until_complete(
         self, future: Generator[Any, None, _T] | Awaitable[_T]

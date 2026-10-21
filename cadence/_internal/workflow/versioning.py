@@ -3,7 +3,10 @@ from typing import cast
 
 from msgspec import DecodeError, json
 
-from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.deterministic_event_loop import (
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence.api.v1.common_pb2 import Payload
 from cadence.workflow import (
     CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE,
@@ -55,9 +58,11 @@ def validate_resolved_version(
     max_supported: int,
 ) -> None:
     if version < min_supported or version > max_supported:
-        raise FatalDecisionError(
-            f"version {version} for change_id {change_id!r} is outside "
-            f"the supported range [{min_supported}, {max_supported}]"
+        fail_decision(
+            FatalDecisionError(
+                f"version {version} for change_id {change_id!r} is outside "
+                f"the supported range [{min_supported}, {max_supported}]"
+            )
         )
 
 

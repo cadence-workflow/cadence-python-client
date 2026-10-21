@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, OrderedDict, Dict, List, Never
 
-from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.deterministic_event_loop import (
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence._internal.workflow.statemachine.cancellation import (
     is_immediate_cancel,
     from_marker,
@@ -77,7 +80,6 @@ class NonDeterminismError(FatalDecisionError):
 class DeterminismTracker:
     def __init__(self) -> None:
         self._expectations: OrderedDict[DecisionId, List[Expectation]] = OrderedDict()
-        self._failed = False
 
     def add_expectation(self, event: history.HistoryEvent) -> None:
         # Immediate cancellation is the only case where we have more than one Expectation
@@ -113,8 +115,10 @@ class DeterminismTracker:
         self, decision_id: DecisionId, to_expect: List[Expectation]
     ) -> None:
         if decision_id in self._expectations:
-            raise FatalDecisionError(
-                f"Received duplicate expectation for {decision_id}: {self._expectations[decision_id]} and {to_expect}"
+            fail_decision(
+                FatalDecisionError(
+                    f"Received duplicate expectation for {decision_id}: {self._expectations[decision_id]} and {to_expect}"
+                )
             )
 
         self._expectations[decision_id] = to_expect
@@ -127,9 +131,6 @@ class DeterminismTracker:
         return self._validate_expectation(props)
 
     def validate_cancel(self, decision_id: DecisionId) -> None:
-        # Cancellation may happen automatically, ignore it
-        if self._failed:
-            return
         self._validate_expectation(
             Expectation(decision_id=decision_id, properties=CANCEL)
         )
@@ -186,8 +187,7 @@ class DeterminismTracker:
                 self._fail(next_expectation, actual)
 
     def _fail(self, expected: Expectation | None, actual: Expectation | None) -> Never:
-        self._failed = True
-        raise NonDeterminismError(expected, actual)
+        fail_decision(NonDeterminismError(expected, actual))
 
     def _next_expectation(self) -> Expectation:
         _, upcoming = next(iter(self._expectations.items()))
@@ -202,7 +202,7 @@ class DeterminismTracker:
 def record_immediate_cancel(attrs: Any) -> decision.Decision:
     expectation = to_expectation(attrs)
     if expectation is None:
-        raise FatalDecisionError(f"Unable to handle type: {attrs} ")
+        fail_decision(FatalDecisionError(f"Unable to handle type: {attrs} "))
     return decision.Decision(
         record_marker_decision_attributes=to_marker(
             expectation.decision_id, expectation.properties

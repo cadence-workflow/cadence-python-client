@@ -6,6 +6,10 @@ from typing import Any, Type, Unpack
 import pytest
 
 from cadence import workflow
+from cadence._internal.workflow.deterministic_event_loop import (
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence.testing import TestWorkflowEnvironment
 from cadence.worker import Registry
 from cadence.workflow import (
@@ -139,6 +143,17 @@ class FailingWorkflow:
     @workflow.run
     async def run(self) -> str:
         raise ValueError("boom")
+
+
+@registry.workflow
+class SwallowedFatalWorkflow:
+    @workflow.run
+    async def run(self) -> str:
+        try:
+            fail_decision(FatalDecisionError("fatal"))
+        except BaseException:
+            pass
+        return "unreachable"
 
 
 @registry.workflow
@@ -407,6 +422,15 @@ async def test_failing_workflow(env: TestWorkflowEnvironment):
     assert isinstance(error, ValueError)
     with pytest.raises(ValueError):
         env.get_workflow_result()
+
+
+@pytest.mark.asyncio
+async def test_swallowed_fatal_decision_error_still_fails(
+    env: TestWorkflowEnvironment,
+):
+    await env.client.start_workflow("SwallowedFatalWorkflow", task_list="tl")
+    assert env.is_workflow_completed()
+    assert isinstance(env.get_workflow_error(), FatalDecisionError)
 
 
 @pytest.mark.asyncio

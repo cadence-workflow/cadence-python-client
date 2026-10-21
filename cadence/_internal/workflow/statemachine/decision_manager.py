@@ -46,7 +46,11 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
 )
 from cadence._internal.workflow.statemachine.nondeterminism import DeterminismTracker
 from cadence._internal.workflow.statemachine.cancellation import is_immediate_cancel
-from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.deterministic_event_loop import (
+    DeterministicEventLoop,
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
     signal_external_events,
     SignalExternalWorkflowStateMachine,
@@ -125,7 +129,7 @@ class DecisionManager:
         }
     )
 
-    def __init__(self, event_loop: asyncio.AbstractEventLoop):
+    def __init__(self, event_loop: DeterministicEventLoop):
         self._event_loop = event_loop
         self._id_counter = 0
         self._determinism_tracker = DeterminismTracker()
@@ -322,8 +326,10 @@ class DecisionManager:
         existing = self.state_machines.get(marker_id)
         if existing is not None:
             if not isinstance(existing, MarkerStateMachine):
-                raise FatalDecisionError(
-                    f"Unexpected state machine for Version marker {change_id!r}"
+                fail_decision(
+                    FatalDecisionError(
+                        f"Unexpected state machine for Version marker {change_id!r}"
+                    )
                 )
             return existing
 
@@ -361,6 +367,8 @@ class DecisionManager:
         return machine
 
     def _add_state_machine(self, state: DecisionStateMachine) -> None:
+        # No new decisions once the decision has failed.
+        self._event_loop.abort_if_decision_failed()
         decision_id = state.get_id()
         if decision_id in self.state_machines:
             raise ValueError(f"Received duplicate decision: {decision_id}")
@@ -466,8 +474,10 @@ class DecisionManager:
             and machine.was_recorded
             and machine.get_result().data != event_attributes.details.data
         ):
-            raise FatalDecisionError(
-                f"Received conflicting Version marker for change_id {context_id!r}"
+            fail_decision(
+                FatalDecisionError(
+                    f"Received conflicting Version marker for change_id {context_id!r}"
+                )
             )
         if machine is None:
             if event_attributes.marker_name == VERSION_MARKER_NAME:
@@ -504,13 +514,17 @@ class DecisionManager:
         context_id = marker_context_id(attrs)
         if context_id is None:
             if attrs.marker_name == VERSION_MARKER_NAME and has_marker_header(attrs):
-                raise FatalDecisionError(
-                    "Version marker contains an invalid Python MarkerHeader"
+                fail_decision(
+                    FatalDecisionError(
+                        "Version marker contains an invalid Python MarkerHeader"
+                    )
                 )
             return
         if attrs.marker_name == VERSION_MARKER_NAME and not context_id:
-            raise FatalDecisionError(
-                "Version marker contains an invalid Python MarkerHeader"
+            fail_decision(
+                FatalDecisionError(
+                    "Version marker contains an invalid Python MarkerHeader"
+                )
             )
         if attrs.marker_name == VERSION_MARKER_NAME:
             return
@@ -590,6 +604,7 @@ class DecisionManager:
     def _request_cancel(
         self, decision_id: DecisionId, message: str | None = None
     ) -> bool:
+        self._event_loop.abort_if_decision_failed()
         machine = self._get_machine(decision_id)
         if machine.request_cancel(message):
             if self._replaying:

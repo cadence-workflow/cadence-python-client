@@ -128,7 +128,7 @@ class WorkflowEngine:
                     return DecisionResult(decisions=decisions, query_result=None)
 
         # TODO: reevaluate if this is needed to log error here or in the caller
-        except Exception as e:
+        except (Exception, FatalDecisionError) as e:
             # Log decision task failure with full context (matches Java ReplayDecisionTaskHandler)
             logger.error(
                 "Decision task processing failed",
@@ -258,7 +258,7 @@ class WorkflowEngine:
                 continue_as_new_workflow_execution_decision_attributes=attrs,
             )
         except ExceptionGroup as e:
-            if e.subgroup((InvalidStateError, FatalDecisionError)):
+            if e.subgroup(InvalidStateError):
                 raise
             failure = _failure_from_exception(e)
 

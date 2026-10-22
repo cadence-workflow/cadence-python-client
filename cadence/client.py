@@ -742,15 +742,24 @@ class Client:
         """Update a schedule using a read-modify-write pattern.
 
         Fetches the current schedule state, calls ``updater`` to mutate it in place,
-        then sends only the fields that changed: ``spec``, ``action``, ``policies``,
-        and ``search_attributes``. Fields not carried by ``UpdateScheduleRequest``
-        (``state``, ``memo``, ``info``) are ignored; use ``pause_schedule`` or
-        ``unpause_schedule`` to change paused state. Unchanged fields are not sent,
-        so the server keeps their current values. If nothing changed, no RPC is made.
+        then diffs the result against the original and sends only what changed.
+        The diff covers ``spec``, ``action``, ``policies``, and ``search_attributes``.
+        Other fields (``state``, ``memo``, ``info``) are not part of the update request;
+        use ``pause_schedule`` or ``unpause_schedule`` to change paused state.
 
-        The server preserves any field that is absent from the request, so there is
-        no way to clear a field via update. Setting a top-level field to its empty
-        value in the updater is treated as no change.
+        The diffing logic treats the fields as follows:
+
+        * **Untouched field**: not sent. The server keeps its current value.
+        * **Modified field**: sent when the new value differs from what describe returned.
+        * ``current.ClearField("field")``: treated the same as untouched. HasField
+          returns False, so the field is skipped and the server keeps its value. Use
+          this when you want to leave a field alone regardless of what describe returned.
+        * ``current.field.Clear()`` or ``current.field.CopyFrom(<empty message>)``:
+          HasField stays True. If the field previously had a value, the empty message
+          is detected as a change and sent to the server, which clears the field. This
+          is the way to intentionally wipe a field's value on the server.
+
+        If the updater makes no net change, no RPC is issued.
 
         Args:
             schedule_id: The schedule to update.
@@ -785,7 +794,7 @@ class Client:
         if current.HasField("policies") and current.policies != baseline.policies:
             req.policies.CopyFrom(current.policies)
             changed = True
-        # Search attributes are only sent when non-empty (same can't-clear rationale).
+        # Search attributes are skipped when empty regardless of HasField.
         if (
             current.HasField("search_attributes")
             and current.search_attributes != baseline.search_attributes

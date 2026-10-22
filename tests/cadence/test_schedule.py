@@ -488,6 +488,43 @@ class TestUpdateSchedule:
             await client.update_schedule("sched-upd", _mutate)
         assert servicer.last_update is None
 
+    @pytest.mark.asyncio
+    async def test_update_field_dot_clear_sends_empty(self, client, servicer):
+        """field.Clear() wipes the field on the server; it is not the same as ClearField."""
+        servicer.describe_response = DescribeScheduleResponse(
+            spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
+            policies=schedule_pb2.SchedulePolicies(
+                overlap_policy=schedule_pb2.SCHEDULE_OVERLAP_POLICY_SKIP_NEW,
+            ),
+        )
+
+        def _mutate(d):
+            d.policies.Clear()
+
+        await client.update_schedule("sched-upd", _mutate)
+        # HasField is still True after .Clear(), so the empty policies are sent.
+        assert servicer.last_update.HasField("policies")
+        assert servicer.last_update.policies == schedule_pb2.SchedulePolicies()
+
+    @pytest.mark.asyncio
+    async def test_update_clear_field_skips_field(self, client, servicer):
+        """ClearField() causes the field to be omitted; the server keeps its current value."""
+        servicer.describe_response = DescribeScheduleResponse(
+            spec=schedule_pb2.ScheduleSpec(cron_expression="0 9 * * *"),
+            policies=schedule_pb2.SchedulePolicies(
+                overlap_policy=schedule_pb2.SCHEDULE_OVERLAP_POLICY_SKIP_NEW,
+            ),
+        )
+        new_spec = schedule_pb2.ScheduleSpec(cron_expression="0 18 * * *")
+
+        def _mutate(d):
+            d.spec.CopyFrom(new_spec)
+            d.ClearField("policies")  # don't touch policies
+
+        await client.update_schedule("sched-upd", _mutate)
+        assert servicer.last_update.HasField("spec")
+        assert not servicer.last_update.HasField("policies")
+
 
 # ---------------------------------------------------------------------------
 # backfill_schedule

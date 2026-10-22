@@ -741,20 +741,71 @@ class Client:
     ) -> None:
         """Update a schedule using a read-modify-write pattern.
 
-        Fetches the current schedule state, passes it to ``updater`` for
-        modification, then sends the full updated state to the server.
+        Fetches the current schedule state, calls ``updater`` to mutate it in place,
+        then diffs the result against the original and sends only what changed.
+        The diff covers ``spec``, ``action``, ``policies``, and ``search_attributes``.
+        Other fields (``state``, ``memo``, ``info``) are not part of the update request;
+        use ``pause_schedule`` or ``unpause_schedule`` to change paused state.
+
+        The diffing logic treats the fields as follows:
+
+        * **Untouched field**: not sent. The server keeps its current value.
+        * **Modified field**: sent when the new value differs from what describe returned.
+        * ``current.ClearField("field")``: treated the same as untouched. HasField
+          returns False, so the field is skipped and the server keeps its value. Use
+          this when you want to leave a field alone regardless of what describe returned.
+        * ``current.field.Clear()`` or ``current.field.CopyFrom(<empty message>)``:
+          HasField stays True. If the field previously had a value, the empty message
+          is detected as a change and sent to the server, which clears the field. This
+          is the way to intentionally wipe a field's value on the server.
+
+        If the updater makes no net change, no RPC is issued.
+
+        Args:
+            schedule_id: The schedule to update.
+            updater: Callback that mutates the described schedule in place.
+
+        Raises:
+            ValueError: If the updated spec has an empty cron expression, or the
+                updated action fails start-workflow validation (see
+                ``create_schedule``).
         """
         current = await self.describe_schedule(schedule_id)
+        # Snapshot the baseline before the updater mutates ``current`` so we can
+        # detect which top-level fields actually changed.
+        baseline = DescribeScheduleResponse()
+        baseline.CopyFrom(current)
         updater(current)
+
         req = UpdateScheduleRequest(
             domain=self.domain,
             schedule_id=schedule_id,
         )
-        req.spec.CopyFrom(current.spec)
-        req.action.CopyFrom(current.action)
-        req.policies.CopyFrom(current.policies)
-        if current.HasField("search_attributes"):
+        changed = False
+        if current.HasField("spec") and current.spec != baseline.spec:
+            if not current.spec.cron_expression:
+                raise ValueError("schedule spec requires a cron_expression")
+            req.spec.CopyFrom(current.spec)
+            changed = True
+        if current.HasField("action") and current.action != baseline.action:
+            req.action.CopyFrom(current.action)
+            _validate_and_default_start_workflow_action(req.action)
+            changed = True
+        if current.HasField("policies") and current.policies != baseline.policies:
+            req.policies.CopyFrom(current.policies)
+            changed = True
+        # Search attributes are skipped when empty regardless of HasField.
+        if (
+            current.HasField("search_attributes")
+            and current.search_attributes != baseline.search_attributes
+            and current.search_attributes.indexed_fields
+        ):
             req.search_attributes.CopyFrom(current.search_attributes)
+            changed = True
+
+        if not changed:
+            # Nothing changed — don't issue a no-op UpdateSchedule RPC.
+            return
         await self._schedule_stub.UpdateSchedule(req)
 
     async def backfill_schedule(

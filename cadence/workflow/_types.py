@@ -1,16 +1,14 @@
+from asyncio import Future
 from datetime import datetime, timedelta
 from typing import (
     Any,
-    Awaitable,
-    Generator,
-    Protocol,
     TypeVar,
     TypedDict,
     Union,
-    runtime_checkable,
 )
 
 from cadence.api.v1 import workflow_pb2
+from cadence.api.v1.common_pb2 import WorkflowExecution
 
 ResultType = TypeVar("ResultType")
 ResultType_co = TypeVar("ResultType_co", covariant=True)
@@ -46,6 +44,21 @@ class ActivityOptions(TypedDict, total=False):
     retry_policy: RetryPolicy
 
 
+# See https://github.com/python/typeshed/pull/8781 .
+# Future objects in Python are mutable, so their type parameter is invariant. You can't replace Future[any] with Future[str].
+# We however operate on covariant types, because our typing comes from user functions.
+# Functions are always covariant because a function that returns type any is always allowed to return subclass str.
+# As a result, we need a new type that accepts a covariant type parameter rather than using Future directly.
+# asyncio already does this with the Task type, but our Futures aren't tasks.
+# Python's current typing doesn't have a way to express this, so we end up with an ignore to allow it.
+class WorkflowFuture(Future[ResultType_co]):  # type: ignore[type-var]
+    """Futures returned as part of a Workflow.
+
+    They may be canceled, but they cannot be mutated(set_result, set_exception) as they reflect an external asynchronous
+    operation. Workflow code can freely use normal asyncio Futures.
+    """
+
+
 class ChildWorkflowOptions(TypedDict, total=False):
     workflow_id: str
     domain: str
@@ -59,22 +72,26 @@ class ChildWorkflowOptions(TypedDict, total=False):
     memo: dict[str, Any]
 
 
-@runtime_checkable
-class ChildWorkflowFuture(Awaitable[ResultType_co], Protocol[ResultType_co]):
-    """Handle to a started child workflow, awaitable for its result."""
+class ChildWorkflowFuture(WorkflowFuture[ResultType_co]):
+    """Handle to a child workflow. Resolves to the child's result.
+
+    Cancelling the future requests cancellation of the child workflow.
+    """
 
     @property
-    def workflow_id(self) -> str: ...
+    def workflow_id(self) -> str:
+        raise NotImplementedError
 
     @property
-    def run_id(self) -> str: ...
+    def execution(self) -> WorkflowFuture[WorkflowExecution]:
+        """Resolves once the child has started, or raises if it failed to start."""
+        raise NotImplementedError
 
-    def cancel(self) -> bool:
-        """Request cancellation of the child workflow."""
-        ...
+    @property
+    def run_id(self) -> str:
+        """Run ID of the child. Only available once :attr:`execution` is done."""
+        return self.execution.result().run_id
 
-    async def signal(self, signal_name: str, *args: Any) -> None:
+    def signal(self, signal_name: str, *args: Any) -> WorkflowFuture[None]:
         """Send a signal to this child workflow."""
-        ...
-
-    def __await__(self) -> Generator[Any, None, ResultType_co]: ...
+        raise NotImplementedError

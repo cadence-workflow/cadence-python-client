@@ -52,10 +52,12 @@ from datetime import datetime, timedelta, timezone
 from typing import (
     Any,
     Callable,
+    Coroutine,
     Optional,
     Sequence,
     Tuple,
     Type,
+    TypeVar,
     Union,
     Unpack,
     cast,
@@ -93,6 +95,7 @@ from cadence.workflow import (
     SearchAttributeType,
     WorkflowContext,
     WorkflowDefinition,
+    WorkflowFuture,
     WorkflowInfo,
     WorkflowInterceptorFactory,
 )
@@ -100,6 +103,47 @@ from cadence._internal.workflow.context import _activate_workflow_context
 from cadence.worker import Registry
 
 logger = logging.getLogger(__name__)
+
+
+_F = TypeVar("_F", bound="Future[Any]")
+
+
+def _drive_future(coro: Coroutine[Any, Any, Any], future: _F) -> _F:
+    """Run ``coro`` as a task and copy its outcome into ``future``.
+
+    Cancelling ``future`` cancels the underlying task.
+    """
+    task = future.get_loop().create_task(coro)
+
+    def _copy(t: "asyncio.Task[Any]") -> None:
+        if future.done():
+            return
+        if t.cancelled():
+            future.cancel()
+        elif (exc := t.exception()) is not None:
+            future.set_exception(exc)
+        else:
+            future.set_result(t.result())
+
+    def _propagate_cancel(f: "Future[Any]") -> None:
+        if f.cancelled():
+            task.cancel()
+
+    task.add_done_callback(_copy)
+    future.add_done_callback(_propagate_cancel)
+    return future
+
+
+def _resolved() -> WorkflowFuture[None]:
+    future = WorkflowFuture[None]()
+    future.set_result(None)
+    return future
+
+
+def _future_from_coroutine(
+    coro: Coroutine[Any, Any, ResultType],
+) -> WorkflowFuture[ResultType]:
+    return _drive_future(coro, WorkflowFuture[ResultType](loop=get_running_loop()))
 
 
 def _headers_after_proto_roundtrip(headers: Mapping[str, bytes]) -> dict[str, bytes]:
@@ -213,31 +257,21 @@ class _InMemoryWorkflowContext(WorkflowContext):
     def data_converter(self) -> DataConverter:
         return self._info.data_converter
 
-    async def execute_activity(
+    def execute_activity(
         self,
         activity: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
-    ) -> ResultType:
+    ) -> WorkflowFuture[ResultType]:
         outbound = self.inject_propagated_headers()
-        return await self._env._invoke_activity(
-            activity, result_type, args, self._info, outbound
+        return _future_from_coroutine(
+            self._env._invoke_activity(
+                activity, result_type, args, self._info, outbound
+            )
         )
 
-    async def execute_child_workflow(
-        self,
-        workflow_type: str,
-        result_type: Type[ResultType],
-        *args: Any,
-        **kwargs: Unpack[ChildWorkflowOptions],
-    ) -> ResultType:
-        future = await self.start_child_workflow(
-            workflow_type, result_type, *args, **kwargs
-        )
-        return await future
-
-    async def start_child_workflow(
+    def execute_child_workflow(
         self,
         workflow_type: str,
         result_type: Type[ResultType],
@@ -245,7 +279,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         **kwargs: Unpack[ChildWorkflowOptions],
     ) -> ChildWorkflowFuture[ResultType]:
         outbound = self.inject_propagated_headers()
-        return await self._env._start_child_workflow(
+        return self._env._execute_child_workflow(
             workflow_type,
             result_type,
             args,
@@ -254,19 +288,17 @@ class _InMemoryWorkflowContext(WorkflowContext):
             headers=outbound,
         )
 
-    async def start_timer(self, duration: timedelta) -> None:
+    def start_timer(self, duration: timedelta) -> WorkflowFuture[None]:
         if duration.total_seconds() <= 0:
-            return None
-        # Suspend on a heap-backed future instead of advancing the clock inline.
+            return _resolved()
+        # Return a heap-backed future instead of advancing the clock inline.
         # The driver fires it (advancing the virtual clock to its deadline) once
         # the workflow has no other progress to make. See the module docstring.
-        future = self._env._schedule_timer(duration)
-        await future
-        return None
+        return self._env._schedule_timer(duration)
 
-    async def wait_condition(self, predicate: Callable[[], bool]) -> None:
+    def wait_condition(self, predicate: Callable[[], bool]) -> WorkflowFuture[None]:
         loop = cast(DeterministicEventLoop, get_running_loop())
-        await loop.create_waiter(predicate)
+        return loop.create_waiter(predicate)
 
     def side_effect(
         self,
@@ -331,30 +363,29 @@ class _InMemoryWorkflowContext(WorkflowContext):
         merged.update(attributes)
         self._info = replace(self._info, search_attributes=merged)
 
-    async def signal_child_workflow(
+    def signal_child_workflow(
         self,
         child_workflow_id: str,
         signal_name: str,
         *args: Any,
-    ) -> None:
+    ) -> WorkflowFuture[None]:
         """Signal a child workflow by its workflow id.
 
         Routing is identical to :meth:`signal_external_workflow`: the signal is
         buffered and delivered to the matching execution after the current
-        decision finishes. Note that child workflows started via
-        ``start_child_workflow`` run inline to completion, so they can only be
-        signaled while still running.
+        decision finishes.
         """
         self._env._enqueue_signal(child_workflow_id, signal_name, args)
+        return _resolved()
 
-    async def signal_external_workflow(
+    def signal_external_workflow(
         self,
         workflow_id: str,
         signal_name: str,
         *args: Any,
         run_id: str = "",
         domain: str = "",
-    ) -> None:
+    ) -> WorkflowFuture[None]:
         """Signal another workflow running in this environment.
 
         The signal is buffered and delivered to the target execution after the
@@ -363,6 +394,7 @@ class _InMemoryWorkflowContext(WorkflowContext):
         dropped, matching the behavior of signaling a closed workflow.
         """
         self._env._enqueue_signal(workflow_id, signal_name, args)
+        return _resolved()
 
     def is_cancel_requested(self) -> bool:
         return False
@@ -717,7 +749,7 @@ class TestWorkflowEnvironment:
     # Internal helpers used by MockClient / contexts
     # ------------------------------------------------------------------
 
-    def _schedule_timer(self, duration: timedelta) -> "Future[None]":
+    def _schedule_timer(self, duration: timedelta) -> WorkflowFuture[None]:
         """Register a timer on the currently-driven execution's heap.
 
         Returns a future that the driver resolves once the virtual clock
@@ -727,7 +759,7 @@ class TestWorkflowEnvironment:
         if execution is None:
             raise RuntimeError("start_timer called outside of a workflow decision")
         loop = cast(DeterministicEventLoop, get_running_loop())
-        future: "Future[None]" = loop.create_future()
+        future = WorkflowFuture[None](loop=loop)
         execution.add_timer(self._now + duration, future)
         return future
 
@@ -908,7 +940,7 @@ class TestWorkflowEnvironment:
                 result = await result
         return result
 
-    async def _start_child_workflow(
+    def _execute_child_workflow(
         self,
         workflow_type: str,
         result_type: Type[ResultType],
@@ -935,19 +967,26 @@ class TestWorkflowEnvironment:
         )
 
         input_payload = self._data_converter.to_data(list(args))
-        result_payload = await self._run_workflow_coro(
-            definition, child_info, input_payload, headers
-        )
 
-        loop = cast(DeterministicEventLoop, get_running_loop())
-        result_future: "Future[Payload]" = loop.create_future()
-        result_future.set_result(result_payload)
-        return ChildWorkflowFutureImpl(
-            workflow_id=child_id,
-            run_id=child_run_id,
-            result_future=result_future,
-            result_type=result_type,
-            data_converter=self._data_converter,
+        async def _run() -> ResultType:
+            result_payload = await self._run_workflow_coro(
+                definition, child_info, input_payload, headers
+            )
+            return cast(
+                ResultType,
+                self._data_converter.from_data(result_payload, [result_type])[0],
+            )
+
+        loop = get_running_loop()
+        execution = WorkflowFuture[WorkflowExecution](loop=loop)
+        execution.set_result(
+            WorkflowExecution(workflow_id=child_id, run_id=child_run_id)
+        )
+        return _drive_future(
+            _run(),
+            ChildWorkflowFutureImpl[ResultType](
+                loop, workflow_id=child_id, execution=execution
+            ),
         )
 
     async def _run_workflow_coro(

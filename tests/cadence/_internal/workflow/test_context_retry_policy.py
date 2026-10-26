@@ -1,5 +1,5 @@
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from google.protobuf.duration_pb2 import Duration
@@ -15,9 +15,6 @@ from cadence.workflow import WorkflowInfo
 @pytest.mark.asyncio
 async def test_execute_activity_passes_retry_policy_to_schedule():
     dm = MagicMock()
-    dm.schedule_activity = AsyncMock(
-        return_value=DefaultDataConverter().to_data(["result"])
-    )
 
     info = WorkflowInfo(
         workflow_type="Wf",
@@ -29,7 +26,7 @@ async def test_execute_activity_passes_retry_policy_to_schedule():
     )
     ctx = Context(info, dm)
 
-    await ctx.execute_activity(
+    ctx.execute_activity(
         "Act",
         str,
         retry_policy={
@@ -39,7 +36,7 @@ async def test_execute_activity_passes_retry_policy_to_schedule():
         },
     )
 
-    dm.schedule_activity.assert_awaited_once()
+    dm.schedule_activity.assert_called_once()
     attrs: ScheduleActivityTaskDecisionAttributes = dm.schedule_activity.call_args[0][0]
     assert attrs.activity_type == ActivityType(name="Act")
     assert attrs.domain == "domain"

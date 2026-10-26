@@ -8,6 +8,8 @@ from typing import Any, Callable, Protocol, TypeVar
 from cadence.api.v1 import (
     decision_pb2 as decision,
 )
+from cadence.api.v1.common_pb2 import Payload
+from cadence.workflow import WorkflowFuture
 
 
 class DecisionState(Enum):
@@ -106,18 +108,36 @@ class BaseDecisionStateMachine(DecisionStateMachine):
 
 T = TypeVar("T")
 CancelFn = Callable[[str | None], bool]
+ConverterFn = Callable[[Payload], T]
 
 
-class DecisionFuture(asyncio.Future[T]):
+class DecisionFuture(WorkflowFuture[T]):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop | None = None,
         request_cancel: CancelFn | None = None,
+        converter: ConverterFn[T] | None = None,
     ) -> None:
         super().__init__(loop=loop)
         if request_cancel is None:
             request_cancel = self.force_cancel
         self._request_cancel = request_cancel
+        self._converter = converter
+
+    def complete_with_payload(self, payload: Payload) -> None:
+        # Local cancellation may have already resolved this future; see BaseDecisionStateMachine._resolve.
+        if self.done():
+            return
+        if self._converter:
+            try:
+                result = self._converter(payload)
+            except Exception as e:
+                self.set_exception(e)
+            else:
+                self.set_result(result)
+        else:
+            # type ignore because we don't know T, but it should be the caller's responsibility to only call this if T is Payload
+            self.set_result(payload)  # type: ignore
 
     def force_cancel(self, message: str | None = None) -> bool:
         return super().cancel(message)

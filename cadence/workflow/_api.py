@@ -17,27 +17,28 @@ from cadence.workflow._types import (
     ChildWorkflowOptions,
     ResultType,
     SearchAttributeType,
+    WorkflowFuture,
 )
 
 
-async def execute_activity(
+def execute_activity(
     activity: str,
     result_type: Type[ResultType],
     *args: Any,
     **kwargs: Unpack[ActivityOptions],
-) -> ResultType:
-    return await WorkflowContext.get().execute_activity(
+) -> WorkflowFuture[ResultType]:
+    return WorkflowContext.get().execute_activity(
         activity, result_type, *args, **kwargs
     )
 
 
-async def execute_child_workflow(
+def execute_child_workflow(
     workflow_type: str,
     result_type: Type[ResultType],
     *args: Any,
     **kwargs: Unpack[ChildWorkflowOptions],
-) -> ResultType:
-    return await WorkflowContext.get().execute_child_workflow(
+) -> ChildWorkflowFuture[ResultType]:
+    return WorkflowContext.get().execute_child_workflow(
         workflow_type, result_type, *args, **kwargs
     )
 
@@ -47,19 +48,29 @@ async def start_child_workflow(
     result_type: Type[ResultType],
     *args: Any,
     **kwargs: Unpack[ChildWorkflowOptions],
-) -> "ChildWorkflowFuture[ResultType]":
-    return await WorkflowContext.get().start_child_workflow(
-        workflow_type, result_type, *args, **kwargs
-    )
+) -> ChildWorkflowFuture[ResultType]:
+    """Start a child workflow and wait until it has started.
+
+    Returns the same future as execute_child_workflow, with its execution resolved.
+    """
+    future = execute_child_workflow(workflow_type, result_type, *args, **kwargs)
+    try:
+        await future.execution
+    except Exception:
+        # The handle fails with the same start error, but the caller never receives it.
+        if future.done() and not future.cancelled():
+            future.exception()
+        raise
+    return future
 
 
-async def signal_external_workflow(
+def signal_external_workflow(
     workflow_id: str,
     signal_name: str,
     *args: Any,
     run_id: str = "",
     domain: str = "",
-) -> None:
+) -> WorkflowFuture[None]:
     """Send a signal to an external workflow execution.
 
     Args:
@@ -69,23 +80,24 @@ async def signal_external_workflow(
         run_id: Target run ID. Empty string targets the currently running execution.
         domain: Target domain. Empty string defaults to the current workflow's domain.
     """
-    await WorkflowContext.get().signal_external_workflow(
+    return WorkflowContext.get().signal_external_workflow(
         workflow_id, signal_name, *args, run_id=run_id, domain=domain
     )
 
 
-async def sleep(duration: timedelta) -> None:
-    return await WorkflowContext.get().start_timer(duration)
+def sleep(duration: timedelta) -> WorkflowFuture[None]:
+    return WorkflowContext.get().start_timer(duration)
 
 
-async def wait_condition(predicate: Callable[[], bool]) -> None:
-    """Block until predicate returns True.
+def wait_condition(predicate: Callable[[], bool]) -> WorkflowFuture[None]:
+    """Return a future that resolves once predicate returns True.
 
     The predicate is re-evaluated after any workflow state change
     (signal delivery, activity completion, timer firing).
-    If the predicate is already True, returns immediately.
+    If the predicate is already True, the future is already resolved.
+    Cancelling the future stops the predicate from being evaluated.
     """
-    await WorkflowContext.get().wait_condition(predicate)
+    return WorkflowContext.get().wait_condition(predicate)
 
 
 def side_effect(

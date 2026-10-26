@@ -21,27 +21,36 @@ from cadence._internal.workflow.statemachine.signal_external_workflow_state_mach
 )
 from cadence.api.v1 import history, decision
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution, WorkflowType
+from cadence.data_converter import DefaultDataConverter
+
+result = "success!"
+result_payload = Payload(data=b'"success!"')
+converter = DefaultDataConverter()
 
 
 async def test_activity_dispatch():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
     decisions.handle_history_event(activity_scheduled(1, "0"))
     decisions.handle_history_event(activity_started(2, 1))
-    decisions.handle_history_event(activity_completed(3, 1, Payload(data=b"completed")))
+    decisions.handle_history_event(activity_completed(3, 1, result_payload))
 
     assert activity_result.done() is True
-    assert activity_result.result() == Payload(data=b"completed")
+    assert activity_result.result() == result
 
 
 async def test_simple_cancellation():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
     activity_result.cancel()
 
@@ -53,7 +62,9 @@ async def test_cancellation_not_immediate():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
     decisions.handle_history_event(activity_scheduled(1, "0"))
     cancelled = activity_result.cancel()
@@ -67,7 +78,9 @@ async def test_cancellation_with_message_cancels_future_immediately():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
     decisions.handle_history_event(activity_scheduled(1, "0"))
     cancelled = activity_result.cancel("workflow cancelled")
@@ -79,11 +92,43 @@ async def test_cancellation_with_message_cancels_future_immediately():
         activity_result.result()
 
 
+async def test_completion_after_cancellation_with_message_is_ignored():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    activity_result = decisions.schedule_activity(
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
+    )
+    decisions.handle_history_event(activity_scheduled(1, "0"))
+    activity_result.cancel("workflow cancelled")
+    decisions.handle_history_event(activity_completed(2, 1, result_payload))
+
+    assert activity_result.cancelled() is True
+
+
+async def test_activity_result_conversion_failure():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    activity_result = decisions.schedule_activity(
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        int,
+    )
+    decisions.handle_history_event(activity_scheduled(1, "0"))
+    decisions.handle_history_event(activity_completed(2, 1, result_payload))
+
+    with pytest.raises(RuntimeError, match="Failed to convert result"):
+        activity_result.result()
+
+
 async def test_cancellation_completed():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity_result = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
     decisions.handle_history_event(activity_scheduled(1, "0"))
     activity_result.cancel()
@@ -114,10 +159,14 @@ async def test_collect_decisions():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity1 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
     activity2 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
 
     # Order matters
@@ -140,7 +189,9 @@ async def test_collect_decisions():
 async def test_collect_decisions_ignore_empty():
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    _ = decisions.schedule_activity(decision.ScheduleActivityTaskDecisionAttributes())
+    _ = decisions.schedule_activity(
+        decision.ScheduleActivityTaskDecisionAttributes(), converter, str
+    )
     decisions.handle_history_event(activity_scheduled(1, "0"))
 
     assert decisions.collect_pending_decisions() == []
@@ -180,10 +231,14 @@ async def test_collection_decisions_reordering():
     decisions = DecisionManager(asyncio.get_event_loop())
 
     activity1 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
     activity2 = decisions.schedule_activity(
-        decision.ScheduleActivityTaskDecisionAttributes()
+        decision.ScheduleActivityTaskDecisionAttributes(),
+        converter,
+        str,
     )
 
     assert decisions.collect_pending_decisions() == [
@@ -230,7 +285,9 @@ async def test_record_marker_collects_in_workflow_order():
 
     decisions.start_timer(decision.StartTimerDecisionAttributes())
     recorded = decisions.record_marker(marker_attrs)
-    decisions.schedule_activity(decision.ScheduleActivityTaskDecisionAttributes())
+    decisions.schedule_activity(
+        decision.ScheduleActivityTaskDecisionAttributes(), converter, str
+    )
 
     assert recorded == Payload(data=b"marker")
     assert decisions.collect_pending_decisions() == [
@@ -391,7 +448,9 @@ async def test_mutable_side_effect_does_not_shift_other_decision_ids_on_replay()
         )
         assert has_history_update is True
         decisions.record_mutable_side_effect("config", access_count, Payload())
-        decisions.schedule_activity(decision.ScheduleActivityTaskDecisionAttributes())
+        decisions.schedule_activity(
+            decision.ScheduleActivityTaskDecisionAttributes(), converter, str
+        )
 
 
 async def test_mutable_side_effect_replay_applies_marker_at_matching_access_count():
@@ -483,20 +542,23 @@ async def test_replayed_marker_details_come_from_history_not_current_value():
 async def test_child_workflow_dispatch():
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    execution, result = decisions.schedule_child_workflow(
+    result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
         ),
+        converter,
+        str,
         parent_workflow_run_id="parent-run",
     )
+    execution = result.execution
 
     decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
     decisions.handle_history_event(
         child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
     )
     decisions.handle_history_event(
-        child_wf_completed(3, started_event_id=1, result=Payload(data=b"done"))
+        child_wf_completed(3, started_event_id=1, result=result_payload)
     )
 
     assert execution.done() is True
@@ -504,7 +566,47 @@ async def test_child_workflow_dispatch():
         workflow_id="child-wf-1", run_id="run-1"
     )
     assert result.done() is True
-    assert result.result() == Payload(data=b"done")
+    assert result.result() == "success!"
+
+
+async def test_child_workflow_id_available_before_start():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+        converter,
+        str,
+        parent_workflow_run_id="parent-run",
+    )
+
+    assert result.workflow_id == "parent-run_0"
+    assert result.execution.done() is False
+
+
+async def test_child_workflow_result_conversion_failure():
+    decisions = DecisionManager(asyncio.get_event_loop())
+
+    result = decisions.schedule_child_workflow(
+        decision.StartChildWorkflowExecutionDecisionAttributes(
+            workflow_id="child-wf-1",
+            workflow_type=WorkflowType(name="MyWorkflow"),
+        ),
+        converter,
+        int,
+        parent_workflow_run_id="parent-run",
+    )
+    decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
+    decisions.handle_history_event(
+        child_wf_started(2, started_event_id=1, wf_id="child-wf-1", run_id="run-1")
+    )
+    decisions.handle_history_event(
+        child_wf_completed(3, started_event_id=1, result=result_payload)
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to convert result"):
+        result.result()
 
 
 async def test_schedule_child_workflow_generates_workflow_id():
@@ -514,8 +616,8 @@ async def test_schedule_child_workflow_generates_workflow_id():
         workflow_id="",
         workflow_type=WorkflowType(name="MyWorkflow"),
     )
-    _execution, result = decisions.schedule_child_workflow(
-        attrs, parent_workflow_run_id="parent-run-xyz"
+    result = decisions.schedule_child_workflow(
+        attrs, converter, str, parent_workflow_run_id="parent-run-xyz"
     )
 
     assert attrs.workflow_id == "parent-run-xyz_0"
@@ -525,22 +627,25 @@ async def test_schedule_child_workflow_generates_workflow_id():
         child_wf_started(2, started_event_id=1, wf_id=attrs.workflow_id, run_id="run-1")
     )
     decisions.handle_history_event(
-        child_wf_completed(3, started_event_id=1, result=Payload(data=b"done"))
+        child_wf_completed(3, started_event_id=1, result=result_payload)
     )
 
-    assert result.result() == Payload(data=b"done")
+    assert result.result() == "success!"
 
 
 async def test_child_workflow_initiation_failed_dispatch():
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    execution, result = decisions.schedule_child_workflow(
+    result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
         ),
+        converter,
+        str,
         parent_workflow_run_id="parent-run",
     )
+    execution = result.execution
 
     decisions.handle_history_event(child_wf_initiated(1, "child-wf-1"))
     decisions.handle_history_event(
@@ -563,11 +668,13 @@ async def test_child_workflow_initiation_failed_dispatch():
 async def test_child_workflow_cancel_dispatch():
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    _execution, result = decisions.schedule_child_workflow(
+    result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
         ),
+        converter,
+        str,
         parent_workflow_run_id="parent-run",
     )
 
@@ -607,11 +714,13 @@ async def test_child_workflow_errors_are_child_workflow_error():
     """All child workflow errors share a common base class."""
     decisions = DecisionManager(asyncio.get_event_loop())
 
-    _execution, result = decisions.schedule_child_workflow(
+    result = decisions.schedule_child_workflow(
         decision.StartChildWorkflowExecutionDecisionAttributes(
             workflow_id="child-wf-1",
             workflow_type=WorkflowType(name="MyWorkflow"),
         ),
+        converter,
+        str,
         parent_workflow_run_id="parent-run",
     )
 

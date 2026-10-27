@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from types import TracebackType
 from typing import Unpack, cast
 
 from cadence.client import Client
@@ -21,9 +22,21 @@ class Worker:
         registry: Registry,
         **kwargs: Unpack[WorkerOptions],
     ) -> None:
-        self._tasks: list[asyncio.Task[None]] = []
         self._client = client
         self._task_list = task_list
+
+        # Prevents a Worker instance from being started more than once.
+        self._started = False
+
+        # fields used by run, close
+        # run() exclusively owns, cancels, and joins internal worker tasks.
+        # close() only sends a cooperative request and waits for acknowledgment.
+        self._close_requested = asyncio.Event()
+        self._close_complete = asyncio.Event()
+
+        # fields used by context manager
+        self._context_entered = False
+        self._context_task_group: asyncio.TaskGroup  # TODO: TaskGroup leaks owner cancel count on Py3.11/3.12 when run() fails in exit
 
         options = WorkerOptions(**kwargs)
         _validate_and_copy_defaults(client, task_list, options)
@@ -40,27 +53,97 @@ class Worker:
         return self._task_list
 
     async def run(self) -> None:
+        """Run until close is requested or an internal worker fails."""
+        if self._started:
+            raise RuntimeError("Worker already started")
+        self._started = True
+
+        worker_tasks: list[tuple[str, asyncio.Task[None]]] = []
         if not self._options["disable_workflow_worker"]:
-            self._tasks.append(asyncio.create_task(self._decision_worker.run()))
+            worker_tasks.append(
+                (
+                    "Workflow",
+                    asyncio.create_task(self._decision_worker.run()),
+                )
+            )
         if not self._options["disable_activity_worker"]:
-            self._tasks.append(asyncio.create_task(self._activity_worker.run()))
+            worker_tasks.append(
+                (
+                    "Activity",
+                    asyncio.create_task(self._activity_worker.run()),
+                )
+            )
+
+        async def wait_for_close() -> None:
+            await self._close_requested.wait()
+
+        close_task = asyncio.create_task(wait_for_close())
+        tasks = [close_task, *(task for _, task in worker_tasks)]
+
+        try:
+            done, _ = await asyncio.wait(
+                tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for worker_name, task in worker_tasks:
+                if task not in done:
+                    continue
+                if task.cancelled():
+                    raise RuntimeError(f"{worker_name} worker was cancelled")
+                error = task.exception()
+                if error is not None:
+                    raise error
+                raise RuntimeError(f"{worker_name} worker exited unexpectedly")
+        finally:
+            self._close_requested.set()
+            for task in tasks:
+                task.cancel()
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in results[1:]:
+                    if isinstance(result, BaseException) and not isinstance(
+                        result, asyncio.CancelledError
+                    ):
+                        logger.error("Worker task failed", exc_info=result)
+            finally:
+                self._close_complete.set()
 
     async def close(self) -> None:
-        for task in self._tasks:
-            task.cancel()
-        results = await asyncio.gather(*self._tasks, return_exceptions=True)
-        for result in results:
-            if isinstance(result, BaseException) and not isinstance(
-                result, asyncio.CancelledError
-            ):
-                logger.error("Worker task failed", exc_info=result)
+        """Request close and wait for the worker to finish."""
+        self._close_requested.set()
+        if self._started:
+            await self._close_complete.wait()
 
     async def __aenter__(self) -> "Worker":
-        await self.run()
+        if self._context_entered or self._started:
+            raise RuntimeError("Worker already started")
+        self._context_entered = True
+
+        self._context_task_group = asyncio.TaskGroup()
+        await self._context_task_group.__aenter__()
+        self._context_task_group.create_task(self.run())
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        await self.close()
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
+    ) -> None:
+        self._close_requested.set()
+        try:
+            await self._context_task_group.__aexit__(None, None, None)
+        except BaseExceptionGroup as errors:
+            # If the context body raised an exception, do not raise the worker error here.
+            if exc_type is not None and exc_type is not asyncio.CancelledError:
+                return
+            # run() is the task group's only child, so expose its original error.
+            if len(errors.exceptions) == 1:
+                raise errors.exceptions[0]
+            raise RuntimeError(
+                f"Worker task group unexpectedly produced {len(errors.exceptions)} errors"
+            ) from errors
 
 
 def _validate_and_copy_defaults(

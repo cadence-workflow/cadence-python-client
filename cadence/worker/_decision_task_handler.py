@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 from typing import Optional, Sequence
 
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.context import header_to_dict
 from cadence._internal.workflow.memo import memo_from_proto
@@ -216,7 +217,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 workflow_events,
                 task.query if is_query_task else None,
             )
-        except Exception:
+        except (Exception, FatalDecisionError):
             emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
             emitter.counter(DECISION_TASK_PANIC_COUNTER)
             raise
@@ -251,7 +252,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
         )
 
     async def handle_task_failure(
-        self, task: PollForDecisionTaskResponse, error: Exception
+        self, task: PollForDecisionTaskResponse, error: BaseException
     ) -> None:
         """
         Handle decision task processing failure.

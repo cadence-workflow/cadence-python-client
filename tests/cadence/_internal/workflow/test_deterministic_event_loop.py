@@ -1,6 +1,12 @@
-import pytest
 import asyncio
-from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+
+import pytest
+from cadence._internal.workflow.deterministic_event_loop import (
+    DecisionAbortedError,
+    DeterministicEventLoop,
+    FatalDecisionError,
+    fail_decision,
+)
 
 
 async def coro_append(results: list[int], i: int):
@@ -188,3 +194,67 @@ class TestDeterministicEventLoop:
             assert len(calls_p2) >= 2
         finally:
             self.loop._run_forever_cleanup()
+
+    def test_fail_decision_raises_after_loop_yields(self):
+        results: list[str] = []
+
+        async def swallow_fatal():
+            try:
+                fail_decision(FatalDecisionError("fatal"))
+            except BaseException:
+                results.append("caught")
+            await asyncio.sleep(0)
+            results.append("resumed")
+
+        self.loop.create_task(swallow_fatal())
+        self.loop.call_soon(results.append, "other")
+
+        with pytest.raises(FatalDecisionError, match="fatal"):
+            self.loop.run_until_yield()
+        assert results == ["caught", "other", "resumed"]
+
+        # The failure is kept, so later runs raise it again.
+        with pytest.raises(FatalDecisionError, match="fatal"):
+            self.loop.run_until_yield()
+        assert results == ["caught", "other", "resumed"]
+
+    def test_fail_decision_from_wait_condition_predicate(self):
+        waiters = []
+
+        def predicate() -> bool:
+            fail_decision(FatalDecisionError("fatal"))
+
+        async def register():
+            # Not awaited, so the failure only surfaces through the loop.
+            waiters.append(self.loop.create_waiter(predicate))
+
+        self.loop.create_task(register())
+        with pytest.raises(FatalDecisionError, match="fatal"):
+            self.loop.run_until_yield()
+        waiters[0].exception()
+
+    def test_abort_after_fatal_error_keeps_original_context(self):
+        original = FatalDecisionError("fatal")
+        aborted: list[BaseException] = []
+
+        async def keeps_going():
+            try:
+                fail_decision(original)
+            except FatalDecisionError:
+                pass
+            try:
+                raise KeyError("unrelated")
+            except KeyError:
+                try:
+                    self.loop.abort_if_decision_failed()
+                except DecisionAbortedError as e:
+                    aborted.append(e)
+
+        self.loop.create_task(keeps_going())
+        with pytest.raises(FatalDecisionError) as exc_info:
+            self.loop.run_until_yield()
+
+        assert exc_info.value is original
+        assert len(aborted) == 1
+        assert aborted[0].__cause__ is original
+        assert original.__context__ is None

@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TypeVar, Generic
 
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class BaseTaskHandler(ABC, Generic[T]):
             # Handle the task implementation
             await self._handle_task_implementation(task)
 
-        except Exception as e:
+        except (Exception, FatalDecisionError) as e:
             logger.exception(f"Error handling task: {e}")
             await self.handle_task_failure(task, e)
 
@@ -56,7 +57,7 @@ class BaseTaskHandler(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def handle_task_failure(self, task: T, error: Exception) -> None:
+    async def handle_task_failure(self, task: T, error: BaseException) -> None:
         """
         Handle task processing failure.
 

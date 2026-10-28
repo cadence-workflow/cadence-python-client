@@ -63,7 +63,10 @@ from typing import (
 
 from cadence._internal.activity._definition import BaseDefinition
 from cadence._internal.workflow.child_workflow_future import ChildWorkflowFutureImpl
-from cadence._internal.workflow.deterministic_event_loop import DeterministicEventLoop
+from cadence._internal.workflow.deterministic_event_loop import (
+    DeterministicEventLoop,
+    FatalDecisionError,
+)
 from cadence._internal.workflow.search_attributes import search_attributes_to_proto
 from cadence._internal.workflow.versioning import (
     change_version_search_attributes,
@@ -424,6 +427,9 @@ class _Execution:
             self._run_until_settled()
 
     def run_signal(self, name: str, payload: Payload) -> None:
+        if isinstance(self.error, FatalDecisionError):
+            # The decision has already failed.
+            return
         with self._driving():
             self._dispatch_signal(name, payload)
             self._run_until_settled()
@@ -460,16 +466,21 @@ class _Execution:
         again. We stop once the workflow completes or is blocked on something
         other than a timer (e.g. an unsatisfied ``wait_condition``).
         """
-        self._instance.run_until_yield()
-        while not self._instance.is_done() and self._timers:
-            deadline, _seq, future = heapq.heappop(self._timers)
-            if future.done():
-                # Timer was cancelled (or already resolved); a cancelled timer
-                # does not consume virtual time, so don't advance the clock.
-                continue
-            self._env._advance_clock_to(deadline)
-            future.set_result(None)
+        try:
             self._instance.run_until_yield()
+            while not self._instance.is_done() and self._timers:
+                deadline, _seq, future = heapq.heappop(self._timers)
+                if future.done():
+                    # Timer was cancelled (or already resolved); a cancelled timer
+                    # does not consume virtual time, so don't advance the clock.
+                    continue
+                self._env._advance_clock_to(deadline)
+                future.set_result(None)
+                self._instance.run_until_yield()
+        except FatalDecisionError as exc:
+            self.completed = True
+            self.error = exc
+            return
         self._collect_outcome()
 
     def run_query(self, query_type: str, args: Payload) -> Payload:

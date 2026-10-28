@@ -1,10 +1,12 @@
-import asyncio
 from unittest.mock import MagicMock
 
 import pytest
 
 from cadence._internal.workflow.context import Context, _activate_workflow_context
-from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.deterministic_event_loop import (
+    DeterministicEventLoop,
+    FatalDecisionError,
+)
 from cadence._internal.workflow.statemachine.decision_state_machine import DecisionState
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
 from cadence._internal.workflow.statemachine.marker_state_machine import (
@@ -400,7 +402,7 @@ def test_public_get_version_dispatches_through_context():
 
 
 async def test_version_marker_has_stable_id_header_and_does_not_consume_sequence():
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     details = encode_version_marker_details(DEFAULT_VERSION)
 
     manager.version_marker_result("change", details)
@@ -418,7 +420,7 @@ async def test_version_marker_has_stable_id_header_and_does_not_consume_sequence
 
 
 async def test_replay_preloads_python_version_marker_and_completes_its_state_machine():
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     details = DefaultDataConverter().to_data([2])
     marker_event = history.HistoryEvent(
         event_id=1,
@@ -439,7 +441,7 @@ async def test_replay_preloads_python_version_marker_and_completes_its_state_mac
 
 
 async def test_replay_does_not_recreate_consumed_version_marker_in_later_batch():
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     details = DefaultDataConverter().to_data([2])
     marker_event = history.HistoryEvent(
         event_id=1,
@@ -464,7 +466,7 @@ async def test_replay_does_not_recreate_consumed_version_marker_in_later_batch()
 
 
 async def test_markerless_replay_default_is_replaced_by_later_version_marker():
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     context = Context(_info(), manager)
     context.set_replay_mode(True)
     details = DefaultDataConverter().to_data([2])
@@ -493,7 +495,7 @@ async def test_markerless_replay_default_is_replaced_by_later_version_marker():
 
 
 async def test_replay_rejects_conflicting_recorded_version_markers():
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     first_details = encode_version_marker_details(2)
     second_details = encode_version_marker_details(3)
     first_marker = history.HistoryEvent(
@@ -527,7 +529,7 @@ async def test_replay_rejects_conflicting_recorded_version_markers():
 
 
 async def test_version_markers_coexist_with_existing_markers_without_shifting_ids():
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     details = DefaultDataConverter().to_data([2])
     version_event = history.HistoryEvent(
         event_id=1,
@@ -564,7 +566,7 @@ async def test_version_markers_coexist_with_existing_markers_without_shifting_id
 
 
 async def test_replay_ignores_foreign_version_marker_format():
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     context = Context(_info(), manager)
     context.set_replay_mode(True)
     foreign_marker = history.HistoryEvent(
@@ -587,7 +589,7 @@ async def test_replay_ignores_foreign_version_marker_format():
 async def test_replay_rejects_malformed_python_version_marker_header(
     header_data: bytes,
 ):
-    manager = DecisionManager(asyncio.get_event_loop())
+    manager = DecisionManager(DeterministicEventLoop())
     malformed_marker = history.HistoryEvent(
         event_id=1,
         marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(

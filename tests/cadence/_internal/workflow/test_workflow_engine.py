@@ -19,6 +19,11 @@ from cadence.api.v1.history_pb2 import (
     WorkflowExecutionCompletedEventAttributes,
     WorkflowExecutionStartedEventAttributes,
 )
+from cadence._internal.workflow.deterministic_event_loop import (
+    DecisionAbortedError,
+    FatalDecisionError,
+    fail_decision,
+)
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence import workflow
 from cadence.data_converter import DefaultDataConverter
@@ -135,6 +140,33 @@ class UpsertThenWaitWorkflow:
         workflow.upsert_search_attributes({"CustomIntField": 1})
         await workflow.wait_condition(lambda: False)
         return "unreachable"
+
+
+class TaskGroupFatalWorkflow:
+    @workflow.run
+    async def run(self):
+        async def fail():
+            fail_decision(FatalDecisionError("fatal"))
+
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(fail())
+        return "unreachable"
+
+
+class ScheduleAfterFatalWorkflow:
+    attempts: list[object] = []
+
+    @workflow.run
+    async def run(self):
+        try:
+            fail_decision(FatalDecisionError("fatal"))
+        except BaseException:
+            pass
+        try:
+            workflow.upsert_search_attributes({"CustomIntField": 1})
+        except BaseException as e:
+            self.attempts.append(type(e))
+        await workflow.wait_condition(lambda: False)
 
 
 class RewritingUpsertInterceptor(WorkflowInterceptor):
@@ -529,6 +561,30 @@ class TestWorkflowEngine:
             0
         ].upsert_workflow_search_attributes_decision_attributes.search_attributes.indexed_fields
         assert indexed["CustomIntField"].data == b"2"
+
+    def test_fatal_decision_error_in_task_group_fails_decision(self):
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                TaskGroupFatalWorkflow,
+                WorkflowDefinitionOptions(name="task_group_fatal_workflow"),
+            )
+        )
+
+        with pytest.raises(FatalDecisionError, match="fatal"):
+            workflow_engine.process_decision(_start_events())
+
+    def test_caught_fatal_decision_error_blocks_new_decisions(self):
+        ScheduleAfterFatalWorkflow.attempts = []
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                ScheduleAfterFatalWorkflow,
+                WorkflowDefinitionOptions(name="schedule_after_fatal_workflow"),
+            )
+        )
+
+        with pytest.raises(FatalDecisionError, match="fatal"):
+            workflow_engine.process_decision(_start_events())
+        assert ScheduleAfterFatalWorkflow.attempts == [DecisionAbortedError]
 
     def test_upsert_search_attributes_replay_does_not_reemit(self):
         workflow_engine = create_workflow_engine(

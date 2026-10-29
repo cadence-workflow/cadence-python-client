@@ -58,7 +58,7 @@ async def create_test_domain(client_options: ClientOptions) -> None:
     helper = CadenceHelper(client_options, "create_test_domain", "")
     async with helper.client() as client:
         logging.info("Connecting to service...")
-        # It takes around a minute for the Cadence server to start up with Cassandra
+        # Allow time for the Cadence server to start up and set up its schema
         async with asyncio.timeout(120):
             await client.ready()
 

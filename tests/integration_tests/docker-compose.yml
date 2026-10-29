@@ -1,20 +1,6 @@
 version: "3.5"
 
 services:
-  cassandra:
-    image: cassandra:4.1.3
-    ports:
-      - "9042:9042"
-    networks:
-      services-network:
-        aliases:
-          - cassandra
-    healthcheck:
-      test: ["CMD", "cqlsh", "-u cassandra", "-p cassandra" ,"-e describe keyspaces"]
-      interval: 15s
-      timeout: 30s
-      retries: 10
-
   statsd:
     image: hopsoft/graphite-statsd
     ports:
@@ -36,12 +22,10 @@ services:
       - "7935:7935"
       - "7939:7939"
     environment:
-      - "CASSANDRA_SEEDS=cassandra"
+      - "DB=sqlite"
       - "STATSD_ENDPOINT=statsd:8125"
       - "DYNAMIC_CONFIG_FILE_PATH=dynamicconfig/development.yaml"
     depends_on:
-      cassandra:
-        condition: service_healthy
       statsd:
         condition: service_started
     networks:

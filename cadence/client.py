@@ -40,6 +40,7 @@ from cadence.api.v1.service_schedule_pb2 import (
     UpdateScheduleRequest,
 )
 from cadence.api.v1.service_schedule_pb2_grpc import ScheduleAPIStub
+from cadence.api.v1.service_visibility_pb2_grpc import VisibilityAPIStub
 from cadence.api.v1.service_worker_pb2_grpc import WorkerAPIStub
 import grpc.aio
 from grpc.aio import Channel, ClientInterceptor
@@ -211,6 +212,7 @@ class Client:
         self._domain_stub = DomainAPIStub(self._channel)
         self._workflow_stub = WorkflowAPIStub(self._channel)
         self._schedule_stub = ScheduleAPIStub(self._channel)
+        self._visibility_stub = VisibilityAPIStub(self._channel)
 
     @property
     def data_converter(self) -> DataConverter:
@@ -239,6 +241,10 @@ class Client:
     @property
     def schedule_stub(self) -> ScheduleAPIStub:
         return self._schedule_stub
+
+    @property
+    def visibility_stub(self) -> VisibilityAPIStub:
+        return self._visibility_stub
 
     @property
     def metrics_emitter(self) -> MetricsEmitter:

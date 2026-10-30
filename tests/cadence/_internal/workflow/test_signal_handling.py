@@ -24,7 +24,6 @@ from cadence._internal.workflow.deterministic_event_loop import (
 )
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence.data_converter import DefaultDataConverter
-from cadence.error import SignalFailure
 from cadence.workflow import WorkflowInfo, WorkflowDefinition, WorkflowDefinitionOptions
 
 
@@ -158,6 +157,23 @@ class FailingSignalWorkflow:
 
     @workflow.signal(name="bad_signal")
     def handle_signal(self, value: str):
+        raise ValueError(f"handler failed on: {value}")
+
+
+class FailingSignalThenActivityWorkflow:
+    def __init__(self):
+        self.signaled = False
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: self.signaled)
+        return await workflow.execute_activity(
+            "act", str, schedule_to_close_timeout=timedelta(seconds=10)
+        )
+
+    @workflow.signal(name="bad_signal")
+    def handle_signal(self, value: str):
+        self.signaled = True
         raise ValueError(f"handler failed on: {value}")
 
 
@@ -660,11 +676,40 @@ class TestSignalDelivery:
             ),
         ]
 
-        with pytest.raises(SignalFailure) as err:
+        with pytest.raises(FatalDecisionError, match="bad_signal") as err:
             engine.process_decision(events)
 
-        assert err.value.signal_name == "bad_signal"
-        assert "handler failed on: boom" in str(err.value)
+        assert isinstance(err.value.__cause__, ValueError)
+        assert "handler failed on: boom" in str(err.value.__cause__)
+
+    def test_signal_handler_exception_stops_new_decisions(self):
+        """Workflow code can't schedule decisions once a signal handler has failed."""
+        engine = make_workflow_engine(FailingSignalThenActivityWorkflow)
+        events = [
+            HistoryEvent(
+                event_id=1,
+                workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                    input=Payload(data=b"[]"),
+                ),
+            ),
+            signal_event(2, "bad_signal", "boom"),
+            HistoryEvent(
+                event_id=3,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=4,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=3,
+                ),
+            ),
+        ]
+
+        with pytest.raises(FatalDecisionError, match="bad_signal") as err:
+            engine.process_decision(events)
+
+        assert isinstance(err.value.__cause__, ValueError)
+        assert engine._decision_manager.collect_pending_decisions() == []
 
     def test_signal_handler_fatal_decision_error_fails_decision(self):
         engine = make_workflow_engine(FatalSignalWorkflow)

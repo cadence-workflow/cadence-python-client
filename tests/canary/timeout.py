@@ -2,7 +2,7 @@ import asyncio
 from datetime import timedelta
 
 from cadence import Registry, workflow
-from cadence.error import ActivityFailure
+from cadence.error import ActivityError, CadenceTimeoutError
 
 from tests.canary.constants import (
     ACTIVITY_TYPE_TIMEOUT,
@@ -29,8 +29,8 @@ class TimeoutWorkflow:
                 schedule_to_start_timeout=timedelta(seconds=1),
                 start_to_close_timeout=timedelta(seconds=1),
             )
-        except ActivityFailure as error:
-            if not str(error).startswith("TIMEOUT_TYPE_"):
+        except ActivityError as error:
+            if not isinstance(error.cause, CadenceTimeoutError):
                 raise
         else:
             raise RuntimeError("expected activity to time out")

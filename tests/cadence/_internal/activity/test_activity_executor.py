@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from datetime import timedelta, datetime
 from unittest.mock import Mock, AsyncMock, PropertyMock
@@ -11,6 +12,9 @@ from cadence import activity, Client
 from cadence._internal.activity import ActivityExecutor
 from cadence.activity import ActivityInfo, ActivityDefinition
 from cadence.api.v1.common_pb2 import (
+    FAILURE_CATEGORY_FATAL,
+    FAILURE_CATEGORY_POLL,
+    FailureOptions,
     Header,
     WorkflowExecution,
     ActivityType,
@@ -31,7 +35,7 @@ from cadence.api.v1.service_worker_pb2 import (
     RecordActivityTaskHeartbeatRequest,
 )
 from cadence.data_converter import DefaultDataConverter
-from cadence.error import ActivityCancelledError
+from cadence.error import ActivityCancelledError, ApplicationError, FailureCategory
 from cadence.worker import Registry
 
 
@@ -98,6 +102,69 @@ async def test_activity_async_failure(client):
         ),
         identity="identity",
     )
+
+
+async def test_activity_application_error_reports_reason_details_and_options(
+    client,
+):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskFailed = AsyncMock(
+        return_value=RespondActivityTaskFailedResponse()
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        raise ApplicationError(
+            "test-error",
+            {"code": 7},
+            "details",
+            failure_category=FailureCategory.FATAL,
+            next_retry_delay=timedelta(seconds=30),
+        )
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskFailed.assert_called_once_with(
+        RespondActivityTaskFailedRequest(
+            task_token=b"task_token",
+            failure=Failure(
+                reason="test-error",
+                details=b'{"code":7} "details"',
+                options=FailureOptions(
+                    failure_category=FAILURE_CATEGORY_FATAL,
+                    next_retry_interval=from_timedelta(timedelta(seconds=30)),
+                ),
+            ),
+            identity="identity",
+        )
+    )
+
+
+async def test_activity_poll_category_failure_not_logged_as_error(client, caplog):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskFailed = AsyncMock(
+        return_value=RespondActivityTaskFailedResponse()
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        raise ApplicationError("not-ready", failure_category=FailureCategory.POLL)
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    with caplog.at_level(logging.DEBUG):
+        await executor.execute(fake_task("activity_type", ""))
+
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    call = worker_stub.RespondActivityTaskFailed.call_args[0][0]
+    assert call.failure.reason == "not-ready"
+    assert call.failure.options.failure_category == FAILURE_CATEGORY_POLL
 
 
 async def test_activity_args(client):

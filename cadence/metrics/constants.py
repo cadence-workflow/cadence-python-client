@@ -101,3 +101,7 @@ TAG_WORKFLOW_ID = "WorkflowID"
 TAG_RUN_ID = "RunID"
 TAG_ATTEMPT = "Attempt"
 TAG_WORKER_TYPE = "WorkerType"
+TAG_NON_DETERMINISM_DETECTION_TYPE = "NonDeterminismDetectionType"
+
+# Values for TAG_NON_DETERMINISM_DETECTION_TYPE — match Go SDK internal_logging_tags.go
+NON_DETERMINISM_DETECTION_TYPE_REPLAY_COMPARISON = "replaycomparison"

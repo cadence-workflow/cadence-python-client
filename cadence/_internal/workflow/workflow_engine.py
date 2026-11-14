@@ -36,6 +36,11 @@ from cadence.api.v1.query_pb2 import (
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.context import ContextPropagator
+from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
+from cadence.metrics.constants import (
+    CORRUPTED_SIGNALS_COUNTER,
+    UNHANDLED_SIGNALS_COUNTER,
+)
 from cadence.workflow import (
     WorkflowContext,
     WorkflowDefinition,
@@ -60,6 +65,7 @@ class WorkflowEngine:
         context_propagators: Sequence[ContextPropagator] = (),
         headers: Mapping[str, bytes] | None = None,
         workflow_interceptor_factory: WorkflowInterceptorFactory | None = None,
+        metrics_emitter: MetricsEmitter | None = None,
     ):
         self._event_loop = DeterministicEventLoop()
         self._decision_manager = DecisionManager(self._event_loop)
@@ -80,6 +86,15 @@ class WorkflowEngine:
             if workflow_interceptor_factory
             else self._context
         )
+        self._metrics_emitter = (
+            metrics_emitter if metrics_emitter is not None else NoOpMetricsEmitter()
+        )
+        # Whether the current process_decision call is answering a query, which
+        # only replays history that has already been processed.
+        self._processing_query = False
+        # Whether a signal without a registered handler was received at any point
+        # in the workflow's history.
+        self._has_unhandled_signals = False
 
     def process_decision(
         self,
@@ -98,6 +113,7 @@ class WorkflowEngine:
         Returns:
             DecisionResult containing the list of decisions
         """
+        self._processing_query = query is not None
         try:
             # Activate workflow context for the entire decision processing
             with _activate_workflow_context(self._workflow_context):
@@ -209,9 +225,19 @@ class WorkflowEngine:
 
                 if decision := self._maybe_complete_workflow():
                     self._decision_manager.complete_workflow(decision)
+                    if self._has_unhandled_signals and self._should_emit_metrics():
+                        self._metrics_emitter.counter(UNHANDLED_SIGNALS_COUNTER)
 
             for event in decision_events.output:
                 self._decision_manager.handle_history_event(event)
+
+    def _should_emit_metrics(self) -> bool:
+        """Whether the events being processed are new to this decision task.
+
+        Replayed batches and queries re-process history that an earlier decision
+        task already handled, so emitting metrics for them would double-count.
+        """
+        return not self._processing_query and not self._context.is_replay_mode()
 
     def _maybe_complete_workflow(self) -> Optional[Decision]:
         if not self._workflow_instance.is_done():
@@ -306,6 +332,7 @@ class WorkflowEngine:
                 "Received signal '%s' but no handler registered, dropping",
                 attrs.signal_name,
             )
+            self._has_unhandled_signals = True
             return
 
         try:
@@ -316,6 +343,8 @@ class WorkflowEngine:
                 attrs.signal_name,
                 e,
             )
+            if self._should_emit_metrics():
+                self._metrics_emitter.counter(CORRUPTED_SIGNALS_COUNTER)
             return
 
         self._workflow_instance.handle_signal(signal_def, args)

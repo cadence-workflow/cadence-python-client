@@ -203,6 +203,27 @@ class TestDecisionExecutionMetrics:
         assert DECISION_EXECUTION_LATENCY in histogram_names
 
     @pytest.mark.asyncio
+    async def test_passes_tagged_emitter_to_workflow_engine(self):
+        emitter = _mock_emitter()
+        handler = _make_handler(emitter, _mock_registry())
+        task = _make_task()
+        dr = DecisionResult(decisions=[])
+
+        with (
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
+            patch("cadence.worker._decision_task_handler.WorkflowEngine") as engine_cls,
+            patch.object(handler, "_respond_decision_task_completed", new=AsyncMock()),
+        ):
+            loop = asyncio.get_event_loop()
+            with patch.object(loop, "run_in_executor", new=AsyncMock(return_value=dr)):
+                await handler._handle_task_implementation(task)
+
+        assert engine_cls.call_args.kwargs["metrics_emitter"] is _tagged(emitter)
+
+    @pytest.mark.asyncio
     async def test_emits_execution_failed_counter_on_engine_error(self):
         emitter = _mock_emitter()
         handler = _make_handler(emitter, _mock_registry())

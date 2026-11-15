@@ -2,7 +2,6 @@
 
 import asyncio
 from datetime import timedelta
-from unittest.mock import Mock
 
 import pytest
 
@@ -28,7 +27,6 @@ from cadence._internal.workflow.deterministic_event_loop import (
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence.data_converter import DefaultDataConverter
 from cadence.error import SignalFailure
-from cadence.metrics import MetricsEmitter
 from cadence.metrics.constants import (
     CORRUPTED_SIGNALS_COUNTER,
     UNHANDLED_SIGNALS_COUNTER,
@@ -333,9 +331,7 @@ class SignalMetricsWorkflow:
 DATA_CONVERTER = DefaultDataConverter()
 
 
-def make_workflow_engine(
-    workflow_cls, metrics_emitter: MetricsEmitter | None = None
-) -> WorkflowEngine:
+def make_workflow_engine(workflow_cls) -> WorkflowEngine:
     workflow_def = WorkflowDefinition.wrap(
         workflow_cls, WorkflowDefinitionOptions(name=workflow_cls.__name__)
     )
@@ -349,7 +345,6 @@ def make_workflow_engine(
             data_converter=DATA_CONVERTER,
         ),
         workflow_definition=workflow_def,
-        metrics_emitter=metrics_emitter,
     )
 
 
@@ -1508,13 +1503,8 @@ class TestSignalMetrics:
             )
         return events
 
-    @staticmethod
-    def _counter_names(emitter: Mock) -> list[str]:
-        return [c.args[0] for c in emitter.counter.call_args_list]
-
     def test_unhandled_signals_counted_once_on_completion(self):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             signal_event(2, "unknown_one", "data"),
@@ -1530,11 +1520,10 @@ class TestSignalMetrics:
         assert result.decisions[0].HasField(
             "complete_workflow_execution_decision_attributes"
         )
-        assert self._counter_names(emitter) == [UNHANDLED_SIGNALS_COUNTER]
+        assert result.signal_counters == [UNHANDLED_SIGNALS_COUNTER]
 
     def test_unhandled_signal_from_replayed_batch_counted_on_completion(self):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             signal_event(2, "unknown", "data"),
@@ -1543,28 +1532,26 @@ class TestSignalMetrics:
             *self._decision_task(7),
         ]
 
-        engine.process_decision(events)
+        result = engine.process_decision(events)
 
         assert engine.is_done()
-        assert self._counter_names(emitter) == [UNHANDLED_SIGNALS_COUNTER]
+        assert result.signal_counters == [UNHANDLED_SIGNALS_COUNTER]
 
     def test_unhandled_signal_not_counted_while_workflow_running(self):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             signal_event(2, "unknown", "data"),
             *self._decision_task(3),
         ]
 
-        engine.process_decision(events)
+        result = engine.process_decision(events)
 
         assert not engine.is_done()
-        emitter.counter.assert_not_called()
+        assert result.signal_counters == []
 
     def test_unhandled_signal_not_counted_when_replaying_completion(self):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             signal_event(2, "unknown", "data"),
@@ -1579,10 +1566,10 @@ class TestSignalMetrics:
             ),
         ]
 
-        engine.process_decision(events)
+        result = engine.process_decision(events)
 
         assert engine.is_done()
-        emitter.counter.assert_not_called()
+        assert result.signal_counters == []
 
     @pytest.mark.parametrize(
         "corrupted_signal",
@@ -1592,22 +1579,20 @@ class TestSignalMetrics:
         ],
     )
     def test_corrupted_signal_counted(self, corrupted_signal: HistoryEvent):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             corrupted_signal,
             *self._decision_task(3),
         ]
 
-        engine.process_decision(events)
+        result = engine.process_decision(events)
 
         assert not engine.is_done()
-        assert self._counter_names(emitter) == [CORRUPTED_SIGNALS_COUNTER]
+        assert result.signal_counters == [CORRUPTED_SIGNALS_COUNTER]
 
     def test_corrupted_signal_not_counted_when_replayed(self):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             malformed_signal_event(2, "finish"),
@@ -1615,14 +1600,13 @@ class TestSignalMetrics:
             *self._decision_task(6),
         ]
 
-        engine.process_decision(events)
+        result = engine.process_decision(events)
 
         assert not engine.is_done()
-        emitter.counter.assert_not_called()
+        assert result.signal_counters == []
 
     def test_signals_not_counted_for_query(self):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             signal_event(2, "unknown", "data"),
@@ -1635,18 +1619,17 @@ class TestSignalMetrics:
 
         assert result.query_result is not None
         assert DATA_CONVERTER.from_data(result.query_result.answer, [int]) == [1]
-        emitter.counter.assert_not_called()
+        assert result.signal_counters == []
 
     def test_handled_signal_not_counted(self):
-        emitter = Mock(spec=MetricsEmitter)
-        engine = make_workflow_engine(SignalMetricsWorkflow, emitter)
+        engine = make_workflow_engine(SignalMetricsWorkflow)
         events = [
             self._started(),
             signal_event(2, "finish", 1),
             *self._decision_task(3),
         ]
 
-        engine.process_decision(events)
+        result = engine.process_decision(events)
 
         assert engine.is_done()
-        emitter.counter.assert_not_called()
+        assert result.signal_counters == []

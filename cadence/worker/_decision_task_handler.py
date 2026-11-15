@@ -207,7 +207,6 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             context_propagators=self._context_propagators,
             headers=header_to_dict(started_attrs.header),
             workflow_interceptor_factory=self._client.workflow_interceptor_factory,
-            metrics_emitter=emitter,
         )
 
         exec_start_ns = time.monotonic_ns()
@@ -240,6 +239,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 ),
                 emitter,
             )
+            for counter in decision_result.signal_counters:
+                emitter.counter(counter)
 
         logger.info(
             "Successfully processed decision task",

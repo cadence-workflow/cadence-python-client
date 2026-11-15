@@ -107,6 +107,7 @@ class TestDecisionTaskHandlerIntegration:
         mock_engine.process_decision = Mock(
             return_value=Mock(
                 decisions=[decision],
+                signal_counters=[],
             )
         )
 
@@ -182,6 +183,7 @@ class TestDecisionTaskHandlerIntegration:
             mock_engine.process_decision = Mock(
                 return_value=Mock(
                     decisions=[],
+                    signal_counters=[],
                 )
             )
             mock_engine_class.return_value = mock_engine

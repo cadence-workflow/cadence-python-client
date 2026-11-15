@@ -1,7 +1,7 @@
 import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatchmethod
 from typing import List, Mapping, Optional, Sequence
 
@@ -36,7 +36,6 @@ from cadence.api.v1.query_pb2 import (
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.context import ContextPropagator
-from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 from cadence.metrics.constants import (
     CORRUPTED_SIGNALS_COUNTER,
     UNHANDLED_SIGNALS_COUNTER,
@@ -55,6 +54,8 @@ logger = logging.getLogger(__name__)
 class DecisionResult:
     decisions: list[Decision]
     query_result: Optional[WorkflowQueryResult] = None
+    # Signal counters to emit once the decision task response is accepted.
+    signal_counters: list[str] = field(default_factory=list)
 
 
 class WorkflowEngine:
@@ -65,7 +66,6 @@ class WorkflowEngine:
         context_propagators: Sequence[ContextPropagator] = (),
         headers: Mapping[str, bytes] | None = None,
         workflow_interceptor_factory: WorkflowInterceptorFactory | None = None,
-        metrics_emitter: MetricsEmitter | None = None,
     ):
         self._event_loop = DeterministicEventLoop()
         self._decision_manager = DecisionManager(self._event_loop)
@@ -86,9 +86,8 @@ class WorkflowEngine:
             if workflow_interceptor_factory
             else self._context
         )
-        self._metrics_emitter = (
-            metrics_emitter if metrics_emitter is not None else NoOpMetricsEmitter()
-        )
+        # Signal counters raised while processing the current decision task.
+        self._signal_counters: list[str] = []
         # Whether the current process_decision call is answering a query, which
         # only replays history that has already been processed.
         self._processing_query = False
@@ -114,6 +113,7 @@ class WorkflowEngine:
             DecisionResult containing the list of decisions
         """
         self._processing_query = query is not None
+        self._signal_counters = []
         try:
             # Activate workflow context for the entire decision processing
             with _activate_workflow_context(self._workflow_context):
@@ -141,7 +141,11 @@ class WorkflowEngine:
                     # Collect all pending decisions from state machines
                     decisions = self._decision_manager.collect_pending_decisions()
 
-                    return DecisionResult(decisions=decisions, query_result=None)
+                    return DecisionResult(
+                        decisions=decisions,
+                        query_result=None,
+                        signal_counters=self._signal_counters,
+                    )
 
         # TODO: reevaluate if this is needed to log error here or in the caller
         except (Exception, FatalDecisionError) as e:
@@ -226,7 +230,7 @@ class WorkflowEngine:
                 if decision := self._maybe_complete_workflow():
                     self._decision_manager.complete_workflow(decision)
                     if self._has_unhandled_signals and self._should_emit_metrics():
-                        self._metrics_emitter.counter(UNHANDLED_SIGNALS_COUNTER)
+                        self._signal_counters.append(UNHANDLED_SIGNALS_COUNTER)
 
             for event in decision_events.output:
                 self._decision_manager.handle_history_event(event)
@@ -344,7 +348,7 @@ class WorkflowEngine:
                 e,
             )
             if self._should_emit_metrics():
-                self._metrics_emitter.counter(CORRUPTED_SIGNALS_COUNTER)
+                self._signal_counters.append(CORRUPTED_SIGNALS_COUNTER)
             return
 
         self._workflow_instance.handle_signal(signal_def, args)

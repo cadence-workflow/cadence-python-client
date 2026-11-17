@@ -29,6 +29,7 @@ from cadence.client import Client
 from cadence.data_converter import DefaultDataConverter
 from cadence.metrics import MetricsEmitter
 from cadence.metrics.constants import (
+    CORRUPTED_SIGNALS_COUNTER,
     DECISION_EXECUTION_FAILED_COUNTER,
     DECISION_EXECUTION_LATENCY,
     DECISION_RESPONSE_FAILED_COUNTER,
@@ -39,6 +40,7 @@ from cadence.metrics.constants import (
     TAG_DOMAIN,
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
+    UNHANDLED_SIGNALS_COUNTER,
     WORKFLOW_CANCELED_COUNTER,
     WORKFLOW_COMPLETED_COUNTER,
     WORKFLOW_CONTINUE_AS_NEW_COUNTER,
@@ -214,6 +216,61 @@ class TestDecisionExecutionMetrics:
         emitter.with_tags.assert_called_once_with(EXPECTED_TAGS)
         histogram_names = [c.args[0] for c in _tagged(emitter).histogram.call_args_list]
         assert DECISION_EXECUTION_LATENCY in histogram_names
+
+    @pytest.mark.asyncio
+    async def test_emits_signal_counters_after_respond(self):
+        emitter = _mock_emitter()
+        handler = _make_handler(emitter, _mock_registry())
+        task = _make_task()
+        dr = DecisionResult(
+            decisions=[],
+            signal_counters=[CORRUPTED_SIGNALS_COUNTER, UNHANDLED_SIGNALS_COUNTER],
+        )
+
+        with (
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
+            patch("cadence.worker._decision_task_handler.WorkflowEngine"),
+            patch.object(handler, "_respond_decision_task_completed", new=AsyncMock()),
+        ):
+            loop = asyncio.get_event_loop()
+            with patch.object(loop, "run_in_executor", new=AsyncMock(return_value=dr)):
+                await handler._handle_task_implementation(task)
+
+        counter_names = [c.args[0] for c in _tagged(emitter).counter.call_args_list]
+        assert CORRUPTED_SIGNALS_COUNTER in counter_names
+        assert UNHANDLED_SIGNALS_COUNTER in counter_names
+
+    @pytest.mark.asyncio
+    async def test_no_signal_counters_emitted_when_respond_fails(self):
+        emitter = _mock_emitter()
+        handler = _make_handler(emitter, _mock_registry())
+        task = _make_task()
+        dr = DecisionResult(
+            decisions=[],
+            signal_counters=[CORRUPTED_SIGNALS_COUNTER, UNHANDLED_SIGNALS_COUNTER],
+        )
+
+        with (
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
+            patch("cadence.worker._decision_task_handler.WorkflowEngine"),
+        ):
+            loop = asyncio.get_event_loop()
+            with patch.object(loop, "run_in_executor", new=AsyncMock(return_value=dr)):
+                handler._client.worker_stub.RespondDecisionTaskCompleted = AsyncMock(
+                    side_effect=RuntimeError("rpc failed")
+                )
+                with pytest.raises(RuntimeError):
+                    await handler._handle_task_implementation(task)
+
+        counter_names = [c.args[0] for c in _tagged(emitter).counter.call_args_list]
+        assert CORRUPTED_SIGNALS_COUNTER not in counter_names
+        assert UNHANDLED_SIGNALS_COUNTER not in counter_names
 
     @pytest.mark.asyncio
     async def test_emits_execution_failed_counter_on_engine_error(self):

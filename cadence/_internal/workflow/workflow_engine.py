@@ -1,7 +1,7 @@
 import logging
 import traceback
 from asyncio import CancelledError, InvalidStateError
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatchmethod
 from typing import List, Mapping, Optional, Sequence
 
@@ -36,6 +36,10 @@ from cadence.api.v1.query_pb2 import (
 from cadence.api.v1.tasklist_pb2 import TaskList
 from cadence.error import ContinueAsNewError
 from cadence.context import ContextPropagator
+from cadence.metrics.constants import (
+    CORRUPTED_SIGNALS_COUNTER,
+    UNHANDLED_SIGNALS_COUNTER,
+)
 from cadence.workflow import (
     WorkflowContext,
     WorkflowDefinition,
@@ -50,6 +54,8 @@ logger = logging.getLogger(__name__)
 class DecisionResult:
     decisions: list[Decision]
     query_result: Optional[WorkflowQueryResult] = None
+    # Signal counters to emit once the decision task response is accepted.
+    signal_counters: list[str] = field(default_factory=list)
 
 
 class WorkflowEngine:
@@ -80,6 +86,14 @@ class WorkflowEngine:
             if workflow_interceptor_factory
             else self._context
         )
+        # Signal counters raised while processing the current decision task.
+        self._signal_counters: list[str] = []
+        # Whether the current process_decision call is answering a query, which
+        # only replays history that has already been processed.
+        self._processing_query = False
+        # Whether a signal without a registered handler was received at any point
+        # in the workflow's history.
+        self._has_unhandled_signals = False
 
     def process_decision(
         self,
@@ -98,6 +112,8 @@ class WorkflowEngine:
         Returns:
             DecisionResult containing the list of decisions
         """
+        self._processing_query = query is not None
+        self._signal_counters = []
         try:
             # Activate workflow context for the entire decision processing
             with _activate_workflow_context(self._workflow_context):
@@ -125,7 +141,11 @@ class WorkflowEngine:
                     # Collect all pending decisions from state machines
                     decisions = self._decision_manager.collect_pending_decisions()
 
-                    return DecisionResult(decisions=decisions, query_result=None)
+                    return DecisionResult(
+                        decisions=decisions,
+                        query_result=None,
+                        signal_counters=self._signal_counters,
+                    )
 
         # TODO: reevaluate if this is needed to log error here or in the caller
         except (Exception, FatalDecisionError) as e:
@@ -209,9 +229,19 @@ class WorkflowEngine:
 
                 if decision := self._maybe_complete_workflow():
                     self._decision_manager.complete_workflow(decision)
+                    if self._has_unhandled_signals and self._should_emit_metrics():
+                        self._signal_counters.append(UNHANDLED_SIGNALS_COUNTER)
 
             for event in decision_events.output:
                 self._decision_manager.handle_history_event(event)
+
+    def _should_emit_metrics(self) -> bool:
+        """Whether the events being processed are new to this decision task.
+
+        Replayed batches and queries re-process history that an earlier decision
+        task already handled, so emitting metrics for them would double-count.
+        """
+        return not self._processing_query and not self._context.is_replay_mode()
 
     def _maybe_complete_workflow(self) -> Optional[Decision]:
         if not self._workflow_instance.is_done():
@@ -306,6 +336,7 @@ class WorkflowEngine:
                 "Received signal '%s' but no handler registered, dropping",
                 attrs.signal_name,
             )
+            self._has_unhandled_signals = True
             return
 
         try:
@@ -316,6 +347,8 @@ class WorkflowEngine:
                 attrs.signal_name,
                 e,
             )
+            if self._should_emit_metrics():
+                self._signal_counters.append(CORRUPTED_SIGNALS_COUNTER)
             return
 
         self._workflow_instance.handle_signal(signal_def, args)

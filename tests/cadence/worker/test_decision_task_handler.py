@@ -118,6 +118,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = [Decision()]
+        mock_decision_result.signal_counters = []
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -194,6 +195,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
+        mock_decision_result.signal_counters = []
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -274,6 +276,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
+        mock_decision_result.signal_counters = []
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(
@@ -458,6 +461,7 @@ class TestDecisionTaskHandler:
         mock_engine._is_workflow_complete = False  # Add missing attribute
         mock_decision_result = Mock(spec=DecisionResult)
         mock_decision_result.decisions = []
+        mock_decision_result.signal_counters = []
         mock_engine.process_decision = Mock(return_value=mock_decision_result)
 
         with patch(

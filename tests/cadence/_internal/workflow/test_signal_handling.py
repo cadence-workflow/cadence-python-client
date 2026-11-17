@@ -15,9 +15,11 @@ from cadence.api.v1.history_pb2 import (
     DecisionTaskScheduledEventAttributes,
     DecisionTaskStartedEventAttributes,
     HistoryEvent,
+    WorkflowExecutionCompletedEventAttributes,
     WorkflowExecutionStartedEventAttributes,
     WorkflowExecutionSignaledEventAttributes,
 )
+from cadence.api.v1.query_pb2 import WorkflowQuery
 from cadence._internal.workflow.deterministic_event_loop import (
     FatalDecisionError,
     fail_decision,
@@ -25,6 +27,10 @@ from cadence._internal.workflow.deterministic_event_loop import (
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence.data_converter import DefaultDataConverter
 from cadence.error import SignalFailure
+from cadence.metrics.constants import (
+    CORRUPTED_SIGNALS_COUNTER,
+    UNHANDLED_SIGNALS_COUNTER,
+)
 from cadence.workflow import WorkflowInfo, WorkflowDefinition, WorkflowDefinitionOptions
 
 
@@ -302,6 +308,24 @@ class TwoAsyncSignalsWorkflow:
         self.log.append(f"second:{value}")
 
 
+class SignalMetricsWorkflow:
+    def __init__(self):
+        self.count = 0
+
+    @workflow.run
+    async def run(self):
+        await workflow.wait_condition(lambda: self.count > 0)
+        return "done"
+
+    @workflow.signal(name="finish")
+    def handle_finish(self, count: int):
+        self.count = count
+
+    @workflow.query(name="get_count")
+    def get_count(self) -> int:
+        return self.count
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 DATA_CONVERTER = DefaultDataConverter()
@@ -355,6 +379,16 @@ def signal_event(event_id: int, signal_name: str, *args) -> HistoryEvent:
         workflow_execution_signaled_event_attributes=WorkflowExecutionSignaledEventAttributes(
             signal_name=signal_name,
             input=payload,
+        ),
+    )
+
+
+def malformed_signal_event(event_id: int, signal_name: str) -> HistoryEvent:
+    return HistoryEvent(
+        event_id=event_id,
+        workflow_execution_signaled_event_attributes=WorkflowExecutionSignaledEventAttributes(
+            signal_name=signal_name,
+            input=Payload(data=b'{"unterminated"'),
         ),
     )
 
@@ -1427,3 +1461,175 @@ class TestAsyncSignalHandler:
         assert DATA_CONVERTER.from_data(completion.result, [str]) == [
             "first:alpha,second:beta"
         ]
+
+
+class TestSignalMetrics:
+    """Tests for the unhandled and corrupted signal metrics."""
+
+    @staticmethod
+    def _started(event_id: int = 1) -> HistoryEvent:
+        return HistoryEvent(
+            event_id=event_id,
+            workflow_execution_started_event_attributes=WorkflowExecutionStartedEventAttributes(
+                input=Payload(data=b"[]"),
+            ),
+        )
+
+    @staticmethod
+    def _decision_task(
+        scheduled_event_id: int, completed: bool = False
+    ) -> list[HistoryEvent]:
+        events = [
+            HistoryEvent(
+                event_id=scheduled_event_id,
+                decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+            ),
+            HistoryEvent(
+                event_id=scheduled_event_id + 1,
+                decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                    scheduled_event_id=scheduled_event_id,
+                ),
+            ),
+        ]
+        if completed:
+            events.append(
+                HistoryEvent(
+                    event_id=scheduled_event_id + 2,
+                    decision_task_completed_event_attributes=DecisionTaskCompletedEventAttributes(
+                        scheduled_event_id=scheduled_event_id,
+                        started_event_id=scheduled_event_id + 1,
+                    ),
+                )
+            )
+        return events
+
+    def test_unhandled_signals_counted_once_on_completion(self):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            signal_event(2, "unknown_one", "data"),
+            signal_event(3, "unknown_two", "data"),
+            signal_event(4, "unknown_one", "data"),
+            signal_event(5, "finish", 1),
+            *self._decision_task(6),
+        ]
+
+        result = engine.process_decision(events)
+
+        assert engine.is_done()
+        assert result.decisions[0].HasField(
+            "complete_workflow_execution_decision_attributes"
+        )
+        assert result.signal_counters == [UNHANDLED_SIGNALS_COUNTER]
+
+    def test_unhandled_signal_from_replayed_batch_counted_on_completion(self):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            signal_event(2, "unknown", "data"),
+            *self._decision_task(3, completed=True),
+            signal_event(6, "finish", 1),
+            *self._decision_task(7),
+        ]
+
+        result = engine.process_decision(events)
+
+        assert engine.is_done()
+        assert result.signal_counters == [UNHANDLED_SIGNALS_COUNTER]
+
+    def test_unhandled_signal_not_counted_while_workflow_running(self):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            signal_event(2, "unknown", "data"),
+            *self._decision_task(3),
+        ]
+
+        result = engine.process_decision(events)
+
+        assert not engine.is_done()
+        assert result.signal_counters == []
+
+    def test_unhandled_signal_not_counted_when_replaying_completion(self):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            signal_event(2, "unknown", "data"),
+            signal_event(3, "finish", 1),
+            *self._decision_task(4, completed=True),
+            HistoryEvent(
+                event_id=7,
+                workflow_execution_completed_event_attributes=WorkflowExecutionCompletedEventAttributes(
+                    result=DATA_CONVERTER.to_data(["done"]),
+                    decision_task_completed_event_id=6,
+                ),
+            ),
+        ]
+
+        result = engine.process_decision(events)
+
+        assert engine.is_done()
+        assert result.signal_counters == []
+
+    @pytest.mark.parametrize(
+        "corrupted_signal",
+        [
+            pytest.param(malformed_signal_event(2, "finish"), id="malformed payload"),
+            pytest.param(signal_event(2, "finish", "not-an-int"), id="invalid type"),
+        ],
+    )
+    def test_corrupted_signal_counted(self, corrupted_signal: HistoryEvent):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            corrupted_signal,
+            *self._decision_task(3),
+        ]
+
+        result = engine.process_decision(events)
+
+        assert not engine.is_done()
+        assert result.signal_counters == [CORRUPTED_SIGNALS_COUNTER]
+
+    def test_corrupted_signal_not_counted_when_replayed(self):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            malformed_signal_event(2, "finish"),
+            *self._decision_task(3, completed=True),
+            *self._decision_task(6),
+        ]
+
+        result = engine.process_decision(events)
+
+        assert not engine.is_done()
+        assert result.signal_counters == []
+
+    def test_signals_not_counted_for_query(self):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            signal_event(2, "unknown", "data"),
+            malformed_signal_event(3, "finish"),
+            signal_event(4, "finish", 1),
+            *self._decision_task(5),
+        ]
+
+        result = engine.process_decision(events, WorkflowQuery(query_type="get_count"))
+
+        assert result.query_result is not None
+        assert DATA_CONVERTER.from_data(result.query_result.answer, [int]) == [1]
+        assert result.signal_counters == []
+
+    def test_handled_signal_not_counted(self):
+        engine = make_workflow_engine(SignalMetricsWorkflow)
+        events = [
+            self._started(),
+            signal_event(2, "finish", 1),
+            *self._decision_task(3),
+        ]
+
+        result = engine.process_decision(events)
+
+        assert engine.is_done()
+        assert result.signal_counters == []

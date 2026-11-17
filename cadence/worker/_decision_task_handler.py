@@ -243,6 +243,8 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 ),
                 emitter,
             )
+            for counter in decision_result.signal_counters:
+                emitter.counter(counter)
 
         logger.info(
             "Successfully processed decision task",

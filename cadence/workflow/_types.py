@@ -22,6 +22,7 @@ CADENCE_CHANGE_VERSION_SEARCH_ATTRIBUTE = "CadenceChangeVersion"
 class RetryPolicy(TypedDict, total=False):
     initial_interval: timedelta | None
     backoff_coefficient: float | None
+    jitter_coefficient: float | None
     maximum_interval: timedelta | None
     maximum_attempts: int | None
     non_retryable_error_reasons: list[str] | None

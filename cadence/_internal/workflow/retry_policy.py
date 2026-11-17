@@ -45,6 +45,12 @@ def retry_policy_to_proto(
             raise ValueError("backoff_coefficient must be >= 1.0 when provided")
         out.backoff_coefficient = coef_f
 
+    if (jitter := policy.get("jitter_coefficient")) is not None:
+        jitter_f = cast(float, jitter)
+        if not 0.0 <= jitter_f <= 1.0:
+            raise ValueError("jitter_coefficient must be between 0 and 1 when provided")
+        out.jitter_coefficient = jitter_f
+
     if (mi := policy.get("maximum_interval")) is not None:
         _set_duration_field(out.maximum_interval, cast(timedelta, mi))
 

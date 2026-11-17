@@ -66,10 +66,33 @@ def test_retry_policy_backoff_omitted_not_explicitly_set_in_dict():
     assert "backoff_coefficient" not in d
 
 
+@pytest.mark.parametrize("jitter", [0.0, 0.2, 1.0])
+def test_retry_policy_jitter_coefficient_valid(jitter: float):
+    p = retry_policy_to_proto({"jitter_coefficient": jitter})
+    assert p is not None
+    assert p.jitter_coefficient == jitter
+
+
+@pytest.mark.parametrize(
+    "jitter", [-0.1, 1.1, float("nan"), float("inf"), float("-inf")]
+)
+def test_retry_policy_jitter_coefficient_validation(jitter: float):
+    with pytest.raises(ValueError, match="jitter_coefficient"):
+        retry_policy_to_proto({"jitter_coefficient": jitter})
+
+
+def test_retry_policy_jitter_omitted_not_set():
+    p = retry_policy_to_proto({"initial_interval": timedelta(seconds=1)})
+    assert p is not None
+    d = MessageToDict(p, preserving_proto_field_name=True)
+    assert "jitter_coefficient" not in d
+
+
 def test_retry_policy_explicit_none_fields_are_omitted():
     policy: Mapping[str, object] = {
         "initial_interval": None,
         "backoff_coefficient": None,
+        "jitter_coefficient": None,
         "maximum_interval": None,
         "maximum_attempts": None,
         "non_retryable_error_reasons": None,
@@ -82,5 +105,6 @@ def test_retry_policy_explicit_none_fields_are_omitted():
     assert not p.HasField("expiration_interval")
     d = MessageToDict(p, preserving_proto_field_name=True)
     assert "backoff_coefficient" not in d
+    assert "jitter_coefficient" not in d
     assert "maximum_attempts" not in d
     assert "non_retryable_error_reasons" not in d

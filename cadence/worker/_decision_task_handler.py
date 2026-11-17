@@ -7,6 +7,7 @@ from typing import Optional, Sequence
 
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
+from cadence._internal.workflow.statemachine.nondeterminism import NonDeterminismError
 from cadence._internal.context import header_to_dict
 from cadence._internal.workflow.memo import memo_from_proto
 from cadence._internal.workflow.search_attributes import search_attributes_from_proto
@@ -36,6 +37,7 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
+    NON_DETERMINISTIC_ERROR,
     TAG_DOMAIN,
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
@@ -217,9 +219,11 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 workflow_events,
                 task.query if is_query_task else None,
             )
-        except (Exception, FatalDecisionError):
+        except (Exception, FatalDecisionError) as e:
             emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
             emitter.counter(DECISION_TASK_PANIC_COUNTER)
+            if isinstance(e, NonDeterminismError):
+                emitter.counter(NON_DETERMINISTIC_ERROR)
             raise
         finally:
             emitter.histogram(

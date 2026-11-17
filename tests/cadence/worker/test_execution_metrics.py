@@ -35,10 +35,8 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
-    NON_DETERMINISM_DETECTION_TYPE_REPLAY_COMPARISON,
     NON_DETERMINISTIC_ERROR,
     TAG_DOMAIN,
-    TAG_NON_DETERMINISM_DETECTION_TYPE,
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
     WORKFLOW_CANCELED_COUNTER,
@@ -551,10 +549,6 @@ class TestHistoryFetchMetrics:
 # DecisionTaskHandler: nondeterminism metrics
 # ---------------------------------------------------------------------------
 
-NON_DETERMINISM_TAGS = {
-    TAG_NON_DETERMINISM_DETECTION_TYPE: NON_DETERMINISM_DETECTION_TYPE_REPLAY_COMPARISON
-}
-
 
 async def _handle_task_with_engine_error(
     handler: DecisionTaskHandler, error: BaseException
@@ -589,9 +583,7 @@ class TestNonDeterminismMetrics:
         await _handle_task_with_engine_error(handler, NonDeterminismError(None, None))
 
         emitter.with_tags.assert_called_once_with(EXPECTED_TAGS)
-        _tagged(emitter).counter.assert_any_call(
-            NON_DETERMINISTIC_ERROR, tags=NON_DETERMINISM_TAGS
-        )
+        _tagged(emitter).counter.assert_any_call(NON_DETERMINISTIC_ERROR)
         assert len(_non_deterministic_error_calls(emitter)) == 1
         # The generic decision failure metrics are still emitted.
         _tagged(emitter).counter.assert_any_call(DECISION_EXECUTION_FAILED_COUNTER)
@@ -675,9 +667,7 @@ class TestNonDeterminismMetrics:
         with pytest.raises(NonDeterminismError):
             await handler._handle_task_implementation(task)
 
-        _tagged(emitter).counter.assert_any_call(
-            NON_DETERMINISTIC_ERROR, tags=NON_DETERMINISM_TAGS
-        )
+        _tagged(emitter).counter.assert_any_call(NON_DETERMINISTIC_ERROR)
         assert len(_non_deterministic_error_calls(emitter)) == 1
 
 

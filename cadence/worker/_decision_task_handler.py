@@ -37,10 +37,8 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
-    NON_DETERMINISM_DETECTION_TYPE_REPLAY_COMPARISON,
     NON_DETERMINISTIC_ERROR,
     TAG_DOMAIN,
-    TAG_NON_DETERMINISM_DETECTION_TYPE,
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
     WORKFLOW_CANCELED_COUNTER,
@@ -225,12 +223,7 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
             emitter.counter(DECISION_TASK_PANIC_COUNTER)
             if isinstance(e, NonDeterminismError):
-                emitter.counter(
-                    NON_DETERMINISTIC_ERROR,
-                    tags={
-                        TAG_NON_DETERMINISM_DETECTION_TYPE: NON_DETERMINISM_DETECTION_TYPE_REPLAY_COMPARISON
-                    },
-                )
+                emitter.counter(NON_DETERMINISTIC_ERROR)
             raise
         finally:
             emitter.histogram(

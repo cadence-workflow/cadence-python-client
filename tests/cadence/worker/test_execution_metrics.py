@@ -8,15 +8,23 @@ from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from cadence.api.v1.common_pb2 import WorkflowExecution
+from cadence.api.v1.common_pb2 import ActivityType, WorkflowExecution
 from cadence.api.v1.decision_pb2 import (
     Decision,
     CompleteWorkflowExecutionDecisionAttributes,
     FailWorkflowExecutionDecisionAttributes,
     ContinueAsNewWorkflowExecutionDecisionAttributes,
 )
-from cadence.api.v1.history_pb2 import HistoryEvent, History
+from cadence.api.v1.history_pb2 import (
+    ActivityTaskScheduledEventAttributes,
+    DecisionTaskCompletedEventAttributes,
+    DecisionTaskScheduledEventAttributes,
+    DecisionTaskStartedEventAttributes,
+    HistoryEvent,
+    History,
+)
 from cadence.api.v1.service_worker_pb2 import PollForDecisionTaskResponse
+from cadence import workflow
 from cadence.client import Client
 from cadence.data_converter import DefaultDataConverter
 from cadence.metrics import MetricsEmitter
@@ -27,6 +35,7 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
+    NON_DETERMINISTIC_ERROR,
     TAG_DOMAIN,
     TAG_TASK_LIST,
     TAG_WORKFLOW_TYPE,
@@ -40,6 +49,10 @@ from cadence.metrics.constants import (
 )
 from cadence.worker._decision_task_handler import DecisionTaskHandler
 from cadence.worker._registry import Registry
+from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.statemachine.nondeterminism import (
+    NonDeterminismError,
+)
 from cadence._internal.workflow.workflow_engine import (
     DecisionResult,
     _outcome_from_decision,
@@ -530,6 +543,132 @@ class TestHistoryFetchMetrics:
         assert len(events) == 1
         emitter.counter.assert_not_called()
         emitter.histogram.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# DecisionTaskHandler: nondeterminism metrics
+# ---------------------------------------------------------------------------
+
+
+async def _handle_task_with_engine_error(
+    handler: DecisionTaskHandler, error: BaseException
+) -> None:
+    with (
+        patch(
+            "cadence.worker._decision_task_handler.iterate_history_events",
+            return_value=_async_iter([_make_started_event()]),
+        ),
+        patch("cadence.worker._decision_task_handler.WorkflowEngine"),
+    ):
+        loop = asyncio.get_event_loop()
+        with patch.object(loop, "run_in_executor", new=AsyncMock(side_effect=error)):
+            with pytest.raises(type(error)):
+                await handler._handle_task_implementation(_make_task())
+
+
+def _non_deterministic_error_calls(emitter: Mock) -> list:
+    return [
+        c
+        for c in _tagged(emitter).counter.call_args_list
+        if c.args[0] == NON_DETERMINISTIC_ERROR
+    ]
+
+
+class TestNonDeterminismMetrics:
+    @pytest.mark.asyncio
+    async def test_emits_non_deterministic_error_counter(self):
+        emitter = _mock_emitter()
+        handler = _make_handler(emitter, _mock_registry())
+
+        await _handle_task_with_engine_error(handler, NonDeterminismError(None, None))
+
+        emitter.with_tags.assert_called_once_with(EXPECTED_TAGS)
+        _tagged(emitter).counter.assert_any_call(NON_DETERMINISTIC_ERROR)
+        assert len(_non_deterministic_error_calls(emitter)) == 1
+        # The generic decision failure metrics are still emitted.
+        _tagged(emitter).counter.assert_any_call(DECISION_EXECUTION_FAILED_COUNTER)
+        _tagged(emitter).counter.assert_any_call(DECISION_TASK_PANIC_COUNTER)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(RuntimeError("engine boom"), id="exception"),
+            pytest.param(FatalDecisionError("fatal"), id="fatal decision error"),
+        ],
+    )
+    async def test_no_non_deterministic_error_counter_for_other_failures(
+        self, error: BaseException
+    ):
+        emitter = _mock_emitter()
+        handler = _make_handler(emitter, _mock_registry())
+
+        await _handle_task_with_engine_error(handler, error)
+
+        assert _non_deterministic_error_calls(emitter) == []
+        _tagged(emitter).counter.assert_any_call(DECISION_EXECUTION_FAILED_COUNTER)
+
+    @pytest.mark.asyncio
+    async def test_emits_non_deterministic_error_counter_on_replay_mismatch(self):
+        registry = Registry()
+
+        @registry.workflow(name=WF_TYPE)
+        class NoActivityWorkflow:
+            @workflow.run
+            async def run(self) -> str:
+                return "done"
+
+        # History recorded by a previous version of the workflow that scheduled an
+        # activity before completing. Replaying it with the new code completes the
+        # workflow instead, which is nondeterministic.
+        task = _make_task()
+        task.history = History(
+            events=[
+                _make_started_event(),
+                HistoryEvent(
+                    event_id=2,
+                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+                ),
+                HistoryEvent(
+                    event_id=3,
+                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                        scheduled_event_id=2
+                    ),
+                ),
+                HistoryEvent(
+                    event_id=4,
+                    decision_task_completed_event_attributes=DecisionTaskCompletedEventAttributes(
+                        scheduled_event_id=2, started_event_id=3
+                    ),
+                ),
+                HistoryEvent(
+                    event_id=5,
+                    activity_task_scheduled_event_attributes=ActivityTaskScheduledEventAttributes(
+                        activity_id="0",
+                        activity_type=ActivityType(name="removed_activity"),
+                        decision_task_completed_event_id=4,
+                    ),
+                ),
+                HistoryEvent(
+                    event_id=6,
+                    decision_task_scheduled_event_attributes=DecisionTaskScheduledEventAttributes(),
+                ),
+                HistoryEvent(
+                    event_id=7,
+                    decision_task_started_event_attributes=DecisionTaskStartedEventAttributes(
+                        scheduled_event_id=6
+                    ),
+                ),
+            ]
+        )
+        emitter = _mock_emitter()
+        handler = _make_handler(emitter, registry)
+
+        with pytest.raises(NonDeterminismError):
+            await handler._handle_task_implementation(task)
+
+        _tagged(emitter).counter.assert_any_call(NON_DETERMINISTIC_ERROR)
+        assert len(_non_deterministic_error_calls(emitter)) == 1
 
 
 # ---------------------------------------------------------------------------

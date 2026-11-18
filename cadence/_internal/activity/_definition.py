@@ -21,7 +21,12 @@ from typing import (
 )
 
 from cadence._internal.fn_signature import FnSignature
-from cadence.workflow import ActivityOptions, WorkflowContext, execute_activity
+from cadence.workflow import (
+    ActivityOptions,
+    WorkflowContext,
+    execute_activity,
+    WorkflowFuture,
+)
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -80,9 +85,9 @@ class BaseDefinition(ABC, Generic[P, R]):
         res._execution_options = new_opts
         return res
 
-    async def execute(self, *args: P.args, **kwargs: P.kwargs) -> R:
+    def execute(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowFuture[R]:
         result_type = cast(type[R], self._signature.return_type)
-        return await execute_activity(
+        return execute_activity(
             self._name,
             result_type,
             *self._signature.params_from_call(args, kwargs),

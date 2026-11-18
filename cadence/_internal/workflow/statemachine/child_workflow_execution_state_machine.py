@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     BaseDecisionStateMachine,
     DecisionFuture,
@@ -12,7 +14,7 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
     record_immediate_cancel,
 )
 from cadence.api.v1 import decision, history
-from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
+from cadence.api.v1.common_pb2 import WorkflowExecution
 from cadence.error import (
     ChildWorkflowExecutionCanceled,
     ChildWorkflowExecutionFailed,
@@ -29,14 +31,14 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
 
     request: decision.StartChildWorkflowExecutionDecisionAttributes
     execution: DecisionFuture[WorkflowExecution]
-    result: DecisionFuture[Payload]
+    result: DecisionFuture[Any]
     _run_id: str | None
 
     def __init__(
         self,
         request: decision.StartChildWorkflowExecutionDecisionAttributes,
         execution: DecisionFuture[WorkflowExecution],
-        result: DecisionFuture[Payload],
+        result: DecisionFuture[Any],
     ) -> None:
         super().__init__()
         self.request = request
@@ -130,7 +132,7 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         self, event: history.ChildWorkflowExecutionCompletedEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self._resolve(self.result, result=event.result)
+        self.result.complete_with_payload(event.result)
 
     @child_workflow_events.event()
     def handle_failed(

@@ -32,7 +32,7 @@ from cadence._internal.activity._definition import (
     SyncMethodImpl,
 )
 from cadence._internal.fn_signature import FnSignature
-from cadence.workflow import ActivityOptions
+from cadence.workflow import ActivityOptions, WorkflowFuture
 
 
 @dataclass(frozen=True)
@@ -199,7 +199,7 @@ class ActivityDefinition(Protocol[P, R]):
 
     def with_options(self, **kwargs: Unpack[ActivityOptions]) -> Self: ...
 
-    async def execute(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
+    def execute(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowFuture[R]: ...
 
 
 class _SyncActivityDefinition(ActivityDefinition[P, R], Protocol):

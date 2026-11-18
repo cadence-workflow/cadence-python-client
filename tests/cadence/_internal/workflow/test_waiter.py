@@ -121,3 +121,20 @@ class TestWaiterOrphan:
         w = loop.create_waiter(lambda: False)
         assert not w.done()
         assert w in loop._waiters  # type: ignore[attr-defined]
+
+    def test_cancelled_waiter_is_evicted_without_polling(self) -> None:
+        loop = make_loop()
+        calls = {"n": 0}
+
+        def predicate() -> bool:
+            calls["n"] += 1
+            return False
+
+        w = loop.create_waiter(predicate)
+        calls_before = calls["n"]
+        w.cancel()
+        loop._run_once()  # type: ignore[attr-defined]
+
+        assert w.cancelled()
+        assert w not in loop._waiters  # type: ignore[attr-defined]
+        assert calls["n"] == calls_before

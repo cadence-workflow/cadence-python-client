@@ -11,6 +11,7 @@ from cadence.workflow._types import (
     ChildWorkflowOptions,
     ResultType,
     SearchAttributeType,
+    WorkflowFuture,
 )
 
 
@@ -34,72 +35,58 @@ class WorkflowInterceptor(WorkflowContext):
         return self._delegate.data_converter()
 
     @override
-    async def execute_activity(
+    def execute_activity(
         self,
         activity: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ActivityOptions],
-    ) -> ResultType:
-        return await self._delegate.execute_activity(
-            activity, result_type, *args, **kwargs
-        )
+    ) -> WorkflowFuture[ResultType]:
+        return self._delegate.execute_activity(activity, result_type, *args, **kwargs)
 
     @override
-    async def execute_child_workflow(
+    def execute_child_workflow(
         self,
         workflow_type: str,
         result_type: Type[ResultType],
         *args: Any,
         **kwargs: Unpack[ChildWorkflowOptions],
-    ) -> ResultType:
-        return await self._delegate.execute_child_workflow(
+    ) -> ChildWorkflowFuture[ResultType]:
+        return self._delegate.execute_child_workflow(
             workflow_type, result_type, *args, **kwargs
         )
 
     @override
-    async def start_child_workflow(
-        self,
-        workflow_type: str,
-        result_type: Type[ResultType],
-        *args: Any,
-        **kwargs: Unpack[ChildWorkflowOptions],
-    ) -> "ChildWorkflowFuture[ResultType]":
-        return await self._delegate.start_child_workflow(
-            workflow_type, result_type, *args, **kwargs
-        )
-
-    @override
-    async def signal_child_workflow(
+    def signal_child_workflow(
         self,
         child_workflow_id: str,
         signal_name: str,
         *args: Any,
-    ) -> None:
-        await self._delegate.signal_child_workflow(
+    ) -> WorkflowFuture[None]:
+        return self._delegate.signal_child_workflow(
             child_workflow_id, signal_name, *args
         )
 
     @override
-    async def signal_external_workflow(
+    def signal_external_workflow(
         self,
         workflow_id: str,
         signal_name: str,
         *args: Any,
         run_id: str = "",
         domain: str = "",
-    ) -> None:
-        await self._delegate.signal_external_workflow(
+    ) -> WorkflowFuture[None]:
+        return self._delegate.signal_external_workflow(
             workflow_id, signal_name, *args, run_id=run_id, domain=domain
         )
 
     @override
-    async def start_timer(self, duration: timedelta) -> None:
-        await self._delegate.start_timer(duration)
+    def start_timer(self, duration: timedelta) -> WorkflowFuture[None]:
+        return self._delegate.start_timer(duration)
 
     @override
-    async def wait_condition(self, predicate: Callable[[], bool]) -> None:
-        await self._delegate.wait_condition(predicate)
+    def wait_condition(self, predicate: Callable[[], bool]) -> WorkflowFuture[None]:
+        return self._delegate.wait_condition(predicate)
 
     @override
     def side_effect(

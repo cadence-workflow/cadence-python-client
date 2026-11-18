@@ -1,44 +1,46 @@
 import asyncio
-from typing import Any, Awaitable, Generator, Type, cast
+from typing import Any
 
-from cadence.api.v1.common_pb2 import Payload
-from cadence.data_converter import DataConverter
-from cadence.workflow import ResultType, WorkflowContext
+from cadence._internal.workflow.statemachine.decision_state_machine import (
+    CancelFn,
+    ConverterFn,
+    DecisionFuture,
+)
+from cadence.api.v1.common_pb2 import WorkflowExecution
+from cadence.workflow import (
+    ChildWorkflowFuture,
+    ResultType,
+    WorkflowContext,
+    WorkflowFuture,
+)
 
 
-class ChildWorkflowFutureImpl(Awaitable[ResultType]):
+class ChildWorkflowFutureImpl(
+    DecisionFuture[ResultType], ChildWorkflowFuture[ResultType]
+):
     def __init__(
         self,
+        loop: asyncio.AbstractEventLoop | None = None,
+        request_cancel: CancelFn | None = None,
+        converter: ConverterFn[ResultType] | None = None,
+        *,
         workflow_id: str,
-        run_id: str,
-        result_future: "asyncio.Future[Payload]",
-        result_type: Type[ResultType],
-        data_converter: DataConverter,
+        execution: WorkflowFuture[WorkflowExecution],
     ) -> None:
+        super().__init__(loop, request_cancel, converter)
         self._workflow_id = workflow_id
-        self._run_id = run_id
-        self._result_future = result_future
-        self._result_type = result_type
-        self._data_converter = data_converter
+        self._execution = execution
 
     @property
     def workflow_id(self) -> str:
         return self._workflow_id
 
     @property
-    def run_id(self) -> str:
-        return self._run_id
+    def execution(self) -> WorkflowFuture[WorkflowExecution]:
+        return self._execution
 
-    def cancel(self) -> bool:
-        """Request cancellation of the child workflow."""
-        return self._result_future.cancel()
-
-    async def signal(self, signal_name: str, *args: Any) -> None:
+    def signal(self, signal_name: str, *args: Any) -> WorkflowFuture[None]:
         """Send a signal to this child workflow."""
-        ctx = WorkflowContext.get()
-        await ctx.signal_child_workflow(self._workflow_id, signal_name, *args)
-
-    def __await__(self) -> Generator[Any, None, ResultType]:
-        payload: Payload = yield from self._result_future.__await__()
-        result = self._data_converter.from_data(payload, [self._result_type])[0]
-        return cast(ResultType, result)
+        return WorkflowContext.get().signal_child_workflow(
+            self._workflow_id, signal_name, *args
+        )

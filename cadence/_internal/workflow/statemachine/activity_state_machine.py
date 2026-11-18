@@ -1,3 +1,5 @@
+from typing import Any
+
 from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionState,
     DecisionType,
@@ -10,7 +12,6 @@ from cadence._internal.workflow.statemachine.nondeterminism import (
     record_immediate_cancel,
 )
 from cadence.api.v1 import decision, history
-from cadence.api.v1.common_pb2 import Payload
 from cadence.api.v1.workflow_pb2 import TimeoutType
 from cadence.error import ActivityFailure
 
@@ -19,12 +20,12 @@ activity_events = EventDispatcher("scheduled_event_id")
 
 class ActivityStateMachine(BaseDecisionStateMachine):
     request: decision.ScheduleActivityTaskDecisionAttributes
-    completed: DecisionFuture[Payload]
+    completed: DecisionFuture[Any]
 
     def __init__(
         self,
         request: decision.ScheduleActivityTaskDecisionAttributes,
-        completed: DecisionFuture[Payload],
+        completed: DecisionFuture[Any],
     ) -> None:
         super().__init__()
         self.request = request
@@ -82,7 +83,7 @@ class ActivityStateMachine(BaseDecisionStateMachine):
         self, event: history.ActivityTaskCompletedEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self._resolve(self.completed, result=event.result)
+        self.completed.complete_with_payload(event.result)
 
     @activity_events.event()
     def handle_failed(self, event: history.ActivityTaskFailedEventAttributes) -> None:

@@ -11,15 +11,16 @@ from cadence._internal.workflow.statemachine.event_dispatcher import EventDispat
 from cadence._internal.workflow.statemachine.nondeterminism import (
     record_immediate_cancel,
 )
+from cadence._internal.failure import (
+    child_workflow_canceled_error,
+    child_workflow_failed_error,
+    child_workflow_terminated_error,
+    child_workflow_timed_out_error,
+    start_child_workflow_failed_error,
+)
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Payload, WorkflowExecution
-from cadence.error import (
-    ChildWorkflowExecutionCanceled,
-    ChildWorkflowExecutionFailed,
-    ChildWorkflowExecutionTerminated,
-    ChildWorkflowExecutionTimedOut,
-    StartChildWorkflowExecutionFailed,
-)
+from cadence.data_converter import DataConverter
 
 child_workflow_events = EventDispatcher("initiated_event_id")
 
@@ -37,11 +38,13 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         request: decision.StartChildWorkflowExecutionDecisionAttributes,
         execution: DecisionFuture[WorkflowExecution],
         result: DecisionFuture[Payload],
+        data_converter: DataConverter,
     ) -> None:
         super().__init__()
         self.request = request
         self.execution = execution
         self.result = result
+        self._data_converter = data_converter
         self._run_id = None
 
     def get_id(self) -> DecisionId:
@@ -106,11 +109,7 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         self, event: history.StartChildWorkflowExecutionFailedEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        exc = StartChildWorkflowExecutionFailed(
-            f"start child failed: {event.cause}",
-            cause=event.cause,
-            workflow_id=event.workflow_id,
-        )
+        exc = start_child_workflow_failed_error(event, self.request)
         self._resolve(self.execution, exc=exc)
         self._resolve(self.result, exc=exc)
 
@@ -139,43 +138,44 @@ class ChildWorkflowExecutionStateMachine(BaseDecisionStateMachine):
         self._transition(DecisionState.COMPLETED)
         self._resolve(
             self.result,
-            exc=ChildWorkflowExecutionFailed(
-                event.failure.reason,
-                failure=event.failure,
-            ),
+            exc=child_workflow_failed_error(event, self._data_converter),
         )
 
     @child_workflow_events.event()
     def handle_canceled(
         self, event: history.ChildWorkflowExecutionCanceledEventAttributes
     ) -> None:
-        self._transition(DecisionState.COMPLETED)
-        self._resolve(
-            self.result,
-            exc=ChildWorkflowExecutionCanceled(
-                "child workflow canceled", details=event.details
-            ),
+        cancel_requested = self.state in (
+            DecisionState.CANCELED_AFTER_RECORDED,
+            DecisionState.CANCELED_AFTER_STARTED,
+            DecisionState.CANCELLATION_RECORDED,
         )
+        self._transition(DecisionState.COMPLETED)
+        if self.result.done():
+            return
+        if cancel_requested:
+            self.result.force_cancel(event.details.data.decode())
+        else:
+            # Canceled by something other than this workflow, so it's a failure
+            # of the child rather than cancellation of the awaiting coroutine.
+            self._resolve(
+                self.result,
+                exc=child_workflow_canceled_error(event, self._data_converter),
+            )
 
     @child_workflow_events.event()
     def handle_timed_out(
         self, event: history.ChildWorkflowExecutionTimedOutEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self._resolve(
-            self.result,
-            exc=ChildWorkflowExecutionTimedOut(
-                f"child workflow timed out: {event.timeout_type}",
-                timeout_type=int(event.timeout_type),
-            ),
-        )
+        self._resolve(self.result, exc=child_workflow_timed_out_error(event))
 
     @child_workflow_events.event()
     def handle_terminated(
-        self, _: history.ChildWorkflowExecutionTerminatedEventAttributes
+        self, event: history.ChildWorkflowExecutionTerminatedEventAttributes
     ) -> None:
         self._transition(DecisionState.COMPLETED)
-        self._resolve(self.result, exc=ChildWorkflowExecutionTerminated())
+        self._resolve(self.result, exc=child_workflow_terminated_error(event))
 
     @child_workflow_events.event(
         "workflow_execution.workflow_id", event_id_is_alias=True

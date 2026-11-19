@@ -5,8 +5,8 @@ from typing import Any, Optional, Callable, Awaitable
 
 from cadence._internal.workflow.deterministic_event_loop import (
     DeterministicEventLoop,
+    FatalDecisionError,
 )
-from cadence.error import SignalFailure
 from cadence.query import QueryDefinition
 from cadence.signal import SignalDefinition
 from cadence.workflow import WorkflowCancellationInfo, WorkflowDefinition
@@ -33,11 +33,6 @@ class WorkflowInstance:
         self._task: Optional[Task[Any]] = None
         # Strong references to in-flight async signal handler tasks.
         self._signal_tasks: set[Task[Any]] = set()
-        # Fail the decision task if a signal handler raises an exception.
-        self._signal_failure: Optional[SignalFailure] = None
-
-    def get_signal_failure(self) -> Optional[SignalFailure]:
-        return self._signal_failure
 
     def start(self, args: list[Any]) -> None:
         if self._task is None:
@@ -119,5 +114,10 @@ class WorkflowInstance:
         if task.cancelled():
             return
         exc = task.exception()
-        if isinstance(exc, Exception) and self._signal_failure is None:
-            self._signal_failure = SignalFailure(str(exc) or None, signal_name)
+        if isinstance(exc, Exception):
+            # Signal handler failures fail the decision task, not the workflow.
+            error = FatalDecisionError(
+                f"signal handler {signal_name!r} failed: {exc!r}"
+            )
+            error.__cause__ = exc
+            self._loop.fail_decision(error)

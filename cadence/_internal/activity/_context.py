@@ -98,7 +98,14 @@ class _Context(ActivityContext):
 
     def _cancel_if_requested(self, future: asyncio.Future[bool]) -> None:
         try:
-            if future.result() and self._activity_task is not None:
+            # Several heartbeats can be in flight, so only cancel once. Otherwise
+            # an activity that handles the first CancelledError, e.g. to clean
+            # up, could be canceled again.
+            if (
+                future.result()
+                and self._activity_task is not None
+                and not self._cancel_event.is_set()
+            ):
                 self._cancel_event.set()
                 self._activity_task.cancel()
         except Exception:

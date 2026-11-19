@@ -7,9 +7,12 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
 from cadence._internal.workflow.statemachine.signal_external_workflow_state_machine import (
     SignalExternalWorkflowStateMachine,
 )
-from cadence.error import SignalExternalWorkflowFailed
+from cadence.error import SignalExternalWorkflowError
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import WorkflowExecution
+from cadence.api.v1.workflow_pb2 import (
+    SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_UNKNOWN_EXTERNAL_WORKFLOW_EXECUTION,
+)
 
 SIGNAL_ID = "0"
 DOMAIN = "test-domain"
@@ -90,12 +93,21 @@ async def test_failed_rejects_future():
     sm.handle_failed(
         history.SignalExternalWorkflowExecutionFailedEventAttributes(
             initiated_event_id=1,
+            cause=SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_UNKNOWN_EXTERNAL_WORKFLOW_EXECUTION,
         )
     )
 
     assert sm.state is DecisionState.COMPLETED
     assert completed.done() is True
     with pytest.raises(
-        SignalExternalWorkflowFailed, match="signal external workflow failed"
-    ):
+        SignalExternalWorkflowError,
+        match=r"signal_name=my_signal, workflow_id=child-wf-1\): "
+        r"UNKNOWN_EXTERNAL_WORKFLOW_EXECUTION$",
+    ) as exc_info:
         completed.result()
+    assert exc_info.value.workflow_id == "child-wf-1"
+    assert exc_info.value.signal_name == "my_signal"
+    assert (
+        exc_info.value.failure_cause
+        == SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_UNKNOWN_EXTERNAL_WORKFLOW_EXECUTION
+    )

@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock
 
+import grpc
+
 import pytest
 
 from cadence._internal.activity._heartbeat import _HeartbeatSender
@@ -9,6 +11,11 @@ from cadence.api.v1.service_worker_pb2 import (
     RecordActivityTaskHeartbeatResponse,
 )
 from cadence.data_converter import DefaultDataConverter
+from cadence.error import (
+    DomainNotActiveError,
+    EntityNotExistsError,
+    WorkflowExecutionAlreadyCompletedError,
+)
 
 
 @pytest.fixture
@@ -121,3 +128,19 @@ async def test_heartbeat_returns_false_on_rpc_failure(worker_stub, data_converte
         previous_details=Payload(),
     )
     assert await sender.send_heartbeat() is False
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        EntityNotExistsError("gone", grpc.StatusCode.NOT_FOUND, "", "", []),
+        WorkflowExecutionAlreadyCompletedError("completed", grpc.StatusCode.NOT_FOUND),
+        DomainNotActiveError(
+            "not active", grpc.StatusCode.FAILED_PRECONDITION, "", "", "", []
+        ),
+    ],
+)
+async def test_heartbeat_returns_true_when_activity_is_gone(sender, worker_stub, error):
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(side_effect=error)
+
+    assert await sender.send_heartbeat() is True

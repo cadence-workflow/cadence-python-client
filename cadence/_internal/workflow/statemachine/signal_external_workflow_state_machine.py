@@ -8,8 +8,8 @@ from cadence._internal.workflow.statemachine.decision_state_machine import (
     DecisionType,
 )
 from cadence._internal.workflow.statemachine.event_dispatcher import EventDispatcher
+from cadence._internal.failure import signal_external_workflow_error
 from cadence.api.v1 import decision, history
-from cadence.error import SignalExternalWorkflowFailed
 
 signal_external_events = EventDispatcher("initiated_event_id")
 
@@ -68,8 +68,5 @@ class SignalExternalWorkflowStateMachine(BaseDecisionStateMachine):
         self._transition(DecisionState.COMPLETED)
         self._resolve(
             self.completed,
-            exc=SignalExternalWorkflowFailed(
-                f"signal external workflow failed: {event.cause}",
-                cause=event.cause,
-            ),
+            exc=signal_external_workflow_error(event, self.request),
         )

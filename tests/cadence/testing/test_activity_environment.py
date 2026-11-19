@@ -6,7 +6,7 @@ from datetime import timedelta
 import pytest
 
 from cadence import activity
-from cadence.error import ActivityCancelledError
+from cadence.error import CancelRequestedError
 from cadence.testing import TestActivityEnvironment
 from cadence.worker import Registry
 
@@ -71,7 +71,7 @@ async def async_cancellable() -> str:
 def sync_cancellable() -> str:
     for _ in range(100):
         if activity.is_cancelled():
-            raise ActivityCancelledError("cleanup")
+            raise CancelRequestedError()
         activity.heartbeat("progress")
         time.sleep(0.01)
     raise AssertionError("expected cancellation")
@@ -182,7 +182,7 @@ async def test_async_cancellation(env: TestActivityEnvironment):
 
 async def test_sync_cancellation(env: TestActivityEnvironment):
     env.cancel()
-    with pytest.raises(ActivityCancelledError):
+    with pytest.raises(CancelRequestedError):
         await env.execute_activity(sync_cancellable)
 
 

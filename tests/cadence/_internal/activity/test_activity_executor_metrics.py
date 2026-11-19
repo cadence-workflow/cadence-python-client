@@ -235,6 +235,29 @@ class TestActivityExecutionFailure:
         assert ACTIVITY_TASK_FAILED_COUNTER in counter_names
 
     @pytest.mark.asyncio
+    async def test_emits_failed_counters_when_result_encoding_fails(self):
+        emitter = _mock_emitter()
+        reg = Registry()
+
+        class Unencodable:
+            pass
+
+        @reg.activity(name=ACTIVITY_TYPE)
+        async def my_activity():
+            return Unencodable()
+
+        executor = _make_executor(emitter, reg)
+        await executor.execute(_make_task())
+
+        histogram_names = [c.args[0] for c in _tagged(emitter).histogram.call_args_list]
+        counter_names = [c.args[0] for c in _tagged(emitter).counter.call_args_list]
+        assert ACTIVITY_EXECUTION_LATENCY in histogram_names
+        assert ACTIVITY_RESPONSE_LATENCY in histogram_names
+        assert ACTIVITY_EXECUTION_FAILED_COUNTER in counter_names
+        assert ACTIVITY_TASK_FAILED_COUNTER in counter_names
+        assert ACTIVITY_TASK_COMPLETED_COUNTER not in counter_names
+
+    @pytest.mark.asyncio
     async def test_emits_response_latency_on_failure(self):
         emitter = _mock_emitter()
         reg = Registry()

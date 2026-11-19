@@ -323,6 +323,54 @@ async def test_activity_sync_failure(client):
     )
 
 
+class _Unencodable:
+    pass
+
+
+@pytest.mark.parametrize("is_async", [True, False])
+async def test_activity_result_encoding_failure_reports_failure(client, is_async):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskFailed = AsyncMock(
+        return_value=RespondActivityTaskFailedResponse()
+    )
+    reg = Registry()
+
+    if is_async:
+
+        @reg.activity(name="activity_type")
+        async def activity_fn():
+            return _Unencodable()
+
+    else:
+
+        @reg.activity(name="activity_type")
+        def activity_fn():
+            return _Unencodable()
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCompleted.assert_not_called()
+    worker_stub.RespondActivityTaskFailed.assert_called_once()
+
+    call = worker_stub.RespondActivityTaskFailed.call_args[0][0]
+
+    # Confirm it's a stacktrace, then clear it since it is different on every machine
+    assert (
+        "Encoding objects of type _Unencodable is unsupported"
+        in call.failure.details.decode()
+    )
+    call.failure.details = bytes()
+    assert call == RespondActivityTaskFailedRequest(
+        task_token=b"task_token",
+        failure=Failure(
+            reason="TypeError",
+        ),
+        identity="identity",
+    )
+
+
 async def test_activity_unknown(client):
     worker_stub = client.worker_stub
     worker_stub.RespondActivityTaskFailed = AsyncMock(
@@ -580,6 +628,42 @@ async def test_activity_async_cancellation_reports_cancelled_error_args(client):
         RespondActivityTaskCanceledRequest(
             task_token=b"task_token",
             details=Payload(data=b'"cleanup"'),
+            identity="identity",
+        )
+    )
+    worker_stub.RespondActivityTaskCompleted.assert_not_called()
+    worker_stub.RespondActivityTaskFailed.assert_not_called()
+
+
+async def test_activity_cancellation_details_encoding_failure_reports_cancelled(
+    client,
+):
+    worker_stub = client.worker_stub
+    worker_stub.RespondActivityTaskCanceled = AsyncMock(
+        return_value=RespondActivityTaskCanceledResponse()
+    )
+    worker_stub.RecordActivityTaskHeartbeat = AsyncMock(
+        return_value=RecordActivityTaskHeartbeatResponse(cancel_requested=True)
+    )
+
+    reg = Registry()
+
+    @reg.activity(name="activity_type")
+    async def activity_fn():
+        try:
+            activity.heartbeat("progress")
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            raise asyncio.CancelledError(_Unencodable())
+
+    executor = ActivityExecutor(client, "task_list", "identity", 1, reg.get_activity)
+
+    await executor.execute(fake_task("activity_type", ""))
+
+    worker_stub.RespondActivityTaskCanceled.assert_called_once_with(
+        RespondActivityTaskCanceledRequest(
+            task_token=b"task_token",
+            details=Payload(),
             identity="identity",
         )
     )

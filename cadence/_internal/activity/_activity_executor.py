@@ -83,11 +83,14 @@ class ActivityExecutor:
         )
         context: Union[_Context, _SyncContext] | None = None
         error: Optional[Exception] = None
-        result: Any = None
+        result_payload: Optional[Payload] = None
         exec_start_ns = time.monotonic_ns()
         try:
             context = self._create_context(task)
             result = await context.execute(task.input)
+            # Encode before reporting so that a result the data converter can't
+            # serialize fails the activity instead of leaving the task unanswered.
+            result_payload = self._data_converter.to_data([result])
         except asyncio.CancelledError as e:
             if context is not None and context.is_cancelled():
                 details = list(e.args) if e.args else None
@@ -121,7 +124,9 @@ class ActivityExecutor:
             _logger.error("Activity failed", exc_info=error)
             await self._report_failure(task, error, emitter, e2e_latency)
         else:
-            await self._report_success(task, result, emitter, e2e_latency)
+            await self._report_success(
+                task, cast(Payload, result_payload), emitter, e2e_latency
+            )
 
     def _create_context(
         self, task: PollForActivityTaskResponse
@@ -194,7 +199,17 @@ class ActivityExecutor:
         details: list[Any] | None,
         emitter: MetricsEmitter,
     ) -> None:
-        as_payload = self._data_converter.to_data(details) if details else Payload()
+        try:
+            as_payload = self._data_converter.to_data(details) if details else Payload()
+        except Exception:
+            # Cancellation was requested and honored, so it must still be reported
+            # as such. Failing the activity here would change how the workflow
+            # observes the cancellation.
+            _logger.exception(
+                "Failed to encode activity cancellation details, reporting "
+                "cancellation without details"
+            )
+            as_payload = Payload()
         resp_start_ns = time.monotonic_ns()
         try:
             await self._client.worker_stub.RespondActivityTaskCanceled(
@@ -217,17 +232,16 @@ class ActivityExecutor:
     async def _report_success(
         self,
         task: PollForActivityTaskResponse,
-        result: Any,
+        result: Payload,
         emitter: MetricsEmitter,
         e2e_latency: timedelta | None,
     ):
-        as_payload = self._data_converter.to_data([result])
         resp_start_ns = time.monotonic_ns()
         try:
             await self._client.worker_stub.RespondActivityTaskCompleted(
                 RespondActivityTaskCompletedRequest(
                     task_token=task.task_token,
-                    result=as_payload,
+                    result=result,
                     identity=self._identity,
                 )
             )

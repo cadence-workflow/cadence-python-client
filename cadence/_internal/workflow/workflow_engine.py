@@ -13,6 +13,7 @@ from cadence._internal.workflow.deterministic_event_loop import (
     FatalDecisionError,
 )
 from cadence._internal.workflow.statemachine.decision_manager import DecisionManager
+from cadence._internal.workflow.versioning import VersionMismatchError
 from cadence._internal.workflow.workflow_instance import WorkflowInstance
 from cadence.api.v1.decision_pb2 import (
     CancelWorkflowExecutionDecisionAttributes,
@@ -128,6 +129,10 @@ class WorkflowEngine:
                     return DecisionResult(decisions=decisions, query_result=None)
 
         # TODO: reevaluate if this is needed to log error here or in the caller
+        except VersionMismatchError:
+            # The decision task handler reports version mismatches at their own
+            # level, so they are not logged here as errors.
+            raise
         except (Exception, FatalDecisionError) as e:
             # Log decision task failure with full context (matches Java ReplayDecisionTaskHandler)
             logger.error(

@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import TypeVar, Generic
 
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
+from cadence._internal.workflow.versioning import VersionMismatchError
 from cadence.metrics import MetricsEmitter, NoOpMetricsEmitter
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,9 @@ class BaseTaskHandler(ABC, Generic[T]):
             await self._handle_task_implementation(task)
 
         except (Exception, FatalDecisionError) as e:
-            logger.exception(f"Error handling task: {e}")
+            # handle_task_failure reports version mismatches at their own level.
+            if not isinstance(e, VersionMismatchError):
+                logger.exception(f"Error handling task: {e}")
             await self.handle_task_failure(task, e)
 
     @abstractmethod

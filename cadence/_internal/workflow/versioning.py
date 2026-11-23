@@ -51,6 +51,52 @@ def validate_version_arguments(
         raise ValueError("min_supported must not be greater than max_supported")
 
 
+# Values of the VersionMismatchType metric and log tag.
+VERSION_MISMATCH_TOO_NEW = "toonew"
+"""The version is newer than this worker's code supports.
+
+Expected during a rolling deployment, when an old worker replays a workflow that
+a newer worker has already moved to a higher version. It resolves itself once an
+upgraded worker picks up the decision task.
+"""
+VERSION_MISMATCH_TOO_OLD = "tooold"
+"""The workflow code dropped support for a version that is still in use.
+
+This is a bug in the workflow code.
+"""
+
+
+class VersionMismatchError(FatalDecisionError):
+    """Raised by get_version when the version is outside the supported range.
+
+    It is a separate type so that the decision task handler can report it apart
+    from other decision failures. Like any FatalDecisionError, it fails the
+    decision task so it is retried, not the workflow.
+    """
+
+    def __init__(
+        self,
+        change_id: str,
+        version: int,
+        min_supported: int,
+        max_supported: int,
+    ) -> None:
+        # Same message as before this type existed, so log searches keep working.
+        super().__init__(
+            f"version {version} for change_id {change_id!r} is outside "
+            f"the supported range [{min_supported}, {max_supported}]"
+        )
+        self.change_id = change_id
+        self.version = version
+        self.min_supported = min_supported
+        self.max_supported = max_supported
+        self.mismatch_type = (
+            VERSION_MISMATCH_TOO_NEW
+            if version > max_supported
+            else VERSION_MISMATCH_TOO_OLD
+        )
+
+
 def validate_resolved_version(
     change_id: str,
     version: int,
@@ -59,10 +105,7 @@ def validate_resolved_version(
 ) -> None:
     if version < min_supported or version > max_supported:
         fail_decision(
-            FatalDecisionError(
-                f"version {version} for change_id {change_id!r} is outside "
-                f"the supported range [{min_supported}, {max_supported}]"
-            )
+            VersionMismatchError(change_id, version, min_supported, max_supported)
         )
 
 

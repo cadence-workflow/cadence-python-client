@@ -8,6 +8,10 @@ from typing import Optional, Sequence
 from cadence._internal.workflow.deterministic_event_loop import FatalDecisionError
 from cadence._internal.workflow.history_event_iterator import iterate_history_events
 from cadence._internal.workflow.statemachine.nondeterminism import NonDeterminismError
+from cadence._internal.workflow.versioning import (
+    VERSION_MISMATCH_TOO_NEW,
+    VersionMismatchError,
+)
 from cadence._internal.context import header_to_dict
 from cadence._internal.workflow.memo import memo_from_proto
 from cadence._internal.workflow.search_attributes import search_attributes_from_proto
@@ -37,9 +41,11 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
+    DECISION_TASK_VERSION_MISMATCH_COUNTER,
     NON_DETERMINISTIC_ERROR,
     TAG_DOMAIN,
     TAG_TASK_LIST,
+    TAG_VERSION_MISMATCH_TYPE,
     TAG_WORKFLOW_TYPE,
     WORKFLOW_CANCELED_COUNTER,
     WORKFLOW_COMPLETED_COUNTER,
@@ -220,10 +226,19 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
                 task.query if is_query_task else None,
             )
         except (Exception, FatalDecisionError) as e:
-            emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
-            emitter.counter(DECISION_TASK_PANIC_COUNTER)
-            if isinstance(e, NonDeterminismError):
-                emitter.counter(NON_DETERMINISTIC_ERROR)
+            if isinstance(e, VersionMismatchError):
+                # Reported apart from other failures so that rolling deployments
+                # do not look like workflow crashes. The decision task still
+                # fails and is retried as before.
+                emitter.counter(
+                    DECISION_TASK_VERSION_MISMATCH_COUNTER,
+                    tags={TAG_VERSION_MISMATCH_TYPE: e.mismatch_type},
+                )
+            else:
+                emitter.counter(DECISION_EXECUTION_FAILED_COUNTER)
+                emitter.counter(DECISION_TASK_PANIC_COUNTER)
+                if isinstance(e, NonDeterminismError):
+                    emitter.counter(NON_DETERMINISTIC_ERROR)
             raise
         finally:
             emitter.histogram(
@@ -280,20 +295,43 @@ class DecisionTaskHandler(BaseTaskHandler[PollForDecisionTaskResponse]):
             await self._respond_query_task_failed(task, str(error))
             return
 
-        logger.error(
-            "Decision task processing failure",
-            extra={
-                "workflow_type": workflow_type,
-                "workflow_id": workflow_id,
-                "run_id": run_id,
-                "started_event_id": task.started_event_id,
-                "attempt": task.attempt,
-                "error_type": type(error).__name__,
-                "error_message": str(error),
-                "is_query_task": task.HasField("query"),
-            },
-            exc_info=True,
-        )
+        if isinstance(error, VersionMismatchError):
+            # A version that is too new is expected while a rolling deployment
+            # is in progress, so it is a warning. A version that is too old
+            # means the code dropped support for a version still in use.
+            log_level = (
+                logging.WARNING
+                if error.mismatch_type == VERSION_MISMATCH_TOO_NEW
+                else logging.ERROR
+            )
+            logger.log(
+                log_level,
+                "Workflow version mismatch.",
+                extra={
+                    "workflow_type": workflow_type,
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "started_event_id": task.started_event_id,
+                    "attempt": task.attempt,
+                    "version_mismatch_type": error.mismatch_type,
+                    "error_message": str(error),
+                },
+            )
+        else:
+            logger.error(
+                "Decision task processing failure",
+                extra={
+                    "workflow_type": workflow_type,
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "started_event_id": task.started_event_id,
+                    "attempt": task.attempt,
+                    "error_type": type(error).__name__,
+                    "error_message": str(error),
+                    "is_query_task": task.HasField("query"),
+                },
+                exc_info=True,
+            )
 
         # Determine the failure cause
         # TODO revisit failure cause logic

@@ -44,6 +44,11 @@ DECISION_EXECUTION_LATENCY = CADENCE_METRICS_PREFIX + "decision-execution-latenc
 DECISION_RESPONSE_FAILED_COUNTER = CADENCE_METRICS_PREFIX + "decision-response-failed"
 DECISION_RESPONSE_LATENCY = CADENCE_METRICS_PREFIX + "decision-response-latency_ns"
 DECISION_TASK_PANIC_COUNTER = CADENCE_METRICS_PREFIX + "decision-task-panic"
+# Decision tasks that failed because get_version found a version outside the
+# range the workflow code supports. Tagged with TAG_VERSION_MISMATCH_TYPE.
+DECISION_TASK_VERSION_MISMATCH_COUNTER = (
+    CADENCE_METRICS_PREFIX + "decision-task-version-mismatch"
+)
 DECISION_TASK_COMPLETED_COUNTER = CADENCE_METRICS_PREFIX + "decision-task-completed"
 
 # Activity poll metrics
@@ -101,3 +106,4 @@ TAG_WORKFLOW_ID = "WorkflowID"
 TAG_RUN_ID = "RunID"
 TAG_ATTEMPT = "Attempt"
 TAG_WORKER_TYPE = "WorkerType"
+TAG_VERSION_MISMATCH_TYPE = "VersionMismatchType"

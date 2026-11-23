@@ -1,6 +1,7 @@
 """Tests for decision task execution and workflow lifecycle metrics."""
 
 import asyncio
+import logging
 from datetime import timedelta
 from typing import cast
 import pytest
@@ -35,9 +36,11 @@ from cadence.metrics.constants import (
     DECISION_RESPONSE_LATENCY,
     DECISION_TASK_COMPLETED_COUNTER,
     DECISION_TASK_PANIC_COUNTER,
+    DECISION_TASK_VERSION_MISMATCH_COUNTER,
     NON_DETERMINISTIC_ERROR,
     TAG_DOMAIN,
     TAG_TASK_LIST,
+    TAG_VERSION_MISMATCH_TYPE,
     TAG_WORKFLOW_TYPE,
     WORKFLOW_CANCELED_COUNTER,
     WORKFLOW_COMPLETED_COUNTER,
@@ -53,6 +56,7 @@ from cadence._internal.workflow.deterministic_event_loop import FatalDecisionErr
 from cadence._internal.workflow.statemachine.nondeterminism import (
     NonDeterminismError,
 )
+from cadence._internal.workflow.versioning import VersionMismatchError
 from cadence._internal.workflow.workflow_engine import (
     DecisionResult,
     _outcome_from_decision,
@@ -674,6 +678,100 @@ class TestNonDeterminismMetrics:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# DecisionTaskHandler: get_version mismatches
+# ---------------------------------------------------------------------------
+
+
+class TestVersionMismatchReporting:
+    async def _run_engine_failure(self, emitter: Mock, error: BaseException) -> None:
+        handler = _make_handler(emitter, _mock_registry())
+        task = _make_task()
+        with (
+            patch(
+                "cadence.worker._decision_task_handler.iterate_history_events",
+                return_value=_async_iter([_make_started_event()]),
+            ),
+            patch("cadence.worker._decision_task_handler.WorkflowEngine"),
+        ):
+            loop = asyncio.get_event_loop()
+            with patch.object(
+                loop, "run_in_executor", new=AsyncMock(side_effect=error)
+            ):
+                with pytest.raises(type(error)):
+                    await handler._handle_task_implementation(task)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "version, expected_type",
+        [(2, "toonew"), (0, "tooold")],
+    )
+    async def test_counts_only_the_version_mismatch_counter(
+        self, version: int, expected_type: str
+    ):
+        emitter = _mock_emitter()
+
+        await self._run_engine_failure(
+            emitter, VersionMismatchError("change", version, 1, 1)
+        )
+
+        _tagged(emitter).counter.assert_any_call(
+            DECISION_TASK_VERSION_MISMATCH_COUNTER,
+            tags={TAG_VERSION_MISMATCH_TYPE: expected_type},
+        )
+        counter_names = [c.args[0] for c in _tagged(emitter).counter.call_args_list]
+        assert DECISION_TASK_PANIC_COUNTER not in counter_names
+        assert DECISION_EXECUTION_FAILED_COUNTER not in counter_names
+
+    @pytest.mark.asyncio
+    async def test_other_fatal_errors_still_count_as_panics(self):
+        emitter = _mock_emitter()
+
+        await self._run_engine_failure(emitter, FatalDecisionError("fatal"))
+
+        counter_names = [c.args[0] for c in _tagged(emitter).counter.call_args_list]
+        assert DECISION_TASK_PANIC_COUNTER in counter_names
+        assert DECISION_EXECUTION_FAILED_COUNTER in counter_names
+        assert DECISION_TASK_VERSION_MISMATCH_COUNTER not in counter_names
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "version, expected_level",
+        [(2, logging.WARNING), (0, logging.ERROR)],
+    )
+    async def test_logs_once_at_the_expected_level(
+        self, caplog, version: int, expected_level: int
+    ):
+        handler = _make_handler(_mock_emitter(), _mock_registry())
+        error = VersionMismatchError("change", version, 1, 1)
+
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch.object(
+                handler,
+                "_handle_task_implementation",
+                new=AsyncMock(side_effect=error),
+            ),
+        ):
+            await handler.handle_task(_make_task())
+
+        mismatches = [
+            r for r in caplog.records if r.getMessage() == "Workflow version mismatch."
+        ]
+        assert len(mismatches) == 1
+        assert mismatches[0].levelno == expected_level
+        assert not [
+            r for r in caplog.records if "Error handling task" in r.getMessage()
+        ]
+        assert not [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Decision task processing failure"
+        ]
+        # The decision task still fails, so it is retried.
+        handler._client.worker_stub.RespondDecisionTaskFailed.assert_awaited_once()
 
 
 async def _async_iter(items):

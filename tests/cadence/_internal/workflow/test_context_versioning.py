@@ -17,7 +17,12 @@ from cadence._internal.workflow.statemachine.marker_state_machine import (
     marker_context_id,
     marker_decision_id,
 )
-from cadence._internal.workflow.versioning import encode_version_marker_details
+from cadence._internal.workflow.versioning import (
+    VERSION_MISMATCH_TOO_NEW,
+    VERSION_MISMATCH_TOO_OLD,
+    VersionMismatchError,
+    encode_version_marker_details,
+)
 from cadence.testing._workflow_environment import _InMemoryWorkflowContext
 from cadence.api.v1 import decision, history
 from cadence.api.v1.common_pb2 import Header, Payload
@@ -180,6 +185,46 @@ def test_get_version_recorded_version_is_revalidated():
 
     with pytest.raises(FatalDecisionError, match="version 2"):
         context.get_version("change", 3, 4)
+
+
+def test_get_version_too_new_raises_version_mismatch_error():
+    context, manager = _context(replay=True)
+    _load_version_marker(
+        manager,
+        history.HistoryEvent(
+            event_id=1,
+            marker_recorded_event_attributes=history.MarkerRecordedEventAttributes(
+                marker_name=VERSION_MARKER_NAME,
+                details=encode_version_marker_details(2),
+                header=Header(
+                    fields={MARKER_HEADER_KEY: encode_marker_header("change")}
+                ),
+            ),
+        ),
+    )
+
+    # A newer worker recorded version 2; this code only supports up to 1.
+    with pytest.raises(VersionMismatchError) as exc_info:
+        context.get_version("change", DEFAULT_VERSION, 1)
+
+    error = exc_info.value
+    assert error.mismatch_type == VERSION_MISMATCH_TOO_NEW
+    assert (error.change_id, error.version) == ("change", 2)
+    assert (error.min_supported, error.max_supported) == (DEFAULT_VERSION, 1)
+    assert str(error) == (
+        "version 2 for change_id 'change' is outside the supported range [-1, 1]"
+    )
+
+
+def test_get_version_too_old_raises_version_mismatch_error():
+    context, manager = _context(replay=True)
+
+    # No marker in history, so replay sees DEFAULT_VERSION, below min_supported.
+    with pytest.raises(VersionMismatchError) as exc_info:
+        context.get_version("change", 0, 1)
+
+    assert exc_info.value.mismatch_type == VERSION_MISMATCH_TOO_OLD
+    assert exc_info.value.version == DEFAULT_VERSION
 
 
 def test_get_version_does_not_upsert_for_an_existing_marker():

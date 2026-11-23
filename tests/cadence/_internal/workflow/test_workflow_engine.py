@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Mapping
 
@@ -24,10 +25,15 @@ from cadence._internal.workflow.deterministic_event_loop import (
     FatalDecisionError,
     fail_decision,
 )
+from cadence._internal.workflow.versioning import (
+    VERSION_MISMATCH_TOO_NEW,
+    VersionMismatchError,
+)
 from cadence._internal.workflow.workflow_engine import WorkflowEngine
 from cadence import workflow
 from cadence.data_converter import DefaultDataConverter
 from cadence.workflow import (
+    DEFAULT_VERSION,
     SearchAttributeType,
     WorkflowContext,
     WorkflowDefinition,
@@ -151,6 +157,13 @@ class TaskGroupFatalWorkflow:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(fail())
         return "unreachable"
+
+
+class VersionMismatchWorkflow:
+    @workflow.run
+    async def run(self):
+        # What get_version raises when an old worker sees a newer recorded version.
+        fail_decision(VersionMismatchError("change", 2, DEFAULT_VERSION, 1))
 
 
 class ScheduleAfterFatalWorkflow:
@@ -572,6 +585,26 @@ class TestWorkflowEngine:
 
         with pytest.raises(FatalDecisionError, match="fatal"):
             workflow_engine.process_decision(_start_events())
+
+    def test_version_mismatch_is_raised_unchanged_and_not_logged(self, caplog):
+        workflow_engine = create_workflow_engine(
+            WorkflowDefinition.wrap(
+                VersionMismatchWorkflow,
+                WorkflowDefinitionOptions(name="version_mismatch_workflow"),
+            )
+        )
+
+        with caplog.at_level(logging.DEBUG):
+            with pytest.raises(VersionMismatchError) as exc_info:
+                workflow_engine.process_decision(_start_events())
+
+        assert exc_info.value.mismatch_type == VERSION_MISMATCH_TOO_NEW
+        # The decision task handler reports it at its own level.
+        assert not [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Decision task processing failed"
+        ]
 
     def test_caught_fatal_decision_error_blocks_new_decisions(self):
         ScheduleAfterFatalWorkflow.attempts = []
